@@ -1,0 +1,12 @@
+.env
+data/
+outputs/
+runs/
+*.pt
+*.ckpt
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+.venv/
