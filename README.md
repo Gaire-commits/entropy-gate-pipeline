@@ -6,6 +6,12 @@ with no exploitable structure.
 
 ## Setup
 
+**Running on Google Colab (GPU training):** open [`notebooks/colab.ipynb`](notebooks/colab.ipynb) in
+Colab. It clones this repo, mounts Drive so `data/` and `outputs/` survive between sessions, and reads
+credentials from Colab's Secrets panel — nothing is pasted into a cell in plain text.
+
+**Running locally:**
+
 ```bash
 pip install -r requirements.txt
 cp .env.example .env     # then paste your Alpaca keys into .env
