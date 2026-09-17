@@ -1,27 +1,42 @@
 """The predictability gate.
 
-One entropy reading per symbol per session, computed after that session's close
-on the trailing window, then a cross-sectional cut that keeps the most ordered
-names. A reading decides eligibility for the *next* session: the gate is a
-nightly batch, and a live system cannot know today's closing entropy while today
-is still trading. It never looks at forward returns, so it cannot leak label
+One reading per symbol per session, computed after that session's close on the
+trailing window, deciding eligibility for the *next* session: the gate is a
+nightly batch, and a live system cannot know today's closing statistics while
+today is still trading.
+
+Each reading tests the window against shuffled copies of itself (see
+`entropy.surrogate_test`), so fat tails and a few giant moves cannot pass for
+structure. The gate is absolute: on a day when nothing beats its shuffles,
+nothing trades. It never looks at forward returns, so it cannot leak label
 information into selection.
 """
 
 from __future__ import annotations
 
+import zlib
+
 import numpy as np
 import pandas as pd
 
-from .entropy import permutation_entropy, statistical_complexity, tie_fraction, ordinal_patterns
+from .entropy import surrogate_test, tie_fraction, embed
 
 SERIES_BUILDERS = {
     "log_return": lambda df: np.log(df["close"] / df["close"].shift(1)).to_numpy(),
-    "price": lambda df: df["close"].to_numpy(),
     "signed_volume": lambda df: (
         np.sign(df["close"].diff()).fillna(0.0) * np.log1p(df["volume"].astype(float))
     ).to_numpy(),
 }
+
+GATE_STATISTICS = {
+    "trend": "p_trend",
+    "entropy": "p_unweighted",
+    "entropy_weighted": "p_weighted",
+}
+
+
+def _symbol_rng(seed: int, symbol: str) -> np.random.Generator:
+    return np.random.default_rng([seed, zlib.crc32(symbol.encode())])
 
 
 def screen_symbol(
@@ -29,66 +44,71 @@ def screen_symbol(
     window: int,
     m: int = 4,
     tau: int = 1,
-    weighted: bool = True,
     series: str = "log_return",
+    n_surrogates: int = 99,
     tie_handling: str = "stable",
     min_bars_required: int = 300,
+    seed: int = 0,
+    symbol: str = "",
 ) -> pd.DataFrame:
-    """Trailing-window entropy readings, one row per session.
+    """Trailing-window ordinal statistics, one row per session.
 
     `session_date` is when the reading was computed (that session's close).
     `trade_date` is the following session, the first one allowed to act on it.
     The final session has no following session in the data, so its trade_date
     is NaT -- live, that reading applies to tomorrow.
+
+    `ticks_per_bar` is the typical bar-to-bar price change measured in cents.
+    Below a handful of cents, rounding to the tick makes returns zig-zag on its
+    own, which is order in the numbers but not in the market.
     """
     if series not in SERIES_BUILDERS:
         raise ValueError(f"unknown series '{series}'; options: {sorted(SERIES_BUILDERS)}")
     if "session_id" not in df.columns:
-        raise ValueError("frame needs a session_id column (see data.add_session_id)")
+        raise ValueError("frame needs a session_id column (see data.to_session_grid)")
 
+    rng = _symbol_rng(seed, symbol)
     x = SERIES_BUILDERS[series](df)
+    close = df["close"].to_numpy(dtype=float)
+    volume = df["volume"].to_numpy(dtype=float)
     sessions = df["session_id"].to_numpy()
     timestamps = df.index.get_level_values("timestamp")
-    dollar_volume = (df["close"] * df["volume"]).to_numpy()
 
-    unique_sessions = np.unique(sessions)
-    first_bar = {s: int(np.flatnonzero(sessions == s)[0]) for s in unique_sessions}
+    starts = np.r_[0, np.flatnonzero(np.diff(sessions)) + 1]
+    ends = np.r_[starts[1:] - 1, len(sessions) - 1]
+    days = timestamps[starts].normalize().tz_localize(None)
 
     rows = []
-    for k, session in enumerate(unique_sessions):
-        end = int(np.flatnonzero(sessions == session)[-1])
-        trade_date = (
-            timestamps[first_bar[unique_sessions[k + 1]]].normalize().tz_localize(None)
-            if k + 1 < len(unique_sessions)
-            else pd.NaT
-        )
+    for k in range(len(starts)):
+        end = ends[k]
         start = end - window + 1
-        if start < 1 or end - start + 1 < min_bars_required:
+        if start < 1:
             continue
-
         seg = x[start : end + 1]
         seg = seg[np.isfinite(seg)]
         if seg.size < min_bars_required:
             continue
 
-        _, vectors = ordinal_patterns(seg, m, tau, tie_handling)
-        h_norm, complexity = statistical_complexity(seg, m, tau, weighted, tie_handling)
+        stats = surrogate_test(seg, m, tau, n_surrogates, tie_handling, rng)
+        price_steps = np.diff(close[start - 1 : end + 1])
+        price_steps = price_steps[np.isfinite(price_steps)]
+        dollar_volume = np.nansum(close[start : end + 1] * volume[start : end + 1])
+
         rows.append(
             {
-                "session_date": timestamps[end].normalize().tz_localize(None),
-                "trade_date": trade_date,
-                "pe":permutation_entropy(seg, m, tau, weighted, True, tie_handling),
-                "pe_unweighted": permutation_entropy(seg, m, tau, False, True, tie_handling),
-                "complexity": complexity,
-                "tie_fraction": tie_fraction(vectors),
-                "dollar_volume": float(np.nansum(dollar_volume[start : end + 1])),
+                "session_date": days[k],
+                "trade_date": days[k + 1] if k + 1 < len(starts) else pd.NaT,
+                **stats,
+                "tie_fraction": tie_fraction(embed(seg, m, tau)),
+                "ticks_per_bar": float(price_steps.std() / 0.01) if price_steps.size > 1 else 0.0,
+                "dollar_volume": float(dollar_volume),
                 "n_bars": int(seg.size),
             }
         )
     return pd.DataFrame(rows)
 
 
-def screen_universe(bars: dict[str, pd.DataFrame], cfg) -> pd.DataFrame:
+def screen_universe(bars: dict[str, pd.DataFrame], cfg, progress=None) -> pd.DataFrame:
     """Run the screen across every cached symbol."""
     frames = []
     for symbol, df in bars.items():
@@ -97,32 +117,50 @@ def screen_universe(bars: dict[str, pd.DataFrame], cfg) -> pd.DataFrame:
             window=cfg.window,
             m=cfg.embedding_dim,
             tau=cfg.delay,
-            weighted=cfg.weighted,
             series=cfg.series,
-            tie_handling=cfg.tie_handling,
+            n_surrogates=cfg.n_surrogates,
             min_bars_required=cfg.min_bars_required,
+            seed=cfg.seed,
+            symbol=symbol,
         )
+        if progress:
+            progress(symbol, table)
         if table.empty:
             continue
         table.insert(1, "symbol", symbol)
         frames.append(table)
     if not frames:
-        return pd.DataFrame(
-            columns=["session_date", "symbol", "pe", "complexity", "tie_fraction", "dollar_volume"]
-        )
-    return pd.concat(frames, ignore_index=True).sort_values(["session_date", "pe"])
+        return pd.DataFrame(columns=["session_date", "trade_date", "symbol"])
+    return pd.concat(frames, ignore_index=True).sort_values(["session_date", "symbol"])
 
 
-def apply_gate(table: pd.DataFrame, select_quantile: float = 0.30, max_tie_fraction: float = 0.5) -> pd.DataFrame:
-    """Flag the low-entropy tail of each cross-section.
+def apply_gate(
+    table: pd.DataFrame,
+    statistic: str = "trend",
+    alpha: float = 0.05,
+    max_tie_fraction: float = 0.5,
+    min_ticks_per_bar: float = 6.0,
+) -> pd.DataFrame:
+    """Mark which readings pass, for every gate statistic.
 
-    A high tie fraction means the low reading came from repeated quotes rather
-    than real order, so those names are refused regardless of where they rank.
+    `pass_trend`, `pass_entropy` and `pass_entropy_weighted` are all recorded so
+    the gates can be compared on the same predictions later; `passed` is the one
+    named by `statistic`. Stale windows (mostly repeated prices) and
+    tick-constrained windows are refused under every statistic.
+
+    Under pure noise about `alpha` of readings still pass. That is the expected
+    false-positive rate, and it is why the gate is judged by what happens on the
+    days it approves, not by how many days it approves.
     """
+    if statistic not in GATE_STATISTICS:
+        raise ValueError(f"unknown gate statistic '{statistic}'; options: {sorted(GATE_STATISTICS)}")
     out = table.copy()
-    out["pe_rank"] = out.groupby("session_date")["pe"].rank(pct=True)
     out["stale"] = out["tie_fraction"] > max_tie_fraction
-    out["passed"] = (out["pe_rank"] <= select_quantile) & ~out["stale"]
+    out["tick_limited"] = out["ticks_per_bar"] < min_ticks_per_bar
+    eligible = ~out["stale"] & ~out["tick_limited"]
+    for name, column in GATE_STATISTICS.items():
+        out[f"pass_{name}"] = eligible & (out[column] <= alpha)
+    out["passed"] = out[f"pass_{statistic}"]
     return out
 
 
@@ -133,9 +171,8 @@ def capacity_diagnostic(gated: pd.DataFrame) -> pd.DataFrame:
     illiquid, the strategy's capacity ceiling is set by its own selection logic.
     This table is the evidence either way.
     """
-    grouped = gated.groupby("session_date")
     rows = []
-    for date, day in grouped:
+    for date, day in gated.groupby("session_date"):
         passed = day[day["passed"]]
         if passed.empty:
             continue
@@ -147,8 +184,6 @@ def capacity_diagnostic(gated: pd.DataFrame) -> pd.DataFrame:
                 "median_dv_passed": passed["dollar_volume"].median(),
                 "median_dv_universe": day["dollar_volume"].median(),
                 "dv_ratio": passed["dollar_volume"].median() / day["dollar_volume"].median(),
-                "mean_pe_passed": passed["pe"].mean(),
-                "mean_pe_universe": day["pe"].mean(),
             }
         )
     return pd.DataFrame(rows)

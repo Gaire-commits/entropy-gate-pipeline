@@ -163,6 +163,122 @@ def rolling_permutation_entropy(
     return np.asarray(ends), np.asarray(values)
 
 
+def batched_pattern_distributions(
+    X: np.ndarray,
+    m: int = 4,
+    tau: int = 1,
+    tie_handling: str = "stable",
+    rng: np.random.Generator | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Unweighted and weighted pattern distributions for many equal-length series.
+
+    X is (k, n). Returns two (k, m!) arrays. Vectorized across rows so a window
+    and all of its shuffled surrogates cost one pass instead of k.
+    """
+    X = np.atleast_2d(np.asarray(X, dtype=np.float64))
+    k, n = X.shape
+    n_vec = n - (m - 1) * tau
+    if n_vec <= 0:
+        raise ValueError(f"series of length {n} too short for m={m}, tau={tau}")
+
+    idx = np.arange(n_vec)[:, None] + np.arange(m)[None, :] * tau
+    vectors = X[:, idx]
+    if tie_handling == "jitter":
+        rng = rng or np.random.default_rng(0)
+        scale = np.abs(vectors).max() or 1.0
+        vectors = vectors + rng.normal(0.0, 1e-10 * scale, vectors.shape)
+    elif tie_handling != "stable":
+        raise ValueError(f"unknown tie_handling: {tie_handling}")
+
+    order = np.argsort(vectors, axis=2, kind="stable")
+    codes = np.zeros((k, n_vec), dtype=np.int64)
+    for i in range(m - 1):
+        smaller = (order[:, :, i + 1 :] < order[:, :, i : i + 1]).sum(axis=2)
+        codes += smaller * _FACTORIAL[m - 1 - i]
+
+    n_pat = int(_FACTORIAL[m])
+    flat = (codes + (np.arange(k) * n_pat)[:, None]).ravel()
+    counts = np.bincount(flat, minlength=k * n_pat).reshape(k, n_pat).astype(np.float64)
+    unweighted = counts / counts.sum(axis=1, keepdims=True)
+
+    w = vectors.var(axis=2).ravel()
+    wcounts = np.bincount(flat, weights=w, minlength=k * n_pat).reshape(k, n_pat)
+    totals = wcounts.sum(axis=1, keepdims=True)
+    weighted = np.where(totals > 0, wcounts / np.where(totals > 0, totals, 1.0), 1.0 / n_pat)
+    return unweighted, weighted
+
+
+def _row_entropy(P: np.ndarray, m: int) -> np.ndarray:
+    logs = np.log(np.where(P > 0, P, 1.0))
+    return -(P * logs).sum(axis=1) / log(_FACTORIAL[m])
+
+
+def monotone_codes(m: int) -> tuple[int, int]:
+    """Lehmer codes of the strictly ascending and strictly descending patterns."""
+    return 0, int(_FACTORIAL[m]) - 1
+
+
+def surrogate_test(
+    x: np.ndarray,
+    m: int = 4,
+    tau: int = 1,
+    n_surrogates: int = 99,
+    tie_handling: str = "stable",
+    rng: np.random.Generator | None = None,
+) -> dict[str, float]:
+    """Ordinal structure of x measured against shuffled copies of x.
+
+    Shuffling keeps every value -- fat tails, ties, the few giant moves -- and
+    destroys only their order. Those distributional features pull raw PE down
+    with no predictability involved, but they pull the shuffled copies down by
+    the same amount, so only a gap between real and shuffled statistics is
+    evidence of temporal structure.
+
+    Two kinds of gap are reported:
+
+    - entropy (`p_unweighted`, `p_weighted`): real PE below the shuffles. Detects
+      any temporal order, including zig-zag mean reversion. Rounding prices to
+      the cent and bid-ask bounce both produce zig-zags, so on cheap or thinly
+      traded names this fires on structure nobody can trade.
+    - trend (`p_trend`): more strictly ascending and descending runs than the
+      shuffles. Fires on persistence and stays silent on zig-zags, which is the
+      structure a momentum strategy needs.
+
+    p-values are rank-based, (1 + #shuffles at least as extreme) / (K + 1),
+    and exact when the values are exchangeable.
+    """
+    rng = rng or np.random.default_rng(0)
+    x = np.asarray(x, dtype=np.float64)
+    shuffled = rng.permuted(np.tile(x, (n_surrogates, 1)), axis=1)
+    unweighted, weighted = batched_pattern_distributions(
+        np.vstack([x[None, :], shuffled]), m, tau, tie_handling, rng
+    )
+    k = n_surrogates + 1
+
+    out = {}
+    for kind, P in (("unweighted", unweighted), ("weighted", weighted)):
+        pe = _row_entropy(P, m)
+        real, sur = pe[0], pe[1:]
+        sd = sur.std(ddof=1)
+        out[f"pe_{kind}"] = float(real)
+        out[f"z_{kind}"] = float((real - sur.mean()) / sd) if sd > 0 else 0.0
+        out[f"p_{kind}"] = float((1 + (sur <= real).sum()) / k)
+
+    up, down = monotone_codes(m)
+    mono = unweighted[:, up] + unweighted[:, down]
+    out["monotone_share"] = float(mono[0])
+    out["monotone_excess"] = float(mono[0] - mono[1:].mean())
+    out["p_trend"] = float((1 + (mono[1:] >= mono[0]).sum()) / k)
+
+    n = float(_FACTORIAL[m])
+    p = unweighted[0]
+    mix = 0.5 * (p + 1.0 / n)
+    js = _shannon(mix) - 0.5 * _shannon(p) - 0.5 * log(n)
+    q0 = -2.0 / (((n + 1) / n) * log(n + 1) - 2 * log(2 * n) + log(n))
+    out["complexity"] = float(q0 * js * out["pe_unweighted"])
+    return out
+
+
 def multiscale_permutation_entropy(
     x: np.ndarray,
     scales: int = 5,

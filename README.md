@@ -1,108 +1,125 @@
 # Entropy Gate Pipeline
 
-Predictability screening before prediction. An ordinal-pattern entropy gate decides
-which symbols a model is allowed to trade, so no forecast is forced onto a process
-with no exploitable structure.
+Predictability screening before prediction, on SPY and the 11 Select Sector SPDR ETFs.
+A nightly gate reads the ordinal structure of each ETF's recent returns and decides
+whether it is worth trading the next day. A ladder of rules and models then
+predicts intraday direction, and every result is judged on returns after trading
+costs, with uncertainty measured in days.
 
-## Setup
+## Running it
 
-**Running on Google Colab (GPU training):** open [`notebooks/colab.ipynb`](notebooks/colab.ipynb) in
-Colab. It clones this repo, mounts Drive so `data/` and `outputs/` survive between sessions, and reads
-credentials from Colab's Secrets panel — nothing is pasted into a cell in plain text.
+**On Google Colab (recommended):** open [`notebooks/colab.ipynb`](notebooks/colab.ipynb).
+It clones this repo, keeps downloaded data and results on Google Drive, and reads
+credentials from Colab's Secrets panel. Every step resumes after a disconnect.
 
-**Running locally:**
+**Locally:**
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env     # then paste your Alpaca keys into .env
+cp .env.example .env                 # add your Alpaca keys
+python -m pytest tests/ -q           # no credentials needed
+python scripts/smoke_test.py         # synthetic data with planted signals
+
+python scripts/fetch_data.py         # SPY + 11 sector ETFs, 5-min bars from 2016
+CONFIG=configs/spy_gao.yaml
+python scripts/run_screen.py --config $CONFIG
+python scripts/sweep.py      --config $CONFIG
+python scripts/summarize.py  --config $CONFIG   # -> outputs/spy_gao/summary.md
 ```
-
-`.env` is gitignored. Credentials are read from the environment only — no key is
-ever passed as an argument or written into a config.
-
-Verify the install without credentials:
-
-```bash
-python scripts/smoke_test.py
-python -m pytest tests/ -q
-```
-
-## Pipeline
-
-```
-fetch_data.py  ->  run_screen.py  ->  train.py
-   Alpaca            entropy gate      walk-forward CV
-   -> parquet        -> screen.parquet -> metrics + summary
-```
-
-```bash
-python scripts/fetch_data.py       # cache bars into data/bars/
-python scripts/run_screen.py       # entropy readings + capacity diagnostic
-python scripts/train.py --arch resnet1d --gate
-```
-
-Everything is driven by `config.yaml`; experiments should differ by config, not by
-edited code.
 
 ## Experiments
 
-| Question | Command |
-|---|---|
-| Does the gate help? | `train.py --arch resnet1d --gate` vs `--no-gate` |
-| Does depth beat a linear model? | `train.py --arch logreg` vs `--arch inceptiontime` |
-| Does the image framing beat the sequence framing? | `train.py --arch resnet2d` with `encoding: gaf` vs `--arch resnet1d` with `encoding: 1d` |
-| How much cost can it absorb? | `train.py --cost-bps 5` vs `--cost-bps 15` |
+| Config | Universe | Signal → hold | Question |
+|---|---|---|---|
+| `configs/spy_gao.yaml` | SPY | first half-hour → last half-hour | Does the published intraday momentum effect (Gao et al. 2018) show up? A real-data check that the pipeline can find something known. |
+| `configs/etf_gao.yaml` | 12 ETFs | first half-hour → last half-hour | Does it hold across sectors? |
+| `configs/etf_intraday.yaml` | 12 ETFs | 4-hour window → 1-hour hold | Can learned features beat simple rules? |
+
+Each run answers the research questions from the same predictions:
+
+| | Question | Where it shows up |
+|---|---|---|
+| Q1 | Does the gate pick better days? | `summary.md` gate table: the same predictions on approved vs. other days, with a 95% interval on the difference |
+| Q2 | Do deep models beat simple rules and a linear model? | `summary.md` main table: `always_up`, `momentum_day`, `momentum_window`, `logreg`, then CNN1D, ResNet1D, InceptionTime |
+| Q4 | Does an image view of the window help? | ResNet2D (Gramian Angular Field images) vs. ResNet1D, same stages and filters |
+| Q5 | Does any edge survive costs? | net return at each cost level, and the breakeven cost |
+
+## How the gate works
+
+Each evening, for every ETF, the gate takes the last 5 sessions of 5-minute log
+returns and compares their ordinal patterns (Bandt & Pompe) against 99 shuffled
+copies of the same returns. Shuffling keeps every value and destroys only the
+order, so fat tails and a few giant moves cannot pass for structure.
+
+Three statistics are recorded for every reading:
+
+| Statistic | Passes when | Problem |
+|---|---|---|
+| `entropy` | permutation entropy is below the shuffles | also fires on zig-zags from bid-ask bounce and penny ticks, which nobody can trade |
+| `entropy_weighted` | weighted permutation entropy is below the shuffles | also fires on volatility clustering |
+| `trend` (default) | steady up-runs and down-runs appear more often than in the shuffles | — |
+
+A reading also fails if the window is mostly repeated prices (`stale`) or moves
+less than about 6 cents a bar (`tick_limited`), where rounding to the cent alone
+creates patterns. The gate is absolute: on a day when nothing passes, nothing is
+approved. Under pure noise about 5% of readings still pass, which is why Q1 is
+judged by what happens on approved days rather than by how many there are.
+
+A reading computed at Monday's close applies to Tuesday, exactly as a nightly
+job would run live.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `src/entropy.py` | Permutation entropy, weighted PE, complexity-entropy plane |
-| `src/screening.py` | Per-session gate + capacity diagnostic |
-| `src/features.py` | Causal windowing, GAF/MTF encoders |
+| `src/entropy.py` | Permutation entropy, complexity, and the shuffle test |
+| `src/screening.py` | Nightly gate readings and pass/fail rules |
+| `src/data.py` | Alpaca download with caching, and the fixed 5-minute session grid |
+| `src/features.py` | Causal channels, windowing, normalization, GAF/MTF encoders |
+| `src/dataset.py` | Samples with gate verdicts attached; walk-forward splits |
+| `src/baselines.py` | Rules that need no training |
 | `src/models.py` | logreg / CNN1D / ResNet1D / InceptionTime / ResNet2D |
-| `src/dataset.py` | Dataset assembly, walk-forward splits |
-| `src/training.py` | Training loop, cost-adjusted evaluation |
+| `src/training.py` | Reproducible training with early stopping |
+| `src/stats.py` | Trade scoring and day-block bootstrap intervals |
+| `src/experiment.py` | Resumable sweep and the results report |
+| `src/synthetic.py` | Bars with known structure for tests |
 
 ## Design notes
 
-**The gate never sees forward returns.** Selection uses ordinal patterns of past
-returns only, so it cannot leak label information into which symbols get traded.
+**Same seed, same result.** Training is deterministic, and every model runs with 3
+seeds. In the first real sweep, before this, two identical reruns of one model
+differed by about as much as the five architectures differed from each other.
 
-**A gate reading applies to the next session.** Entropy is computed after each close
-and decides eligibility for the following day (`trade_date`), which is how it runs
-live as a nightly batch. Matching a reading to the day it was computed would let a
-morning window be admitted by entropy that already saw that afternoon.
-`tests/test_screening.py` pins this down.
+**The trend has to stay visible.** Features are standardized with statistics from
+the training fold only. The earlier per-window z-score subtracted each window's
+mean, which set every window's cumulative return to zero: the models literally
+could not see whether price went up. On planted data that cost logistic
+regression 14 points of accuracy.
 
-**Ties are a trap.** A series of repeated quotes reads as highly ordered — the smoke
-test's stale fixture scores PE 0.11, comparable to a sine wave. `tie_fraction` is
-reported alongside every reading and `apply_gate` refuses names above the threshold.
+**Uncertainty is measured in days.** Trades on the same day share the market's
+move, so intervals come from resampling whole days. Treating thousands of same-day
+trades as independent would make every interval several times too narrow.
 
-**Intraday means intraday.** `window + embargo + horizon` must fit inside one
-session or `make_windows` raises. Checking the feature window and the trade
-separately is not enough — that admits samples whose features come from one day and
-whose fill comes from the next. Overnight holding is expressible, but has to be
-opted into with `allow_overnight`.
+**The test set is never filtered by outcome.** Training may skip moves under 5 bps
+as noise; the test set keeps every sample, because which moves turn out small is
+only known afterwards.
 
-**Costs are in the evaluation, not bolted on after.** Every result reports gross and
-net basis points per trade plus the breakeven cost level, because a model can be
-reliably right about direction and still lose money once the spread is paid.
+**Time is fixed to the clock.** IEX only prints a bar when a trade happens on IEX.
+Missing bars are restored as gaps on a fixed 5-minute grid, so "the last half-hour"
+always means 3:30–4:00 and a gap drops the affected window instead of shifting it.
 
-**The positive control matters.** `smoke_test.py` plants a horizon-matched signal and
-checks the trainer recovers it (~0.72 accuracy). Without that, a null result on real
-data is indistinguishable from a broken training loop.
+**Intraday means intraday.** A window, its execution lag and its hold must fit in
+one session, or sample construction raises.
 
-**ResNet2D is a structural twin of ResNet1D** — same three residual stages, same
-64/128/128 progression — so the GAF comparison isolates the sequence-vs-image framing
-rather than confounding it with depth or capacity. It is the honest way to ask whether
-an image architecture belongs on market data at all: GAF genuinely converts temporal
-correlation into 2-D spatial structure, which is the only thing that would justify it.
-Mismatching an architecture with an encoding raises immediately instead of failing
-inside a convolution.
+**Positive controls.** `smoke_test.py` plants signals in both setups and checks that
+the rules and models recover them. Without that, a null result on real data is
+indistinguishable from a broken pipeline.
 
 ## Status
 
-Screening, features, models, dataset assembly, and walk-forward training are
-implemented and tested (25 tests). The live path — real-time gate, risk firewall,
-IBKR execution — is designed but not built.
+Built and tested: data, gate, features, models, sweep, and report (79 unit tests plus
+the smoke test). Not yet run on real data in this form. The live path (IBKR
+execution, risk firewall) and the RL sizing layer are designed, not built.
+
+Known limits: IEX volume is a sample of the consolidated tape; Kalman state
+features are proposed, not built.

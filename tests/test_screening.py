@@ -1,5 +1,4 @@
-"""Gate timing. A reading computed at a session's close must not admit windows
-from that same session, because live, that reading does not exist yet."""
+"""The gate: shuffle-tested, absolute, lagged one session, and not fooled by zig-zags."""
 
 import sys
 from pathlib import Path
@@ -12,81 +11,110 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.dataset import build_dataset
-from src.screening import apply_gate, screen_symbol
+from src.screening import apply_gate, screen_symbol, screen_universe
+from src.synthetic import ar_returns, bars_from_returns
 
-BARS = 78
-SESSIONS = 8
-
-
-def _bars(symbol="TEST", seed=0):
-    rng = np.random.default_rng(seed)
-    n = BARS * SESSIONS
-    close = 100 * np.exp(np.cumsum(rng.normal(0, 0.002, n)))
-    open_ = np.concatenate([[close[0]], close[:-1]])
-    days = pd.bdate_range("2024-03-04", periods=SESSIONS)
-    offsets = pd.timedelta_range("09:30:00", periods=BARS, freq="5min")
-    ts = pd.DatetimeIndex([d + o for d in days for o in offsets]).tz_localize("America/New_York")
-    return pd.DataFrame(
-        {
-            "open": open_,
-            "high": np.maximum(open_, close) * 1.001,
-            "low": np.minimum(open_, close) * 0.999,
-            "close": close,
-            "volume": rng.lognormal(10, 0.5, n),
-            "session_id": np.repeat(np.arange(SESSIONS), BARS),
-        },
-        index=pd.MultiIndex.from_arrays([np.full(n, symbol), ts], names=["symbol", "timestamp"]),
-    )
+SESSIONS = 40
 
 
-def _screen(df):
-    table = screen_symbol(df, window=2 * BARS, m=3, min_bars_required=100)
-    table.insert(1, "symbol", "TEST")
-    return table
+def _screen(returns, price=400.0, tick=None, symbol="TEST"):
+    df = bars_from_returns(symbol, returns, price=price, tick=tick)
+    table = screen_symbol(df, window=390, m=4, n_surrogates=99, min_bars_required=300, symbol=symbol)
+    table.insert(1, "symbol", symbol)
+    return df, table
 
 
-def _cfg():
+def _features_cfg():
     return SimpleNamespace(
         features=SimpleNamespace(
-            channels=["log_return", "hl_range", "close_open"],
-            window=24, horizon=6, embargo=1, label_deadzone=0.0,
-            normalize="window_zscore", encoding="1d", allow_overnight=False,
+            channels=["log_return", "session_return"], window=24, horizon=6, embargo=1,
+            stride=1, allow_overnight=False, normalize="none",
         )
     )
 
 
 def test_reading_applies_to_the_following_session():
-    table = _screen(_bars())
+    _, table = _screen(ar_returns(SESSIONS, 0.0))
     dated = table.dropna(subset=["trade_date"])
     assert (dated["trade_date"] > dated["session_date"]).all()
-
-    session_days = sorted(table["session_date"].unique())
+    days = list(table["session_date"])
     for _, row in dated.iterrows():
-        assert row["trade_date"] == session_days[session_days.index(row["session_date"]) + 1]
-
-
-def test_last_reading_has_no_trade_date_in_sample():
-    table = _screen(_bars())
+        assert row["trade_date"] == days[days.index(row["session_date"]) + 1]
     assert pd.isna(table.iloc[-1]["trade_date"])
-    assert table["trade_date"].iloc[:-1].notna().all()
 
 
-def test_a_reading_never_admits_windows_from_the_day_it_was_computed():
-    """The leak this guards against: an 11am window admitted by entropy measured at 4pm."""
-    df = _bars()
-    table = apply_gate(_screen(df), select_quantile=1.0)
-    computed_on = table["session_date"].iloc[2]
-    table["passed"] = table["session_date"] == computed_on
-
-    data = build_dataset({"TEST": df}, table, _cfg(), use_gate=True)
-    sample_days = set(pd.to_datetime(data["date"]).normalize())
-
-    assert computed_on not in sample_days
-    assert sample_days == {table["trade_date"].iloc[2]}
+def test_noise_passes_at_about_the_nominal_rate():
+    rates = []
+    for seed in range(4):
+        _, table = _screen(ar_returns(60, 0.0, seed=seed))
+        rates.append(apply_gate(table)["pass_trend"].mean())
+    assert np.mean(rates) < 0.15
 
 
-def test_stale_screen_table_without_trade_date_is_rejected():
-    df = _bars()
-    table = apply_gate(_screen(df)).drop(columns="trade_date")
-    with pytest.raises(ValueError, match="trade_date"):
-        build_dataset({"TEST": df}, table, _cfg(), use_gate=True)
+def test_trend_passes_and_zigzag_does_not():
+    _, trend = _screen(ar_returns(SESSIONS, +0.3, seed=1))
+    _, zigzag = _screen(ar_returns(SESSIONS, -0.3, seed=2))
+    trend, zigzag = apply_gate(trend), apply_gate(zigzag)
+    assert trend["pass_trend"].mean() > 0.7
+    assert zigzag["pass_trend"].mean() == 0.0
+    # plain entropy cannot tell them apart -- that is why it is not the default
+    assert zigzag["pass_entropy"].mean() > 0.7
+
+
+def test_tick_constrained_prices_are_refused_under_every_statistic():
+    _, table = _screen(ar_returns(SESSIONS, +0.3, scale=0.0008, seed=3), price=12.0, tick=0.01)
+    gated = apply_gate(table, min_ticks_per_bar=6)
+    assert gated["tick_limited"].all()
+    assert not gated[["pass_trend", "pass_entropy", "pass_entropy_weighted", "passed"]].any().any()
+
+
+def test_gate_is_absolute_so_a_day_can_approve_nothing():
+    bars = {s: bars_from_returns(s, ar_returns(SESSIONS, 0.0, seed=i)) for i, s in enumerate("ABCD")}
+    cfg = SimpleNamespace(embedding_dim=4, delay=1, window=390, series="log_return",
+                          n_surrogates=99, min_bars_required=300, seed=0)
+    gated = apply_gate(screen_universe(bars, cfg))
+    per_day = gated.groupby("session_date")["passed"].sum()
+    assert (per_day == 0).mean() > 0.5
+
+
+def test_readings_are_reproducible():
+    df = bars_from_returns("X", ar_returns(SESSIONS, 0.1))
+    a = screen_symbol(df, 390, symbol="X", seed=7)
+    b = screen_symbol(df, 390, symbol="X", seed=7)
+    pd.testing.assert_frame_equal(a, b)
+
+
+def test_unknown_gate_statistic_is_rejected():
+    _, table = _screen(ar_returns(SESSIONS, 0.0))
+    with pytest.raises(ValueError, match="unknown gate statistic"):
+        apply_gate(table, statistic="vibes")
+
+
+def test_a_reading_never_marks_samples_from_the_day_it_was_computed():
+    """The leak this guards against: an 11am sample approved by statistics measured at 4pm."""
+    df, table = _screen(ar_returns(SESSIONS, 0.0))
+    gated = apply_gate(table)
+    computed_on = gated["session_date"].iloc[2]
+    for col in ("pass_trend", "pass_entropy", "pass_entropy_weighted"):
+        gated[col] = gated["session_date"] == computed_on
+
+    data = build_dataset({"TEST": df}, gated, _features_cfg())
+    marked_days = set(pd.to_datetime(data["date"][data["pass_trend"]]))
+    assert computed_on not in marked_days
+    assert marked_days == {gated["trade_date"].iloc[2]}
+
+
+def test_every_sample_is_kept_whether_or_not_the_gate_approved_it():
+    df, table = _screen(ar_returns(SESSIONS, 0.0))
+    gated = apply_gate(table)
+    gated[["pass_trend", "pass_entropy", "pass_entropy_weighted"]] = False
+    with_gate = build_dataset({"TEST": df}, gated, _features_cfg())
+    without = build_dataset({"TEST": df}, None, _features_cfg())
+    assert len(with_gate["y"]) == len(without["y"])
+    assert not with_gate["pass_trend"].any()
+
+
+def test_stale_screen_table_is_rejected():
+    df, table = _screen(ar_returns(SESSIONS, 0.0))
+    with pytest.raises(ValueError, match="older version"):
+        build_dataset({"TEST": df}, table.drop(columns="trade_date"), _features_cfg())

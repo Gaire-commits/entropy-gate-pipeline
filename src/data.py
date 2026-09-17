@@ -1,26 +1,30 @@
-"""Alpaca historical bars -> local parquet cache.
+"""Alpaca historical bars -> local parquet cache -> a fixed intraday grid.
 
 Credentials are read from the environment (or a local .env) and never passed as
 arguments, so no key can end up in a config file, a notebook, or a traceback.
 
-Free-tier notes: the `iex` feed carries only IEX-routed volume, roughly a few
-percent of consolidated tape, so its volume series is a sample rather than the
-true figure. Prices track well for liquid names and degrade for thin ones --
-which matters here, because thin names are exactly where the entropy screen is
-most likely to be fooled by stale quotes.
+Free-tier notes: the `iex` feed carries only IEX-routed volume, a few percent of
+the consolidated tape, so volume is a sample rather than the true figure. A bar
+only exists when a trade printed on IEX, so quiet intervals come back missing.
+`to_session_grid` puts those gaps back as NaN rows: without that, a missing bar
+silently shifts every later bar, and "the last 6 bars of the day" stops meaning
+3:30 to 4:00.
 """
 
 from __future__ import annotations
 
+import json
 import os
-from datetime import datetime
+from datetime import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
-MARKET_OPEN = "09:30"
-MARKET_CLOSE = "16:00"
 EASTERN = "America/New_York"
+OPEN = pd.Timedelta(hours=9, minutes=30)
+FULL_CLOSE = pd.Timedelta(hours=16)
+EARLY_CLOSE = pd.Timedelta(hours=13)
 
 
 def _load_dotenv(path: str | Path = ".env") -> None:
@@ -50,6 +54,15 @@ def get_client():
     return StockHistoricalDataClient(key, secret)
 
 
+def bar_minutes(spec: str) -> int:
+    """'5Min' -> 5. Intraday grids only make sense for minute bars."""
+    digits = "".join(c for c in spec if c.isdigit()) or "1"
+    word = "".join(c for c in spec if c.isalpha()).lower()
+    if word != "min":
+        raise ValueError(f"intraday pipeline needs minute bars, got '{spec}'")
+    return int(digits)
+
+
 def parse_timeframe(spec: str):
     """'5Min' -> TimeFrame(5, Minute)."""
     from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
@@ -61,7 +74,6 @@ def parse_timeframe(spec: str):
         "week": TimeFrameUnit.Week,
         "month": TimeFrameUnit.Month,
     }
-    spec = spec.strip()
     digits = "".join(c for c in spec if c.isdigit()) or "1"
     word = "".join(c for c in spec if c.isalpha()).lower()
     if word not in units:
@@ -69,32 +81,39 @@ def parse_timeframe(spec: str):
     return TimeFrame(int(digits), units[word])
 
 
-def fetch_bars(
-    symbols: list[str],
-    start: str | datetime,
-    end: str | datetime,
+def fetch_symbol(
+    client,
+    symbol: str,
+    start: str,
+    end: str,
     timeframe: str = "5Min",
     feed: str = "iex",
     adjustment: str = "split",
 ) -> pd.DataFrame:
-    """Download bars for symbols. Returns a long frame indexed by (symbol, timestamp)."""
+    """Download one symbol in yearly chunks, so a long history never rides on one request."""
     from alpaca.data.enums import Adjustment, DataFeed
     from alpaca.data.requests import StockBarsRequest
 
-    client = get_client()
-    request = StockBarsRequest(
-        symbol_or_symbols=list(symbols),
-        timeframe=parse_timeframe(timeframe),
-        start=pd.Timestamp(start).to_pydatetime(),
-        end=pd.Timestamp(end).to_pydatetime(),
-        feed=DataFeed(feed),
-        adjustment=Adjustment(adjustment),
-    )
-    bars = client.get_stock_bars(request)
-    df = bars.df
-    if df.empty:
-        return df
-    return df.sort_index()
+    frames = []
+    cursor, stop = pd.Timestamp(start), pd.Timestamp(end)
+    while cursor < stop:
+        chunk_end = min(cursor + pd.DateOffset(years=1), stop)
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=parse_timeframe(timeframe),
+            start=cursor.to_pydatetime(),
+            end=chunk_end.to_pydatetime(),
+            feed=DataFeed(feed),
+            adjustment=Adjustment(adjustment),
+        )
+        df = client.get_stock_bars(request).df
+        if not df.empty:
+            frames.append(df)
+        cursor = chunk_end
+    if not frames:
+        return pd.DataFrame()
+    out = pd.concat(frames).sort_index()
+    return out[~out.index.duplicated(keep="last")]
 
 
 def to_eastern(df: pd.DataFrame) -> pd.DataFrame:
@@ -109,36 +128,95 @@ def to_eastern(df: pd.DataFrame) -> pd.DataFrame:
 def regular_hours(df: pd.DataFrame) -> pd.DataFrame:
     """Keep only 09:30-16:00 ET bars.
 
-    Overnight and pre-market bars have their own microstructure; leaving them in
+    Pre- and post-market bars have their own microstructure; leaving them in
     makes the entropy screen read the session boundary as structure.
     """
     ts = df.index.get_level_values("timestamp")
-    mask = (ts.time >= pd.Timestamp(MARKET_OPEN).time()) & (ts.time < pd.Timestamp(MARKET_CLOSE).time())
+    mask = (ts.time >= time(9, 30)) & (ts.time < time(16, 0))
     return df[mask]
 
 
-def add_session_id(df: pd.DataFrame) -> pd.DataFrame:
-    """Integer id per trading date, so windows can be kept inside one session."""
-    dates = df.index.get_level_values("timestamp").normalize()
-    out = df.copy()
-    out["session_id"] = pd.factorize(dates)[0]
-    return out
+def to_session_grid(df: pd.DataFrame, minutes: int = 5) -> pd.DataFrame:
+    """Reindex one symbol onto a complete bar grid per trading day, NaN where IEX had no trade.
+
+    Adds `session_id` and `bar_index` (0 = the 09:30 bar). A day whose last
+    observed bar starts before 13:00 is treated as an early close; every real
+    early close on the US calendar ends at 13:00.
+    """
+    if df.empty:
+        return df
+    symbol = df.index.get_level_values("symbol")[0]
+    ts = df.index.get_level_values("timestamp")
+    naive = ts.tz_convert(EASTERN).tz_localize(None) if ts.tz is not None else ts
+
+    days = naive.normalize()
+    last_bar = pd.Series(naive, index=naive).groupby(days).max()
+    early = (last_bar - last_bar.index) < EARLY_CLOSE
+
+    step = pd.Timedelta(minutes=minutes)
+    offsets = pd.timedelta_range(OPEN, FULL_CLOSE - step, freq=step)
+    grid = last_bar.index.values[:, None] + offsets.values[None, :]
+    keep = ~(early.values[:, None] & (offsets.values[None, :] >= EARLY_CLOSE.to_timedelta64()))
+
+    grid_index = pd.DatetimeIndex(grid[keep].ravel())
+    values = df.drop(columns=[c for c in ("session_id", "bar_index") if c in df.columns])
+    values = values.set_axis(naive, axis=0).reindex(grid_index)
+
+    out_days = grid_index.normalize()
+    values["session_id"] = pd.factorize(out_days)[0]
+    values["bar_index"] = ((grid_index - out_days) - OPEN) // step
+    values.index = pd.MultiIndex.from_arrays(
+        [np.full(len(grid_index), symbol), grid_index.tz_localize(EASTERN)], names=["symbol", "timestamp"]
+    )
+    return values
 
 
 def cache_path(cache_dir: str | Path, symbol: str, timeframe: str) -> Path:
     return Path(cache_dir) / timeframe / f"{symbol}.parquet"
 
 
-def save_symbol(df: pd.DataFrame, cache_dir: str | Path, symbol: str, timeframe: str) -> Path:
+def _meta_path(cache_dir: str | Path, symbol: str, timeframe: str) -> Path:
+    return cache_path(cache_dir, symbol, timeframe).with_suffix(".meta.json")
+
+
+def is_cached(cache_dir, symbol, timeframe, start, end, feed, adjustment) -> bool:
+    """True when a previous download already covers this request.
+
+    Coverage is judged from what was *requested*, not from the first bar
+    returned, so a fund that launched after `start` (XLC, 2018) does not get
+    re-downloaded on every run.
+    """
+    meta = _meta_path(cache_dir, symbol, timeframe)
+    if not meta.exists() or not cache_path(cache_dir, symbol, timeframe).exists():
+        return False
+    m = json.loads(meta.read_text())
+    return (
+        m.get("feed") == feed
+        and m.get("adjustment") == adjustment
+        and pd.Timestamp(m["start"]) <= pd.Timestamp(start)
+        and pd.Timestamp(m["end"]) >= pd.Timestamp(end)
+    )
+
+
+def save_symbol(df, cache_dir, symbol, timeframe, start, end, feed, adjustment) -> Path:
     path = cache_path(cache_dir, symbol, timeframe)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path)
+    _meta_path(cache_dir, symbol, timeframe).write_text(
+        json.dumps({"start": str(start), "end": str(end), "feed": feed, "adjustment": adjustment})
+    )
     return path
 
 
 def load_symbol(cache_dir: str | Path, symbol: str, timeframe: str) -> pd.DataFrame | None:
+    """Cached bars for one symbol on the complete session grid, or None."""
     path = cache_path(cache_dir, symbol, timeframe)
-    return pd.read_parquet(path) if path.exists() else None
+    if not path.exists():
+        return None
+    raw = pd.read_parquet(path)
+    if raw.empty:
+        return None
+    return to_session_grid(raw, bar_minutes(timeframe))
 
 
 def load_universe(cache_dir: str | Path, symbols: list[str], timeframe: str) -> dict[str, pd.DataFrame]:
@@ -148,3 +226,8 @@ def load_universe(cache_dir: str | Path, symbols: list[str], timeframe: str) -> 
         if df is not None and not df.empty:
             out[sym] = df
     return out
+
+
+def completeness(df: pd.DataFrame) -> float:
+    """Share of grid slots that have a real bar."""
+    return float(df["close"].notna().mean()) if len(df) else 0.0

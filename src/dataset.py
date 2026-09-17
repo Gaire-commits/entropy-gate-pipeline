@@ -1,8 +1,11 @@
-"""Assemble training tensors from cached bars and a screening table.
+"""Assemble samples from cached bars and annotate them with the gate's verdict.
 
-`use_gate` is the switch behind Experiment 1: the same code path builds the
-gated and ungated datasets, so any difference in downstream results is the gate
-and not an incidental change in preprocessing.
+Every sample is kept whether or not the gate approved its day. The gate's
+decision rides along as columns instead, so one set of predictions answers Q1
+directly: compare the same model's trades on approved days against its trades
+on the rest. Training a separate model on approved days only would change the
+training set at the same time as the selection, and the two effects could not
+be told apart.
 """
 
 from __future__ import annotations
@@ -10,88 +13,83 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .features import build_channels, gaf_encode, make_windows, mtf_encode, normalize_windows
+from .features import build_channels, make_windows, normalize_windows, session_return
+from .screening import GATE_STATISTICS
+
+GATE_COLUMNS = [f"pass_{name}" for name in GATE_STATISTICS] + ["p_trend"]
 
 
-def build_dataset(
-    bars: dict[str, pd.DataFrame],
-    gated: pd.DataFrame | None,
-    cfg,
-    use_gate: bool = True,
-) -> dict[str, np.ndarray]:
-    """Build (X, y, ret, dates, symbols) across the universe.
+def build_dataset(bars: dict[str, pd.DataFrame], screen: pd.DataFrame | None, cfg) -> dict[str, np.ndarray]:
+    """Build (X, y, ret, date, symbol, ...) across the universe, time-ordered.
 
-    A window is kept when the symbol passed the gate reading whose trade_date is
-    the window's session, i.e. a reading computed at the previous close. Matching
-    on the day the reading was computed instead would admit a morning window
-    based on entropy that already saw that afternoon.
+    X is (n, channels, window). Gate columns match a sample to the reading whose
+    trade_date is the sample's session, i.e. a reading computed at the previous
+    close. `has_reading` is False where no reading exists yet (warm-up days).
     """
-    if use_gate and gated is None:
-        raise ValueError("use_gate=True requires a screening table")
+    f = cfg.features
+    lookup = None
+    if screen is not None and len(screen):
+        if "trade_date" not in screen.columns or "pass_trend" not in screen.columns:
+            raise ValueError("screen table is from an older version; re-run scripts/run_screen.py")
+        dated = screen.dropna(subset=["trade_date"])
+        lookup = dated.set_index(["symbol", "trade_date"])[GATE_COLUMNS]
 
-    allowed = None
-    if use_gate:
-        if "trade_date" not in gated.columns:
-            raise ValueError("screening table has no trade_date; re-run scripts/run_screen.py")
-        passed = gated[gated["passed"] & gated["trade_date"].notna()]
-        allowed = set(zip(passed["symbol"], passed["trade_date"]))
+    chunks: dict[str, list] = {
+        k: [] for k in ("X", "y", "ret", "date", "symbol", "day_return", "window_return", "bar_index")
+    }
+    gate_chunks: dict[str, list] = {k: [] for k in GATE_COLUMNS + ["has_reading"]}
 
-    chunks = {"X": [], "y": [], "ret": [], "date": [], "symbol": []}
     for symbol, df in bars.items():
-        features = build_channels(df, cfg.features.channels)
-        close = df["close"].to_numpy(dtype=float)
-        sessions = df["session_id"].to_numpy() if "session_id" in df else None
-        timestamps = df.index.get_level_values("timestamp")
-
         windows = make_windows(
-            features,
-            close,
-            window=cfg.features.window,
-            horizon=cfg.features.horizon,
-            embargo=cfg.features.embargo,
-            session_id=sessions,
-            deadzone=cfg.features.label_deadzone,
-            allow_overnight=getattr(cfg.features, "allow_overnight", False),
+            build_channels(df, f.channels),
+            df["close"].to_numpy(dtype=float),
+            window=f.window,
+            horizon=f.horizon,
+            embargo=f.embargo,
+            session_id=df["session_id"].to_numpy(),
+            stride=getattr(f, "stride", 1),
+            allow_overnight=getattr(f, "allow_overnight", False),
         )
-        if windows["X"].size == 0:
+        n = len(windows["y"])
+        if n == 0:
             continue
 
-        signal_dates = timestamps[windows["signal_bar"]].normalize().tz_localize(None)
-        keep = np.ones(len(signal_dates), dtype=bool)
-        if allowed is not None:
-            keep = np.array([(symbol, d) in allowed for d in signal_dates])
-        if not keep.any():
-            continue
+        signal = windows["signal_bar"]
+        dates = df.index.get_level_values("timestamp")[signal].normalize().tz_localize(None)
 
-        chunks["X"].append(windows["X"][keep])
-        chunks["y"].append(windows["y"][keep])
-        chunks["ret"].append(windows["ret"][keep])
-        chunks["date"].append(signal_dates[keep].to_numpy())
-        chunks["symbol"].append(np.full(int(keep.sum()), symbol))
+        chunks["X"].append(windows["X"])
+        chunks["y"].append(windows["y"])
+        chunks["ret"].append(windows["ret"])
+        chunks["date"].append(dates.to_numpy())
+        chunks["symbol"].append(np.full(n, symbol))
+        chunks["day_return"].append(session_return(df)[signal])
+        chunks["window_return"].append(windows["window_return"])
+        chunks["bar_index"].append(df["bar_index"].to_numpy()[signal])
+
+        if lookup is not None:
+            keys = pd.MultiIndex.from_arrays([np.full(n, symbol), dates])
+            matched = lookup.reindex(keys)
+            gate_chunks["has_reading"].append(matched["p_trend"].notna().to_numpy())
+            for col in GATE_COLUMNS:
+                values = matched[col].to_numpy()
+                if col.startswith("pass_"):
+                    values = np.where(pd.isna(values), False, values).astype(bool)
+                gate_chunks[col].append(values)
 
     if not chunks["X"]:
-        raise RuntimeError("no windows survived; loosen the gate or widen the date range")
+        raise RuntimeError("no samples could be built; check the date range and window geometry")
 
-    X = np.concatenate(chunks["X"])
-    X = normalize_windows(X, cfg.features.normalize)
-    X = np.transpose(X, (0, 2, 1))
+    X = normalize_windows(np.concatenate(chunks["X"]), f.normalize)
+    date = np.concatenate(chunks["date"])
+    order = np.argsort(date, kind="stable")
 
-    encoding = getattr(cfg.features, "encoding", "1d")
-    if encoding == "gaf":
-        X = np.stack([gaf_encode(sample) for sample in X])
-    elif encoding == "mtf":
-        X = np.stack([mtf_encode(sample) for sample in X])
-    elif encoding != "1d":
-        raise ValueError(f"unknown encoding '{encoding}'")
-
-    order = np.argsort(np.concatenate(chunks["date"]), kind="stable")
-    return {
-        "X": X[order].astype(np.float32),
-        "y": np.concatenate(chunks["y"])[order],
-        "ret": np.concatenate(chunks["ret"])[order],
-        "date": np.concatenate(chunks["date"])[order],
-        "symbol": np.concatenate(chunks["symbol"])[order],
-    }
+    data = {"X": np.transpose(X, (0, 2, 1)).astype(np.float32)[order]}
+    for key in ("y", "ret", "date", "symbol", "day_return", "window_return", "bar_index"):
+        data[key] = np.concatenate(chunks[key])[order]
+    if lookup is not None:
+        for key, parts in gate_chunks.items():
+            data[key] = np.concatenate(parts)[order]
+    return data
 
 
 def walk_forward_splits(dates: np.ndarray, cfg) -> list[dict[str, np.ndarray]]:
@@ -99,6 +97,8 @@ def walk_forward_splits(dates: np.ndarray, cfg) -> list[dict[str, np.ndarray]]:
 
     Splitting on dates rather than rows keeps every window from one session on
     the same side of a boundary, so no sample in test overlaps a sample in train.
+    With step_days equal to test_days the test periods tile the history without
+    overlapping, so every test day is scored exactly once.
     """
     unique = np.unique(dates)
     tr, va, te, step = cfg.train_days, cfg.val_days, cfg.test_days, cfg.step_days

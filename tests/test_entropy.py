@@ -119,3 +119,59 @@ def test_multiscale_returns_one_value_per_scale():
 def test_embedding_rejects_series_shorter_than_the_embedding():
     with pytest.raises(ValueError, match="too short"):
         embed(np.arange(3.0), m=5, tau=2)
+
+
+# ---------------------------------------------------------------- surrogate test
+
+from src.entropy import batched_pattern_distributions, monotone_codes, surrogate_test, _row_entropy
+
+
+def _ar(phi, n=390, seed=0):
+    rng = np.random.default_rng(seed)
+    e = rng.standard_t(4, n)
+    r = np.zeros(n)
+    for i in range(1, n):
+        r[i] = phi * r[i - 1] + e[i]
+    return r
+
+
+def test_batched_distributions_match_the_single_series_version():
+    x = RNG.normal(size=500)
+    u, w = batched_pattern_distributions(x[None, :], 4, 1)
+    assert _row_entropy(u, 4)[0] == pytest.approx(permutation_entropy(x, 4, weighted=False))
+    assert _row_entropy(w, 4)[0] == pytest.approx(permutation_entropy(x, 4, weighted=True))
+
+
+def test_monotone_codes_are_the_sorted_patterns():
+    up, down = monotone_codes(4)
+    codes_up, _ = ordinal_patterns(np.arange(10.0), m=4)
+    codes_down, _ = ordinal_patterns(-np.arange(10.0), m=4)
+    assert set(codes_up) == {up} and set(codes_down) == {down}
+
+
+def test_fat_tails_fool_raw_weighted_entropy_but_not_the_shuffle_test():
+    """The reason the gate compares against shuffles at all."""
+    rng = np.random.default_rng(4)
+    raw, passed = [], 0
+    for _ in range(200):
+        x = rng.standard_t(3, 390)
+        r = surrogate_test(x, n_surrogates=99, rng=rng)
+        raw.append(r["pe_weighted"])
+        passed += r["p_weighted"] <= 0.05
+    assert np.percentile(raw, 5) < 0.93
+    assert passed / 200 < 0.10
+
+
+def test_trend_statistic_separates_persistence_from_zigzags():
+    trend = surrogate_test(_ar(+0.4, seed=1), n_surrogates=99)
+    zigzag = surrogate_test(_ar(-0.4, seed=2), n_surrogates=99)
+    assert trend["p_trend"] <= 0.05 and trend["monotone_excess"] > 0
+    assert zigzag["p_trend"] > 0.2
+    assert zigzag["p_unweighted"] <= 0.05
+
+
+def test_surrogate_p_values_are_valid_probabilities():
+    r = surrogate_test(RNG.normal(size=390), n_surrogates=19)
+    for key in ("p_unweighted", "p_weighted", "p_trend"):
+        assert 1 / 20 <= r[key] <= 1.0
+    assert 0 <= r["complexity"] <= 1

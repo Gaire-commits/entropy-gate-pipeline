@@ -1,4 +1,4 @@
-"""Causal windowing and encoders that turn OHLCV bars into model input.
+"""Causal windowing, normalization, and encoders that turn bars into model input.
 
 Every function here is strictly backward-looking. The one place lookahead can
 enter a price model is the boundary between a feature window and its label, so
@@ -27,6 +27,11 @@ def _log_return(df: pd.DataFrame) -> np.ndarray:
     return np.log(df["close"] / df["close"].shift(1)).to_numpy()
 
 
+@_channel("session_return")
+def _session_return(df: pd.DataFrame) -> np.ndarray:
+    return session_return(df)
+
+
 @_channel("hl_range")
 def _hl_range(df: pd.DataFrame) -> np.ndarray:
     return ((df["high"] - df["low"]) / df["close"]).to_numpy()
@@ -52,6 +57,17 @@ def _signed_volume(df: pd.DataFrame) -> np.ndarray:
     return (direction * np.log1p(v)).to_numpy()
 
 
+def session_return(df: pd.DataFrame) -> np.ndarray:
+    """Log return from the previous session's last close to each bar's close.
+
+    Includes the overnight gap. At 10:00 this is the first-half-hour return
+    that intraday momentum studies condition on.
+    """
+    sessions = df["session_id"]
+    prev_close = df["close"].groupby(sessions).last().shift(1)
+    return np.log(df["close"] / sessions.map(prev_close)).to_numpy()
+
+
 def build_channels(df: pd.DataFrame, channels: list[str]) -> np.ndarray:
     """Stack named channels into (n_bars, n_channels). Warm-up rows hold NaN."""
     missing = set(channels) - CHANNEL_BUILDERS.keys()
@@ -67,7 +83,7 @@ def make_windows(
     horizon: int,
     embargo: int,
     session_id: np.ndarray | None = None,
-    deadzone: float = 0.0,
+    stride: int = 1,
     allow_overnight: bool = False,
 ) -> dict[str, np.ndarray]:
     """Cut causal (X, y) pairs.
@@ -79,46 +95,59 @@ def make_windows(
     With `session_id` and `allow_overnight=False`, the whole span from first
     feature bar to exit must sit inside one session. Checking the window and the
     trade separately is not enough: that admits samples whose features come from
-    one day and whose fill comes from the next, which is an overnight strategy
-    priced as if it were intraday.
+    one day and whose fill comes from the next.
+
+    `stride` counts from each session's first bar. Setting it to `horizon` makes
+    consecutive holds on the same day back-to-back instead of overlapping, so
+    each sample is a separate trade rather than a near-copy of its neighbour.
+
+    No sample is dropped for having a small label. Filtering on the size of a
+    future move is fine for choosing what to train on and lookahead for choosing
+    what to test on, so that decision belongs to the caller.
     """
     n_bars, n_ch = features.shape
-    X, y, ret, idx = [], [], [], []
+    X, y, ret, idx, win_ret = [], [], [], [], []
 
-    if session_id is not None and not allow_overnight:
-        span = window + embargo + horizon
-        _, counts = np.unique(session_id, return_counts=True)
-        if span > counts.max():
-            raise ValueError(
-                f"window({window}) + embargo({embargo}) + horizon({horizon}) = {span} bars "
-                f"exceeds the longest session ({counts.max()} bars); no intraday sample can fit. "
-                "Shorten the window/horizon or set allow_overnight=True."
-            )
+    if session_id is not None:
+        starts = np.r_[0, np.flatnonzero(np.diff(session_id)) + 1]
+        offset = np.arange(n_bars) - np.repeat(starts, np.diff(np.r_[starts, n_bars]))
+        if not allow_overnight:
+            span = window + embargo + horizon
+            longest = np.diff(np.r_[starts, n_bars]).max()
+            if span > longest:
+                raise ValueError(
+                    f"window({window}) + embargo({embargo}) + horizon({horizon}) = {span} bars "
+                    f"exceeds the longest session ({longest} bars); no intraday sample can fit. "
+                    "Shorten the window/horizon or set allow_overnight=True."
+                )
+    else:
+        offset = np.arange(n_bars)
 
     last_start = n_bars - window - embargo - horizon
     for t in range(max(0, last_start + 1)):
+        if offset[t] % stride:
+            continue
         w_end = t + window - 1
         entry = w_end + embargo
         exit_ = entry + horizon
-        if exit_ >= n_bars:
-            break
 
-        block = features[t : w_end + 1]
-        if not np.isfinite(block).all():
-            continue
         if session_id is not None and not allow_overnight and session_id[t] != session_id[exit_]:
             continue
         if session_id is not None and allow_overnight and session_id[t] != session_id[w_end]:
             continue
+        block = features[t : w_end + 1]
+        if not np.isfinite(block).all():
+            continue
 
         fwd = float(np.log(close[exit_] / close[entry]))
-        if not np.isfinite(fwd) or abs(fwd) < deadzone:
+        if not np.isfinite(fwd):
             continue
 
         X.append(block)
         ret.append(fwd)
         y.append(1 if fwd > 0 else 0)
         idx.append(w_end)
+        win_ret.append(float(np.log(close[w_end] / close[t - 1])) if t >= 1 else np.nan)
 
     if not X:
         return {
@@ -126,40 +155,60 @@ def make_windows(
             "y": np.empty(0, dtype=np.int64),
             "ret": np.empty(0),
             "signal_bar": np.empty(0, dtype=np.int64),
+            "window_return": np.empty(0),
         }
     return {
         "X": np.stack(X),
         "y": np.asarray(y, dtype=np.int64),
         "ret": np.asarray(ret),
         "signal_bar": np.asarray(idx, dtype=np.int64),
+        "window_return": np.asarray(win_ret),
     }
 
 
-def normalize_windows(X: np.ndarray, mode: str = "window_zscore") -> np.ndarray:
-    """Scale each window using only that window's own statistics.
+def normalize_windows(X: np.ndarray, mode: str) -> np.ndarray:
+    """Per-window scaling for (n, window, channels) arrays.
 
-    Global or training-set scaling would leak distributional information across
-    the walk-forward boundary; per-window scaling cannot.
+    `window_zscore` subtracts each window's mean, which zeroes the cumulative
+    return of every sample -- the model can no longer see whether price went up
+    or down over the window. It is kept only to reproduce earlier runs.
+    `window_scale` divides by the window's spread and keeps the mean.
     """
-    if mode == "none":
+    if mode in ("none", "fold_standardize"):
         return X
     if mode == "window_zscore":
         mu = X.mean(axis=1, keepdims=True)
         sd = X.std(axis=1, keepdims=True)
         return (X - mu) / np.where(sd > 0, sd, 1.0)
-    if mode == "window_minmax":
-        lo = X.min(axis=1, keepdims=True)
-        hi = X.max(axis=1, keepdims=True)
-        span = hi - lo
-        return 2 * (X - lo) / np.where(span > 0, span, 1.0) - 1
+    if mode == "window_scale":
+        sd = X.std(axis=1, keepdims=True)
+        return X / np.where(sd > 0, sd, 1.0)
     raise ValueError(f"unknown normalize mode: {mode}")
+
+
+def fit_standardizer(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Per-channel mean and spread from training samples, for (n, channels, length) arrays.
+
+    Fit on the training fold only. The statistics then carry the training
+    period's scale into validation and test, which is information the model
+    would really have had at that point.
+    """
+    mu = X.mean(axis=(0, 2), keepdims=True)
+    sd = X.std(axis=(0, 2), keepdims=True)
+    return mu, np.where(sd > 0, sd, 1.0)
+
+
+def apply_standardizer(X: np.ndarray, stats: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
+    mu, sd = stats
+    return ((X - mu) / sd).astype(np.float32)
 
 
 def gaf_encode(x: np.ndarray, kind: str = "summation") -> np.ndarray:
     """Gramian Angular Field: (n, L) series -> (n, L, L) image.
 
-    Encodes temporal correlation as 2-D spatial structure, which is the actual
-    justification for putting an image architecture like ResNet-2D on a series.
+    Every row is min-max rescaled first, so absolute level is lost; feed it a
+    cumulative path (session_return) rather than raw returns if the direction
+    of travel should survive into the image.
     """
     x = np.atleast_2d(x)
     lo = x.min(axis=1, keepdims=True)

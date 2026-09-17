@@ -1,6 +1,13 @@
 """Model zoo for the feature-extraction experiment.
 
 All models take (batch, channels, length) and return logits over 2 classes.
+ResNet2D builds its Gramian Angular Field images inside the forward pass, so it
+consumes the same sequences as everything else and the image stack never has to
+exist in memory for the whole dataset at once.
+
+Global pooling is a plain mean rather than adaptive pooling: the adaptive
+pooling backward pass has no deterministic GPU implementation, and a model
+whose results move between identical runs cannot be compared to its neighbours.
 
 The lineup is deliberately a ladder, not a pile: a linear model that uses no
 representation learning at all, then three architectures of increasing
@@ -12,6 +19,27 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+
+
+class GlobalAvgPool(nn.Module):
+    """Mean over every dimension after (batch, channels)."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.flatten(2).mean(dim=2)
+
+
+def _head(c_in: int, n_classes: int, dropout: float) -> nn.Sequential:
+    return nn.Sequential(GlobalAvgPool(), nn.Dropout(dropout), nn.Linear(c_in, n_classes))
+
+
+def gaf_images(x: torch.Tensor) -> torch.Tensor:
+    """(batch, channels, L) -> (batch, channels, L, L) summation GAF, per window and channel."""
+    lo = x.amin(dim=2, keepdim=True)
+    hi = x.amax(dim=2, keepdim=True)
+    span = torch.where(hi - lo > 0, hi - lo, torch.ones_like(hi))
+    s = torch.clamp(2 * (x - lo) / span - 1, -1.0, 1.0)
+    c = torch.sqrt(torch.clamp(1 - s**2, min=0.0))
+    return s.unsqueeze(3) * s.unsqueeze(2) - c.unsqueeze(3) * c.unsqueeze(2)
 
 
 class LogisticBaseline(nn.Module):
@@ -39,6 +67,11 @@ class CNN1D(nn.Module):
         **_,
     ):
         super().__init__()
+        if length < 2 ** len(channels):
+            raise ValueError(
+                f"cnn1d halves the sequence {len(channels)} times and needs length >= "
+                f"{2 ** len(channels)}; got {length}"
+            )
         layers, c_in = [], in_channels
         for c_out in channels:
             layers += [
@@ -49,9 +82,7 @@ class CNN1D(nn.Module):
             ]
             c_in = c_out
         self.body = nn.Sequential(*layers)
-        self.head = nn.Sequential(
-            nn.AdaptiveAvgPool1d(1), nn.Flatten(), nn.Dropout(dropout), nn.Linear(c_in, n_classes)
-        )
+        self.head = _head(c_in, n_classes, dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.head(self.body(x))
@@ -95,9 +126,7 @@ class ResNet1D(nn.Module):
             blocks.append(_ResidualBlock1D(c_in, f))
             c_in = f
         self.body = nn.Sequential(*blocks)
-        self.head = nn.Sequential(
-            nn.AdaptiveAvgPool1d(1), nn.Flatten(), nn.Dropout(dropout), nn.Linear(c_in, n_classes)
-        )
+        self.head = _head(c_in, n_classes, dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.head(self.body(x))
@@ -158,9 +187,7 @@ class InceptionTime(nn.Module):
                 )
             c_in = out_ch
         self.act = nn.ReLU()
-        self.head = nn.Sequential(
-            nn.AdaptiveAvgPool1d(1), nn.Flatten(), nn.Dropout(dropout), nn.Linear(out_ch, n_classes)
-        )
+        self.head = _head(out_ch, n_classes, dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         res = x
@@ -199,7 +226,7 @@ class _ResidualBlock2D(nn.Module):
 
 
 class ResNet2D(nn.Module):
-    """ResNet over GAF/MTF images: (batch, channels, L, L).
+    """ResNet over Gramian Angular Field images built from the input sequences.
 
     Deliberately a structural twin of ResNet1D -- same three residual stages,
     same 64/128/128 filter progression -- so a difference in results reads as
@@ -224,12 +251,10 @@ class ResNet2D(nn.Module):
             blocks.append(_ResidualBlock2D(c_in, f, stride=1 if i == 0 else 2))
             c_in = f
         self.body = nn.Sequential(*blocks)
-        self.head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Dropout(dropout), nn.Linear(c_in, n_classes)
-        )
+        self.head = _head(c_in, n_classes, dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.head(self.body(x))
+        return self.head(self.body(gaf_images(x)))
 
 
 ARCHITECTURES = {
@@ -239,14 +264,6 @@ ARCHITECTURES = {
     "inceptiontime": InceptionTime,
     "resnet2d": ResNet2D,
 }
-
-IMAGE_ARCHITECTURES = {"resnet2d"}
-
-
-def expects_images(arch: str) -> bool:
-    """True for architectures that consume GAF/MTF encodings rather than sequences."""
-    return arch in IMAGE_ARCHITECTURES
-
 
 def build_model(arch: str, in_channels: int, length: int, **kwargs) -> nn.Module:
     if arch not in ARCHITECTURES:

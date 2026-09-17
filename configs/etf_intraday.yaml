@@ -1,0 +1,60 @@
+# SPY + the 11 Select Sector SPDRs, 4-hour window -> 1-hour hold.
+# Every stage reads from here so experiments differ by config, not by edited code.
+experiment: etf_intraday
+
+data:
+  # XLC starts trading in June 2018; earlier years simply come back empty for it.
+  universe: [SPY, XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY]
+  start: "2016-01-01"
+  end: "2026-06-30"
+  timeframe: "5Min"
+  feed: "iex"             # free tier
+  adjustment: "split"     # traded prices, so tick-size checks see real cents
+  cache_dir: "data/bars"
+
+screening:
+  embedding_dim: 4
+  delay: 1
+  window: 390             # 5 sessions of 5-min bars
+  series: "log_return"
+  n_surrogates: 99        # shuffled copies per reading; p-values resolve to 0.01
+  min_bars_required: 300
+  gate_statistic: "trend" # trend | entropy | entropy_weighted
+  alpha: 0.05
+  max_tie_fraction: 0.5
+  min_ticks_per_bar: 6    # below ~6 cents a bar, rounding alone creates zig-zags
+  seed: 0
+
+features:
+  # window + embargo + horizon must fit inside one 78-bar session.
+  window: 48              # 4h of history
+  embargo: 1              # execution lag: you cannot trade the bar you just read
+  horizon: 12             # 1h hold
+  stride: 12              # consecutive holds back-to-back, not overlapping
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"   # stats from the training fold only; keeps the trend visible
+  label_deadzone: 0.0005  # training skips moves under 5 bps; the test set never does
+
+model:
+  epochs: 30
+  patience: 5
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+
+validation:
+  train_days: 504         # ~2 years
+  val_days: 63
+  test_days: 63           # one quarter, retrained every quarter
+  step_days: 63
+
+sweep:
+  archs: [always_up, momentum_day, momentum_window, logreg, cnn1d, resnet1d, inceptiontime, resnet2d]
+  seeds: [0, 1, 2]
+
+evaluation:
+  cost_bps: [0, 1, 2, 5]  # round trip; sector ETFs cross roughly 1-3 bps of spread
+  headline_cost_bps: 2
+  bootstrap: 2000

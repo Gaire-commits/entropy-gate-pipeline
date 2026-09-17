@@ -1,0 +1,63 @@
+# All 12 ETFs: does the first half-hour's return (from yesterday's close) predict the
+# last half-hour? The published intraday momentum result (Gao et al. 2018), used
+# here as a real-data check that the pipeline can find a known effect.
+experiment: etf_gao
+
+data:
+  universe: [SPY, XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY]
+  start: "2016-01-01"
+  end: "2026-06-30"
+  timeframe: "5Min"
+  feed: "iex"
+  adjustment: "split"
+  cache_dir: "data/bars"
+
+screening:
+  embedding_dim: 4
+  delay: 1
+  window: 390
+  series: "log_return"
+  n_surrogates: 99
+  min_bars_required: 300
+  gate_statistic: "trend"
+  alpha: 0.05
+  max_tie_fraction: 0.5
+  min_ticks_per_bar: 6
+  seed: 0
+
+features:
+  # Bars 0-5 (9:30-10:00) are the signal; entry at the 15:30 close, exit at 16:00.
+  # 6 + 66 + 6 = 78: exactly one sample per full trading day. Early-close days
+  # have no last half-hour and produce none.
+  window: 6
+  embargo: 66
+  horizon: 6
+  stride: 1
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"
+  label_deadzone: 0.0
+
+model:
+  epochs: 50
+  patience: 8
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+
+validation:
+  train_days: 504
+  val_days: 63
+  test_days: 63
+  step_days: 63
+
+sweep:
+  # cnn1d halves the sequence three times and cannot run on a 6-bar window.
+  archs: [always_up, momentum_day, logreg, resnet1d]
+  seeds: [0, 1, 2]
+
+evaluation:
+  cost_bps: [0, 1, 2, 5]
+  headline_cost_bps: 2
+  bootstrap: 2000
