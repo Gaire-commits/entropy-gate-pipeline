@@ -18,7 +18,7 @@ from .dataset import GATE_COLUMNS
 from .features import apply_standardizer, fit_standardizer
 from .models import count_parameters
 from .screening import GATE_STATISTICS
-from .stats import compare_subsets, summarize
+from .stats import compare_subsets, coverage_eligible, coverage_mask, summarize
 
 KEY = ["fold", "date", "symbol", "bar_index"]
 
@@ -117,14 +117,19 @@ def ensemble(pred: pd.DataFrame) -> pd.DataFrame:
     return pred.groupby(KEY, as_index=False).agg(agg)
 
 
-def report(pred: pd.DataFrame, cfg) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Overall performance per arch, and the gate comparison (Q1) per arch and gate statistic."""
+def report(pred: pd.DataFrame, cfg) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Three tables: overall performance, the gate comparison (Q1), and confidence filtering.
+
+    All three read the same saved predictions, so none of them needs retraining.
+    """
     ev = cfg.evaluation
     folds_by_arch = pred.groupby("arch")["fold"].nunique()
     common_folds = set.intersection(*(set(g["fold"].unique()) for _, g in pred.groupby("arch")))
     pred = pred[pred["fold"].isin(common_folds)]
 
-    overall, gate = [], []
+    overall, gate, confidence = [], [], []
+    per_symbol = pred["symbol"].nunique() > 1
+    levels = getattr(ev, "coverage_levels", [1.0])
     for arch, group in pred.groupby("arch", sort=False):
         per_seed = [summarize(g, n_boot=1, seed=0) for _, g in group.groupby("seed")]
         combined = ensemble(group)
@@ -152,20 +157,46 @@ def report(pred: pd.DataFrame, cfg) -> tuple[pd.DataFrame, pd.DataFrame]:
 
         if "has_reading" in combined.columns:
             for stat in GATE_STATISTICS:
-                cmp = compare_subsets(combined, combined[f"pass_{stat}"].to_numpy(bool), n_boot=ev.bootstrap)
-                gate.append({"arch": arch, "gate": stat, **cmp})
+                mask = combined[f"pass_{stat}"].to_numpy(bool)
+                row = {"arch": arch, "gate": stat, **compare_subsets(combined, mask, n_boot=ev.bootstrap)}
+                if per_symbol:
+                    within = compare_subsets(combined, mask, n_boot=ev.bootstrap, demean_by="symbol")
+                    row |= {
+                        "within_diff_bps": within["diff_bps"],
+                        "within_diff_lo": within["diff_bps_lo"],
+                        "within_diff_hi": within["diff_bps_hi"],
+                    }
+                gate.append(row)
+
+        eligible = coverage_eligible(combined)
+        for level in levels:
+            keep = coverage_mask(combined, level)
+            if not keep.any():
+                continue
+            c = summarize(combined[keep], n_boot=ev.bootstrap)
+            confidence.append({
+                "arch": arch,
+                "coverage_target": level,
+                "coverage_actual": float(keep.sum() / max(int(eligible.sum()), 1)),
+                "trades": c["n_trades"],
+                "accuracy": c["accuracy"],
+                "gross_bps": c["gross_bps"],
+                "gross_bps_lo": c["gross_bps_lo"],
+                "gross_bps_hi": c["gross_bps_hi"],
+                "net_bps": c["gross_bps"] - ev.headline_cost_bps,
+            })
 
     skipped = folds_by_arch[folds_by_arch > len(common_folds)]
     if len(skipped):
         print(f"note: scoring only the {len(common_folds)} folds every arch has finished")
-    return pd.DataFrame(overall), pd.DataFrame(gate)
+    return pd.DataFrame(overall), pd.DataFrame(gate), pd.DataFrame(confidence)
 
 
 def _fmt(v, spec):
     return "—" if v is None or (isinstance(v, float) and not np.isfinite(v)) else format(v, spec)
 
 
-def markdown(overall: pd.DataFrame, gate: pd.DataFrame, cfg) -> str:
+def markdown(overall: pd.DataFrame, gate: pd.DataFrame, confidence: pd.DataFrame, cfg) -> str:
     headline = cfg.evaluation.headline_cost_bps
     lines = [
         f"# {cfg.experiment}",
@@ -185,19 +216,59 @@ def markdown(overall: pd.DataFrame, gate: pd.DataFrame, cfg) -> str:
             f"| {'no edge' if not np.isfinite(r['breakeven_cost_bps']) else format(r['breakeven_cost_bps'], '.2f')} |"
         )
     if len(gate):
+        within = "within_diff_bps" in gate.columns
         lines += [
             "",
             "## Q1: does the gate pick better days?",
             "",
             "Same predictions, split by whether the gate approved the day. Under pure noise about 5% of days pass.",
             "",
-            "| model | gate | days approved | gross bps approved | gross bps rest | difference [95% CI] |",
-            "|---|---|---:|---:|---:|---|",
         ]
+        if within:
+            lines += [
+                "The last column repeats the comparison after subtracting each ETF's own average, since the gate "
+                "refuses whole ETFs that move only a few cents a bar; without it the split partly compares "
+                "expensive ETFs against cheap ones.",
+                "",
+                "| model | gate | days approved | gross bps approved | gross bps rest | difference [95% CI] | within ETF [95% CI] |",
+                "|---|---|---:|---:|---:|---|---|",
+            ]
+        else:
+            lines += [
+                "| model | gate | days approved | gross bps approved | gross bps rest | difference [95% CI] |",
+                "|---|---|---:|---:|---:|---|",
+            ]
         for _, r in gate.iterrows():
-            lines.append(
+            line = (
                 f"| {r['arch']} | {r['gate']} | {r['share_in']:.1%} | {_fmt(r['gross_bps_in'], '+.2f')} "
                 f"| {_fmt(r['gross_bps_out'], '+.2f')} | {_fmt(r['diff_bps'], '+.2f')} "
                 f"[{_fmt(r['diff_bps_lo'], '+.2f')}, {_fmt(r['diff_bps_hi'], '+.2f')}] |"
+            )
+            if within:
+                line += (
+                    f" {_fmt(r['within_diff_bps'], '+.2f')} "
+                    f"[{_fmt(r['within_diff_lo'], '+.2f')}, {_fmt(r['within_diff_hi'], '+.2f')}] |"
+                )
+            lines.append(line)
+
+    if len(confidence):
+        lines += [
+            "",
+            "## Does trading only confident predictions help?",
+            "",
+            "Each fold's confidence cutoff comes from earlier folds only, so nothing here uses the future. "
+            "Early folds without enough history to set a cutoff are dropped at every level, so the levels stay "
+            "comparable. A cut can only land where confidences differ, so rules whose probabilities are always "
+            "0 or 1 keep every trade; the realized share is shown next to the target.",
+            "",
+            f"| model | target | actual | trades | accuracy | gross bps/trade [95% CI] | net @ {headline} bps |",
+            "|---|---:|---:|---:|---:|---|---:|",
+        ]
+        for _, r in confidence.iterrows():
+            lines.append(
+                f"| {r['arch']} | {r['coverage_target']:.0%} | {r['coverage_actual']:.0%} | {int(r['trades']):,} "
+                f"| {_fmt(r['accuracy'], '.3f')} | {_fmt(r['gross_bps'], '+.2f')} "
+                f"[{_fmt(r['gross_bps_lo'], '+.2f')}, {_fmt(r['gross_bps_hi'], '+.2f')}] "
+                f"| {_fmt(r['net_bps'], '+.2f')} |"
             )
     return "\n".join(lines) + "\n"

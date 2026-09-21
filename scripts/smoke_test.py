@@ -109,8 +109,8 @@ def main() -> int:
         for arch in ["always_up", "momentum_day", "logreg"]:
             run_arch(data, folds, arch, 0, gao, Path(tmp), log=lambda _: None)
         rerun = run_arch(data, folds, "logreg", 0, gao, Path(tmp), log=lambda _: None)
-        overall, gate = report(load_predictions(Path(tmp)), gao)
-        text = markdown(overall, gate, gao)
+        overall, gate, confidence = report(load_predictions(Path(tmp)), gao)
+        text = markdown(overall, gate, confidence, gao)
     results.append(check("interrupted sweeps resume instead of retraining", rerun == 0, f"{rerun} folds re-run"))
     results.append(check("report has every model and a Q1 table", len(overall) == 3 and len(gate) == 9,
                          f"{len(overall)} models, {len(gate)} gate rows"))

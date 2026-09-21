@@ -44,6 +44,13 @@ Each run answers the research questions from the same predictions:
 | Q4 | Does an image view of the window help? | ResNet2D (Gramian Angular Field images) vs. ResNet1D, same stages and filters |
 | Q5 | Does any edge survive costs? | net return at each cost level, and the breakeven cost |
 
+Two further checks come free with the same predictions, no retraining:
+
+- **Confidence filtering**: results using only the most confident predictions (`evaluation.coverage_levels`).
+  Each fold's cutoff comes from earlier folds only, so nothing uses the future.
+- **Within-ETF gate comparison**: the Q1 difference after subtracting each ETF's own average. The gate refuses
+  whole ETFs that move only a few cents a bar, so the raw split partly compares expensive ETFs against cheap ones.
+
 ## How the gate works
 
 Each evening, for every ETF, the gate takes the last 5 sessions of 5-minute log

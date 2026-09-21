@@ -28,10 +28,11 @@ def main() -> int:
         print(f"no predictions under {out / 'predictions'} — run scripts/sweep.py first")
         return 1
 
-    overall, gate = report(pred, cfg)
+    overall, gate, confidence = report(pred, cfg)
     overall.to_csv(out / "overall.csv", index=False)
     gate.to_csv(out / "gate.csv", index=False)
-    text = markdown(overall, gate, cfg)
+    confidence.to_csv(out / "confidence.csv", index=False)
+    text = markdown(overall, gate, confidence, cfg)
     (out / "summary.md").write_text(text)
     print(text)
     return 0

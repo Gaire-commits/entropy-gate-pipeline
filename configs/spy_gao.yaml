@@ -63,3 +63,5 @@ evaluation:
   cost_bps: [0, 0.5, 1, 2]   # SPY's 1-cent spread is about 0.2 bps
   headline_cost_bps: 1
   bootstrap: 2000
+  # re-score using only the most confident predictions; 1.0 keeps everything
+  coverage_levels: [1.0, 0.5, 0.2, 0.1]
