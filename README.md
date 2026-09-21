@@ -20,7 +20,7 @@ cp .env.example .env                 # add your Alpaca keys
 python -m pytest tests/ -q           # no credentials needed
 python scripts/smoke_test.py         # synthetic data with planted signals
 
-python scripts/fetch_data.py         # SPY + 11 sector ETFs, 5-min bars from 2016
+python scripts/fetch_data.py         # SPY + 11 sector ETFs, 5-min bars; reruns only add new days
 CONFIG=configs/spy_gao.yaml
 python scripts/run_screen.py --config $CONFIG
 python scripts/sweep.py      --config $CONFIG
@@ -111,6 +111,11 @@ trades as independent would make every interval several times too narrow.
 as noise; the test set keeps every sample, because which moves turn out small is
 only known afterwards.
 
+**Data tops up, it doesn't restart.** `end: "today"` in a config makes every fetch download only the days since the
+last cached one and merge them in. A session still in progress is dropped, so running mid-day never leaves a
+half day that looks like a complete one. Alpaca's free IEX history begins in late July 2020, so that is where
+the configs start. Downloaded data lives in `data/` (Google Drive on Colab) and is never committed.
+
 **Time is fixed to the clock.** IEX only prints a bar when a trade happens on IEX.
 Missing bars are restored as gaps on a fixed 5-minute grid, so "the last half-hour"
 always means 3:30–4:00 and a gap drops the affected window instead of shifting it.
@@ -124,7 +129,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, and report (79 unit tests plus
+Built and tested: data, gate, features, models, sweep, and report (92 unit tests plus
 the smoke test). Not yet run on real data in this form. The live path (IBKR
 execution, risk firewall) and the RL sizing layer are designed, not built.
 

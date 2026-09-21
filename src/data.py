@@ -54,6 +54,37 @@ def get_client():
     return StockHistoricalDataClient(key, secret)
 
 
+def resolve_end(end) -> pd.Timestamp:
+    """Exclusive upper bound for a download, from a config `end` value.
+
+    An explicit date is inclusive: "2026-09-21" includes that whole session.
+    "today" runs up to the current moment, so a run after the close picks the
+    session up. "yesterday" stops at this midnight and never touches a session
+    still in progress.
+    """
+    text = str(end).strip().lower()
+    now = pd.Timestamp.now(tz=EASTERN).tz_localize(None)
+    if text in ("today", "now"):
+        return now
+    if text == "yesterday":
+        return now.normalize()
+    return pd.Timestamp(end).normalize() + pd.Timedelta(days=1)
+
+
+def is_rolling_end(end) -> bool:
+    return str(end).strip().lower() in ("today", "now", "yesterday")
+
+
+def merge_bars(existing: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
+    """Append newly downloaded bars to cached ones, newest copy winning on overlap."""
+    if existing is None or existing.empty:
+        return new
+    if new is None or new.empty:
+        return existing
+    combined = pd.concat([existing, new]).sort_index()
+    return combined[~combined.index.duplicated(keep="last")]
+
+
 def bar_minutes(spec: str) -> int:
     """'5Min' -> 5. Intraday grids only make sense for minute bars."""
     digits = "".join(c for c in spec if c.isdigit()) or "1"
@@ -142,6 +173,11 @@ def to_session_grid(df: pd.DataFrame, minutes: int = 5) -> pd.DataFrame:
     Adds `session_id` and `bar_index` (0 = the 09:30 bar). A day whose last
     observed bar starts before 13:00 is treated as an early close; every real
     early close on the US calendar ends at 13:00.
+
+    A final session still in progress is dropped. Downloading at 11am would
+    otherwise leave a half day that looks like a complete one, and "the last
+    half-hour" would quietly mean 10:30. The cost is dropping a genuine early
+    close when it happens to be the very last day in the file.
     """
     if df.empty:
         return df
@@ -151,6 +187,12 @@ def to_session_grid(df: pd.DataFrame, minutes: int = 5) -> pd.DataFrame:
 
     days = naive.normalize()
     last_bar = pd.Series(naive, index=naive).groupby(days).max()
+    if (last_bar.iloc[-1] - last_bar.index[-1]) < pd.Timedelta(hours=15, minutes=30):
+        keep_rows = np.asarray(days < last_bar.index[-1])
+        df, naive = df[keep_rows], naive[keep_rows]
+        last_bar = last_bar.iloc[:-1]
+        if last_bar.empty:
+            return df
     early = (last_bar - last_bar.index) < EARLY_CLOSE
 
     step = pd.Timedelta(minutes=minutes)
@@ -179,33 +221,53 @@ def _meta_path(cache_dir: str | Path, symbol: str, timeframe: str) -> Path:
     return cache_path(cache_dir, symbol, timeframe).with_suffix(".meta.json")
 
 
-def is_cached(cache_dir, symbol, timeframe, start, end, feed, adjustment) -> bool:
-    """True when a previous download already covers this request.
-
-    Coverage is judged from what was *requested*, not from the first bar
-    returned, so a fund that launched after `start` (XLC, 2018) does not get
-    re-downloaded on every run.
-    """
+def read_meta(cache_dir, symbol, timeframe) -> dict | None:
     meta = _meta_path(cache_dir, symbol, timeframe)
     if not meta.exists() or not cache_path(cache_dir, symbol, timeframe).exists():
-        return False
-    m = json.loads(meta.read_text())
-    return (
-        m.get("feed") == feed
-        and m.get("adjustment") == adjustment
-        and pd.Timestamp(m["start"]) <= pd.Timestamp(start)
-        and pd.Timestamp(m["end"]) >= pd.Timestamp(end)
-    )
+        return None
+    return json.loads(meta.read_text())
+
+
+def plan_fetch(cache_dir, symbol, timeframe, start, end, feed, adjustment) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """What to download for one symbol, or None when the cache already covers it.
+
+    Nothing cached, or cached with a different feed or adjustment: download the
+    whole range. Otherwise download only from the last cached day onward and
+    merge. The last cached day is fetched again because it may have been saved
+    while its session was still in progress. Coverage is judged from what was
+    requested, not from the first bar returned, so a fund that launched after
+    `start` does not get re-downloaded on every run.
+    """
+    stop = resolve_end(end)
+    m = read_meta(cache_dir, symbol, timeframe)
+    usable = m and m.get("feed") == feed and m.get("adjustment") == adjustment and pd.Timestamp(m["start"]) <= pd.Timestamp(start)
+    if not usable:
+        return pd.Timestamp(start), stop
+    if not is_rolling_end(end) and pd.Timestamp(m["end"]) >= stop:
+        return None
+    raw = pd.read_parquet(cache_path(cache_dir, symbol, timeframe))
+    last_day = raw.index.get_level_values("timestamp").max().tz_localize(None).normalize()
+    return last_day, stop
 
 
 def save_symbol(df, cache_dir, symbol, timeframe, start, end, feed, adjustment) -> Path:
+    """Save bars and record the range that was requested, keeping the earliest start ever covered."""
+    prior = read_meta(cache_dir, symbol, timeframe)
+    if prior and prior.get("feed") == feed and prior.get("adjustment") == adjustment:
+        start = min(pd.Timestamp(prior["start"]), pd.Timestamp(start))
     path = cache_path(cache_dir, symbol, timeframe)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path)
     _meta_path(cache_dir, symbol, timeframe).write_text(
-        json.dumps({"start": str(start), "end": str(end), "feed": feed, "adjustment": adjustment})
+        json.dumps({"start": str(pd.Timestamp(start)), "end": str(resolve_end(end)), "feed": feed, "adjustment": adjustment})
     )
     return path
+
+
+def load_raw(cache_dir: str | Path, symbol: str, timeframe: str) -> pd.DataFrame | None:
+    """Cached bars exactly as downloaded, before gridding."""
+    path = cache_path(cache_dir, symbol, timeframe)
+    return pd.read_parquet(path) if path.exists() else None
 
 
 def load_symbol(cache_dir: str | Path, symbol: str, timeframe: str) -> pd.DataFrame | None:

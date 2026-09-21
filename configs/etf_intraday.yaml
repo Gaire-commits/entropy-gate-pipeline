@@ -3,10 +3,13 @@
 experiment: etf_intraday
 
 data:
-  # XLC starts trading in June 2018; earlier years simply come back empty for it.
+  # XLC starts in 2018 and XLRE in 2015, both before the free history begins.
   universe: [SPY, XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY]
-  start: "2016-01-01"
-  end: "2026-06-30"
+  # Alpaca's free IEX history begins in late July 2020; earlier years come back empty.
+  start: "2020-07-01"
+  # "today" tops the cache up to now; a fixed date (inclusive) pins it. A session still
+  # in progress is dropped automatically, so running mid-day is safe.
+  end: "today"
   timeframe: "5Min"
   feed: "iex"             # free tier
   adjustment: "split"     # traded prices, so tick-size checks see real cents
