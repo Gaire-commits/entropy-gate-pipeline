@@ -75,6 +75,28 @@ judged by what happens on approved days rather than by how many there are.
 A reading computed at Monday's close applies to Tuesday, exactly as a nightly
 job would run live.
 
+## IBKR capture (local, optional)
+
+`notebooks/ibkr_capture.ipynb` records quotes, trades and order-book depth from a TWS paper account and turns
+the capture into the same 5-minute bars the pipeline reads. It runs on your Mac (TWS has to), not on Colab,
+and it only reads market data: nothing places an order.
+
+```bash
+pip install ibapi
+jupyter notebook notebooks/ibkr_capture.ipynb     # run it 09:30-16:00 ET on a weekday
+```
+
+Captures are written to `data/ibkr/` every 5 seconds. Bars are built from the quote **midpoint**, which does not
+bounce between bid and ask the way trade prices do, so it is a cleaner series than the Alpaca trade bars but not
+the same one: compare the two feeds on a shared day before trusting one to stand in for the other. The gate needs
+5 sessions of returns plus the one it scores, so the first reading takes 6 complete sessions of capture.
+
+Depth needs a separate paid subscription per exchange, and IBKR allows only a few depth streams at once.
+The first version of this recorder had three faults, all fixed in `src/ibkr_capture.py`: depth was requested as
+`SMART` with `isSmartDepth=False` (IB error 10092, so nothing was recorded), the `operation` column was not
+saved (so a deleted level looked like an updated one and the book could not be rebuilt), and the in-memory book
+stored levels in a dict although IB positions shift on every insert and delete.
+
 ## Layout
 
 | Path | Role |
@@ -90,6 +112,8 @@ job would run live.
 | `src/stats.py` | Trade scoring and day-block bootstrap intervals |
 | `src/experiment.py` | Resumable sweep and the results report |
 | `src/synthetic.py` | Bars with known structure for tests |
+| `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
+| `src/ibkr_capture.py` | TWS recorder for quotes, trades and depth |
 
 ## Design notes
 
@@ -129,7 +153,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, and report (92 unit tests plus
+Built and tested: data, gate, features, models, sweep, and report (115 unit tests plus
 the smoke test). Not yet run on real data in this form. The live path (IBKR
 execution, risk firewall) and the RL sizing layer are designed, not built.
 
