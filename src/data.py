@@ -85,6 +85,17 @@ def merge_bars(existing: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
     return combined[~combined.index.duplicated(keep="last")]
 
 
+def resolve_universe(spec) -> list[str]:
+    """A universe is either a literal list of symbols, or a path to a CSV built by
+    scripts/build_universe.py (a `symbol` column, plus name/sector/fetched_at)."""
+    if isinstance(spec, list):
+        return list(spec)
+    path = Path(spec)
+    if not path.exists():
+        raise FileNotFoundError(f"universe file not found: {path} (run scripts/build_universe.py first)")
+    return pd.read_csv(path)["symbol"].tolist()
+
+
 def bar_minutes(spec: str) -> int:
     """'5Min' -> 5. Intraday grids only make sense for minute bars."""
     digits = "".join(c for c in spec if c.isdigit()) or "1"

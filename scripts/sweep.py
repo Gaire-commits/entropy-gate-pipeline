@@ -16,7 +16,7 @@ from _common import DEFAULT_CONFIG, output_dir
 
 from src.baselines import is_rule
 from src.config import load_config
-from src.data import load_universe
+from src.data import load_universe, resolve_universe
 from src.dataset import build_dataset, walk_forward_splits
 from src.experiment import run_arch
 
@@ -33,7 +33,7 @@ def main() -> int:
     archs = args.archs or cfg.sweep.archs
     seeds = args.seeds if args.seeds is not None else cfg.sweep.seeds
 
-    bars = load_universe(cfg.data.cache_dir, cfg.data.universe, cfg.data.timeframe)
+    bars = load_universe(cfg.data.cache_dir, resolve_universe(cfg.data.universe), cfg.data.timeframe)
     if not bars:
         print(f"no cached bars in {cfg.data.cache_dir} — run scripts/fetch_data.py first")
         return 1

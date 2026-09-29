@@ -108,21 +108,45 @@ def screen_symbol(
     return pd.DataFrame(rows)
 
 
-def screen_universe(bars: dict[str, pd.DataFrame], cfg, progress=None) -> pd.DataFrame:
-    """Run the screen across every cached symbol."""
+def _screen_one(args: tuple) -> tuple[str, pd.DataFrame]:
+    symbol, df, cfg = args
+    table = screen_symbol(
+        df,
+        window=cfg.window,
+        m=cfg.embedding_dim,
+        tau=cfg.delay,
+        series=cfg.series,
+        n_surrogates=cfg.n_surrogates,
+        min_bars_required=cfg.min_bars_required,
+        seed=cfg.seed,
+        symbol=symbol,
+    )
+    return symbol, table
+
+
+def screen_universe(bars: dict[str, pd.DataFrame], cfg, progress=None, workers: int = 1) -> pd.DataFrame:
+    """Run the screen across every cached symbol.
+
+    Each symbol's reading depends only on its own history, so this parallelizes
+    trivially across processes. `workers=1` (the default) stays single-process,
+    which is what every test and the 12-symbol ETF universe use; a few hundred
+    symbols is where `workers` (e.g. `os.cpu_count()`) actually pays for itself.
+    """
     frames = []
-    for symbol, df in bars.items():
-        table = screen_symbol(
-            df,
-            window=cfg.window,
-            m=cfg.embedding_dim,
-            tau=cfg.delay,
-            series=cfg.series,
-            n_surrogates=cfg.n_surrogates,
-            min_bars_required=cfg.min_bars_required,
-            seed=cfg.seed,
-            symbol=symbol,
-        )
+    jobs = [(symbol, df, cfg) for symbol, df in bars.items()]
+
+    if workers <= 1:
+        results = (_screen_one(job) for job in jobs)
+    else:
+        import concurrent.futures as cf
+
+        def submit_and_wait():
+            with cf.ProcessPoolExecutor(max_workers=workers) as pool:
+                yield from pool.map(_screen_one, jobs)
+
+        results = submit_and_wait()
+
+    for symbol, table in results:
         if progress:
             progress(symbol, table)
         if table.empty:

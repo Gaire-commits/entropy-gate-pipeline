@@ -34,6 +34,8 @@ python scripts/summarize.py  --config $CONFIG   # -> outputs/spy_gao/summary.md
 | `configs/spy_gao.yaml` | SPY | first half-hour → last half-hour | Does the published intraday momentum effect (Gao et al. 2018) show up? A real-data check that the pipeline can find something known. |
 | `configs/etf_gao.yaml` | 12 ETFs | first half-hour → last half-hour | Does it hold across sectors? |
 | `configs/etf_intraday.yaml` | 12 ETFs | 4-hour window → 1-hour hold | Can learned features beat simple rules? |
+| `configs/etf_multihour.yaml` | 12 ETFs | 1-hour window → 2.5-hour hold | Same question at a horizon 5-minute bars fully support (no TAQ needed) |
+| `configs/sp500_multihour.yaml` | S&P 500 (~503 stocks) | 1-hour window → 2.5-hour hold | Does the gate find more structure in individual names than in diversified ETFs? |
 
 Each run answers the research questions from the same predictions:
 
@@ -50,6 +52,22 @@ Two further checks come free with the same predictions, no retraining:
   Each fold's cutoff comes from earlier folds only, so nothing uses the future.
 - **Within-ETF gate comparison**: the Q1 difference after subtracting each ETF's own average. The gate refuses
   whole ETFs that move only a few cents a bar, so the raw split partly compares expensive ETFs against cheap ones.
+
+## Larger universes
+
+A config's `universe` can be a list of symbols or a path to a CSV built by
+`scripts/build_universe.py`:
+
+```bash
+python scripts/build_universe.py --index sp500      # -> universe/sp500.csv (today's constituents)
+python scripts/fetch_data.py  --config configs/sp500_multihour.yaml --workers 4
+python scripts/run_screen.py  --config configs/sp500_multihour.yaml --workers 0   # 0 = all CPU cores
+```
+
+Each symbol's gate reading depends only on its own history, and its shuffles are
+seeded from its own name, so parallel screening gives exactly the sequential result
+(a test checks this). A universe built from today's constituents carries
+survivorship bias against historical data: names that left the index are missing.
 
 ## How the gate works
 
@@ -112,6 +130,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/stats.py` | Trade scoring and day-block bootstrap intervals |
 | `src/experiment.py` | Resumable sweep and the results report |
 | `src/synthetic.py` | Bars with known structure for tests |
+| `universe/` | Saved constituent lists for larger universes |
 | `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
 | `src/ibkr_capture.py` | TWS recorder for quotes, trades and depth |
 
@@ -153,7 +172,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, and report (115 unit tests plus
+Built and tested: data, gate, features, models, sweep, and report (119 unit tests plus
 the smoke test). Not yet run on real data in this form. The live path (IBKR
 execution, risk firewall) and the RL sizing layer are designed, not built.
 

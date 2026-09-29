@@ -134,3 +134,24 @@ def test_a_later_listing_is_not_redownloaded_on_every_run(tmp_path):
     """XLC's first bar is in 2018, but the request covered 2016."""
     _save(tmp_path, "2026-06-30", symbol="XLC")
     assert plan_fetch(tmp_path, "XLC", "5Min", "2016-01-01", "2026-06-30", "iex", "split") is None
+
+
+# ------------------------------------------------------------------ universe files
+
+from src.data import resolve_universe
+
+
+def test_a_literal_universe_list_passes_through_unchanged():
+    assert resolve_universe(["SPY", "XLK"]) == ["SPY", "XLK"]
+
+
+def test_a_universe_file_is_read_by_its_symbol_column(tmp_path):
+    path = tmp_path / "u.csv"
+    pd.DataFrame({"symbol": ["AAPL", "BRK.B", "MSFT"], "name": ["a", "b", "c"]}).to_csv(path, index=False)
+    assert resolve_universe(str(path)) == ["AAPL", "BRK.B", "MSFT"]
+
+
+def test_a_missing_universe_file_says_how_to_build_it(tmp_path):
+    import pytest
+    with pytest.raises(FileNotFoundError, match="build_universe"):
+        resolve_universe(str(tmp_path / "nope.csv"))

@@ -118,3 +118,14 @@ def test_stale_screen_table_is_rejected():
     df, table = _screen(ar_returns(SESSIONS, 0.0))
     with pytest.raises(ValueError, match="older version"):
         build_dataset({"TEST": df}, table.drop(columns="trade_date"), _features_cfg())
+
+
+def test_parallel_screening_gives_exactly_the_sequential_result():
+    """Each symbol seeds its own shuffles from its name, so worker order cannot matter."""
+    bars = {s: bars_from_returns(s, ar_returns(12, phi, seed=i)) for i, (s, phi) in
+            enumerate([("AAA", 0.2), ("BBB", 0.0), ("CCC", -0.2), ("DDD", 0.1)])}
+    cfg = SimpleNamespace(embedding_dim=4, delay=1, window=390, series="log_return",
+                          n_surrogates=19, min_bars_required=300, seed=0)
+    sequential = screen_universe(bars, cfg, workers=1).reset_index(drop=True)
+    parallel = screen_universe(bars, cfg, workers=3).reset_index(drop=True)
+    pd.testing.assert_frame_equal(sequential, parallel)
