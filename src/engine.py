@@ -17,6 +17,13 @@ its running average. Prices do not react to our trades, so any action's reward
 for a historical sample is known and a sampled action can be scored by lookup;
 that makes replaying the logged data a faithful simulator, not an approximation.
 
+The same fact allows full feedback (`feedback="full"`): every past sample scores
+all three actions, including the trades the policy did not take, so a missed
+opportunity is as visible as a losing trade. Bandit feedback cannot see one:
+flat pays zero and says nothing about what trading would have paid. In a
+backtest with a flat cost the missed rewards are exact; live, the fill a skipped
+trade would have got is unknown, which is when bandit feedback is the honest one.
+
 What this is not: a sequential agent with inventory. Each sample is decided on
 its own, so the problem is a contextual bandit (RL with a one-step horizon).
 Position-dependent costs, holding limits and risk budgets would need a stepwise
@@ -32,10 +39,12 @@ import pandas as pd
 import torch
 import torch.nn as nn
 
+from .baselines import is_rule
 from .experiment import KEY, ensemble
 
 ACTIONS = np.array([-1.0, 0.0, 1.0])  # short, flat, long
 GATE_FLAGS = ["pass_trend", "pass_entropy", "pass_entropy_weighted"]
+FIXED_ACTIONS = ("long", "short", "follow signal", "fade signal")
 
 
 # ------------------------------------------------------------------ state
@@ -99,7 +108,7 @@ class EngineConfig:
     batch: int = 2048
     entropy_bonus: float = 0.10  # keeps the softmax from saturating on 'flat'; decays with folds
     reward_scale: float = 10.0   # bps -> network units
-    feedback: str = "bandit"     # bandit: only the sampled action's reward; full: all three (zero-variance gradient)
+    feedback: str = "bandit"     # bandit: only the sampled action's reward; full: all three, trades not taken included
     seed: int = 0
 
 
@@ -153,8 +162,10 @@ def run_engine(state: pd.DataFrame, cfg: EngineConfig, use_gate: bool = True, lo
     """Online walk-forward. Adds `pos` and `pnl_bps` (net of cost) to every scored sample.
 
     The first fold has nothing to learn from, so the policy stays out and earns
-    zero there; scoring starts from fold 1.
+    zero there; scoring starts from fold 1. Rows keep the state's index.
     """
+    if cfg.feedback not in ("bandit", "full"):
+        raise ValueError(f"unknown feedback '{cfg.feedback}'; options: bandit, full")
     torch.manual_seed(cfg.seed)
     cols = feature_columns(state, use_gate)
     X_all = state[cols].to_numpy(float)
@@ -178,7 +189,7 @@ def run_engine(state: pd.DataFrame, cfg: EngineConfig, use_gate: bool = True, lo
         scored["pnl_bps"] = pos * scored["ret_bps"].to_numpy() - cfg.cost_bps * np.abs(pos)
         out.append(scored)
         log(f"  fold {fold:3d}  trades {np.mean(pos != 0):6.1%}  net {scored['pnl_bps'].mean():+6.2f} bps/opportunity")
-    return pd.concat(out, ignore_index=True)
+    return pd.concat(out)
 
 
 # ------------------------------------------------------------------ baselines and scoring
@@ -241,3 +252,75 @@ def score_positions(frame: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> d
         "trade_rate": float(by_day["trades"].sum() / n.sum()),
         "samples": int(n.sum()),
     }
+
+
+# ------------------------------------------------------------------ missed opportunities
+
+def model_signal(state: pd.DataFrame, arch: str | None = None) -> np.ndarray:
+    """The signal situations are graded by: one model's signed confidence, or by default
+    the average over the trained models. Rules are left out unless nothing else is there;
+    their 'confidence' is a fixed +-1."""
+    if arch is not None:
+        return state[f"conf_{arch}"].to_numpy(float)
+    confs = [c for c in state.columns if c.startswith("conf_")]
+    trained = [c for c in confs if not is_rule(c[5:])] or confs
+    return state[trained].to_numpy(float).mean(axis=1)
+
+
+def situations(state: pd.DataFrame, signal: np.ndarray, gate_flag: str = "pass_trend",
+               n_strength: int = 5) -> pd.DataFrame:
+    """Gate verdict and signal-strength quintile (1 = weakest) for every row."""
+    if gate_flag in state.columns:
+        gate = np.where(state[gate_flag].to_numpy(float) > 0, "passed", "not passed")
+    else:
+        gate = np.full(len(state), "-")
+    rank = pd.Series(np.abs(signal)).rank(method="first")
+    strength = pd.qcut(rank, n_strength, labels=False).to_numpy() + 1
+    return pd.DataFrame({"gate": gate, "strength": strength})
+
+
+def missed_opportunities(state: pd.DataFrame, engines: dict[str, list[np.ndarray]], cost_bps: float,
+                         signal: np.ndarray, gate_flag: str = "pass_trend", n_strength: int = 5,
+                         n_boot: int = 2000, seed: int = 0) -> pd.DataFrame:
+    """Where trading paid on average while an engine stayed out or traded the wrong way.
+
+    `state` holds the scored rows and `engines` maps a name to that engine's positions
+    on them, one array per training seed. Rows are grouped by situation: the gate's
+    verdict and the strength of the model signal. In each group four fixed actions are
+    scored on the realized returns (long, short, follow the signal, fade the signal);
+    the best of them, or staying flat if none pays after cost, is what a policy would
+    have earned had it known which action suits that kind of situation, though nothing
+    about any single sample. `left_<name>` is that value minus what the engine earned
+    there, per opportunity.
+
+    The best action is picked after seeing the outcomes, which flatters it, so a group
+    is a real opportunity only when the best action's interval is above zero, and with
+    ten groups one can clear that bar by luck.
+    """
+    ret = state["ret_bps"].to_numpy(float)
+    side = np.sign(signal)
+    fixed = {"long": np.ones(len(ret)), "short": -np.ones(len(ret)), "follow signal": side, "fade signal": -side}
+    labels = situations(state, signal, gate_flag, n_strength)
+    rows = []
+    for (gate, strength), idx in labels.groupby(["gate", "strength"]).indices.items():
+        nets = {a: float(np.mean(p[idx] * ret[idx] - cost_bps * np.abs(p[idx]))) for a, p in fixed.items()}
+        best = max(nets, key=nets.get)
+        row = {"gate": gate, "strength": int(strength), "samples": len(idx)}
+        if nets[best] > 0:
+            pos = fixed[best][idx]
+            frame = pd.DataFrame({"date": state["date"].to_numpy()[idx], "pos": pos,
+                                  "pnl_bps": pos * ret[idx] - cost_bps * np.abs(pos)})
+            s = score_positions(frame, n_boot=n_boot, seed=seed)
+            row.update(best_action=best, best_net=s["net_bps"], best_lo=s["net_lo"], best_hi=s["net_hi"])
+        else:
+            row.update(best_action="stay flat", best_net=0.0, best_lo=np.nan, best_hi=np.nan)
+        for name, runs in engines.items():
+            pos = [np.asarray(p, float)[idx] for p in runs]
+            row[f"trades_{name}"] = float(np.mean([(p != 0).mean() for p in pos]))
+            row[f"net_{name}"] = float(np.mean([np.mean(p * ret[idx] - cost_bps * np.abs(p)) for p in pos]))
+            row[f"left_{name}"] = row["best_net"] - row[f"net_{name}"]
+        rows.append(row)
+    order = {"passed": 0, "not passed": 1, "-": 2}
+    table = pd.DataFrame(rows)
+    return table.sort_values(["gate", "strength"], key=lambda c: c.map(order) if c.name == "gate" else c,
+                             ignore_index=True)

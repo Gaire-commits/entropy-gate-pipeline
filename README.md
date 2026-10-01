@@ -61,22 +61,37 @@ walk-forward predictions. Per sample it chooses short, flat or long and is paid
 
 ```bash
 python scripts/engine.py --config configs/etf_intraday.yaml    # after scripts/sweep.py
+# --feedback bandit|full|both (default both); --signal resnet1d grades the missed-opportunities table by one model
 ```
 
-It learns online, fold by fold, from earlier feedback only, with a policy gradient (REINFORCE) on
-bandit feedback: it sees only the reward of the action it took. It is compared with the best fixed
-rule chosen from the past, and run twice, with and without the entropy gate's verdict as input,
-which is the direct test of whether the entropy signal helps an agent that can learn from feedback.
+It learns online, fold by fold, from earlier feedback only, with a policy gradient (REINFORCE). It is
+compared with the best fixed rule chosen from the past. It runs with and without the entropy gate's verdict
+as input, which is the direct test of whether the entropy signal helps an agent that can learn from
+feedback, and with two kinds of feedback:
 
-Because prices do not react to our trades, any action's reward on a logged sample is known, so replay
-is a faithful simulator. That also means this is a contextual bandit (one-step RL): it has no
-inventory, holding limits or position-dependent costs. Those need a stepwise environment and are the
-natural next extension.
+- **bandit**: only the reward of the action it took. Flat pays 0 and says nothing about what a trade would
+  have paid, so once the policy settles on flat it stops seeing the opportunities it misses.
+- **full**: all three actions scored on every past sample, including the trades it skipped. Prices do not
+  react to our trades, so in a backtest those rewards are exact. Live, the fill a skipped trade would have
+  got is unknown, and bandit feedback is the honest one.
 
-Controls in `tests/test_engine.py`: it must learn a planted edge and beat trading every signal, and on
-pure noise it must learn to stay out (net 0 against about -2 bps for trading every signal). Two
-traps found while building it: a flat-leaning initialization saturates the softmax and the agent never
-trades again, and an edge barely above cost is sometimes not learned at all, which is the safe failure.
+Missed opportunities are measured by situation, not by trade: `engine.md` groups samples by gate verdict and
+signal strength and shows each group's best fixed action (picked in hindsight, with an interval) next to what
+each engine earned there. Training on every individual missed trade is the wrong fix: with noise much larger
+than the cost, almost every sample looks like a missed trade in hindsight, and a policy taught to copy the
+hindsight-best action traded everything and lost about 2 bps per opportunity on pure noise.
+
+Because prices do not react to our trades, replay is a faithful simulator. That also means this is a
+contextual bandit (one-step RL): it has no inventory, holding limits or position-dependent costs. Those
+need a stepwise environment and are the natural next extension.
+
+Controls in `tests/test_engine.py`: under both kinds of feedback it must learn a planted edge and beat
+trading every signal, and on pure noise it must learn to stay out (net 0 against about -2 bps for trading
+every signal). Full feedback must also learn an edge barely above cost, which bandit feedback misses on one
+of two seeds, and find an edge planted only on gate-approved samples, which it does only when given the
+gate's verdict. Two traps found while building it: a flat-leaning initialization saturates the softmax and
+the agent never trades again, and with bandit feedback an edge barely above cost is sometimes not learned at
+all, which is the safe failure.
 
 ## Larger universes
 
@@ -198,9 +213,10 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, and report (127 unit tests plus
-the smoke test). Not yet run on real data in this form. The live path (IBKR
-execution, risk firewall) and the RL sizing layer are designed, not built.
+Built and tested: data, gate, features, models, sweep, report and decision engine (138 unit
+tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
+`etf_multihour` not yet. The live path (IBKR execution, risk firewall) and position
+sizing are designed, not built.
 
 Known limits: IEX volume is a sample of the consolidated tape; Kalman state
 features are proposed, not built.
