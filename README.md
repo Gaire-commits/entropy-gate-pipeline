@@ -6,6 +6,8 @@ whether it is worth trading the next day. A ladder of rules and models then
 predicts intraday direction, and every result is judged on returns after trading
 costs, with uncertainty measured in days.
 
+**Results so far and progress:** [RESULTS.md](RESULTS.md).
+
 ## Running it
 
 **On Google Colab (recommended):** open [`notebooks/colab.ipynb`](notebooks/colab.ipynb).
@@ -215,8 +217,8 @@ indistinguishable from a broken pipeline.
 
 Built and tested: data, gate, features, models, sweep, report and decision engine (138 unit
 tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
-`etf_multihour` not yet. The live path (IBKR execution, risk firewall) and position
-sizing are designed, not built.
+`etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
+execution, risk firewall) and position sizing are designed, not built.
 
 Known limits: IEX volume is a sample of the consolidated tape; Kalman state
 features are proposed, not built.
