@@ -53,6 +53,31 @@ Two further checks come free with the same predictions, no retraining:
 - **Within-ETF gate comparison**: the Q1 difference after subtracting each ETF's own average. The gate refuses
   whole ETFs that move only a few cents a bar, so the raw split partly compares expensive ETFs against cheap ones.
 
+## Decision engine
+
+`src/engine.py` and `scripts/engine.py` train a reinforcement-learning policy on the saved
+walk-forward predictions. Per sample it chooses short, flat or long and is paid
+`position x return - cost x |position|`. Staying flat pays exactly 0, which is the reference.
+
+```bash
+python scripts/engine.py --config configs/etf_intraday.yaml    # after scripts/sweep.py
+```
+
+It learns online, fold by fold, from earlier feedback only, with a policy gradient (REINFORCE) on
+bandit feedback: it sees only the reward of the action it took. It is compared with the best fixed
+rule chosen from the past, and run twice, with and without the entropy gate's verdict as input,
+which is the direct test of whether the entropy signal helps an agent that can learn from feedback.
+
+Because prices do not react to our trades, any action's reward on a logged sample is known, so replay
+is a faithful simulator. That also means this is a contextual bandit (one-step RL): it has no
+inventory, holding limits or position-dependent costs. Those need a stepwise environment and are the
+natural next extension.
+
+Controls in `tests/test_engine.py`: it must learn a planted edge and beat trading every signal, and on
+pure noise it must learn to stay out (net 0 against about -2 bps for trading every signal). Two
+traps found while building it: a flat-leaning initialization saturates the softmax and the agent never
+trades again, and an edge barely above cost is sometimes not learned at all, which is the safe failure.
+
 ## Larger universes
 
 A config's `universe` can be a list of symbols or a path to a CSV built by
@@ -130,6 +155,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/stats.py` | Trade scoring and day-block bootstrap intervals |
 | `src/experiment.py` | Resumable sweep and the results report |
 | `src/synthetic.py` | Bars with known structure for tests |
+| `src/engine.py` | RL decision engine: policy, online walk-forward learning, baselines |
 | `universe/` | Saved constituent lists for larger universes |
 | `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
 | `src/ibkr_capture.py` | TWS recorder for quotes, trades and depth |
@@ -172,7 +198,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, and report (119 unit tests plus
+Built and tested: data, gate, features, models, sweep, and report (127 unit tests plus
 the smoke test). Not yet run on real data in this form. The live path (IBKR
 execution, risk firewall) and the RL sizing layer are designed, not built.
 
