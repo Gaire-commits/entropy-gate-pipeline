@@ -4,10 +4,16 @@
     python scripts/engine.py --config configs/etf_intraday.yaml
     python scripts/engine.py --config configs/sp500_multihour.yaml --archs logreg always_up
     python scripts/engine.py --config configs/etf_intraday.yaml --feedback full --signal resnet1d
+    python scripts/engine.py --config configs/sp500_multihour.yaml --neutral
 
 Needs predictions from scripts/sweep.py. Writes outputs/<experiment>/engine.md,
-engine_folds.csv and engine_missed.csv. Learning happens online, fold by fold, from
-earlier feedback only.
+engine_folds.csv and engine_missed.csv (engine_neutral.* with --neutral). Learning
+happens online, fold by fold, from earlier feedback only.
+
+--neutral measures everything relative to the other symbols at the same date and bar.
+On raw returns the market's quarter-to-quarter drift dominates and the engine learns
+to chase it; relative to the cross-section only stock-specific signal is left. It
+needs a wide universe (the S&P 500), not 12 ETFs that are mostly the market.
 
 The reference is staying flat, which earns exactly 0: a policy that trades only
 loses money to costs unless it has found something. The engine runs with and
@@ -32,8 +38,8 @@ from _common import DEFAULT_CONFIG, output_dir
 
 from src.config import load_config
 from src.engine import (
-    EngineConfig, baseline_positions, build_state, missed_opportunities, model_signal, run_engine,
-    score_positions, threshold_rule,
+    EngineConfig, baseline_positions, build_state, market_neutral, missed_opportunities, model_signal,
+    run_engine, score_positions, threshold_rule,
 )
 from src.experiment import load_predictions
 
@@ -96,6 +102,8 @@ def main() -> int:
     parser.add_argument("--cost", type=float, default=None, help="round-trip cost in bps (default: the config's headline cost)")
     parser.add_argument("--feedback", choices=["bandit", "full", "both"], default="both",
                         help="bandit: only the taken action's reward; full: all three, skipped trades included")
+    parser.add_argument("--neutral", action="store_true",
+                        help="relative to the cross-section at each date and bar (long-short, needs a wide universe)")
     parser.add_argument("--signal", default=None,
                         help="model whose confidence grades situations in the missed-opportunities table "
                              "(default: the average over the trained models)")
@@ -110,6 +118,15 @@ def main() -> int:
         return 1
 
     state = build_state(pred, args.archs)
+    if args.neutral:
+        before = len(state)
+        try:
+            state = market_neutral(state)
+        except ValueError as err:
+            print(f"--neutral: {err}")
+            return 1
+        print(f"market-neutral: {before - len(state):,} of {before:,} samples dropped for lack of peers")
+    tag = "_neutral" if args.neutral else ""
     models = [c[5:] for c in state.columns if c.startswith("conf_")]
     if args.signal is not None and args.signal not in models:
         print(f"--signal {args.signal}: no predictions for it; options: {models}")
@@ -135,7 +152,8 @@ def main() -> int:
 
     live = state["fold"] >= scored_from
     rows = [{"policy": "stay flat (reference)", "net": 0.0, "lo": 0.0, "hi": 0.0, "trade_rate": 0.0}]
-    rows.append(row("always long", with_pnl(state[live], np.ones(live.sum()), cost)))
+    rows.append(row("always long" + (" (stock vs. the market)" if args.neutral else ""),
+                    with_pnl(state[live], np.ones(live.sum()), cost)))
     for name, pos in baseline_positions(state).items():
         if name != "always_up":
             rows.append(row(name.replace("follow_", "trade every ") + " signal", with_pnl(state[live], pos[live.to_numpy()], cost)))
@@ -152,12 +170,19 @@ def main() -> int:
     missed = missed_opportunities(scored, engines, cost, model_signal(scored, args.signal), gate_flag=gate_flag)
 
     table = pd.DataFrame(rows)
-    lines = [f"# {cfg.experiment}: decision engine", "",
+    lines = [f"# {cfg.experiment}: decision engine" + (", market-neutral" if args.neutral else ""), "",
              f"Net basis points per trading opportunity after a {cost} bps round-trip cost, folds {scored_from}+ "
              f"(fold {folds[0]} is the first feedback the engine sees). Flat opportunities count as zero. "
              f"Intervals are 95% day-block bootstrap; engine rows average {len(args.seeds)} training seeds. "
              "Bandit feedback is the reward of the action taken; full feedback scores all three actions on every past "
-             "sample, including the trades the engine skipped.", "",
+             "sample, including the trades the engine skipped."]
+    if args.neutral:
+        lines += ["", "Market-neutral: every return and every model confidence is measured relative to the average of "
+                  "the other symbols at the same date and bar, so a long is a bet that this stock beats the rest, "
+                  "paid on the stock leg only. Hedging the market leg would cost extra, so these results are "
+                  "optimistic by that amount. \"Always long\" here is long every stock against the market, and a rule "
+                  "that outputs the same signal for every symbol has no relative signal at all."]
+    lines += ["",
              "| policy | net bps/opportunity [95% CI] | trades |", "|---|---|---:|"]
     for _, r in table.iterrows():
         lines.append(f"| {r['policy']} | {r['net']:+.2f} [{r['lo']:+.2f}, {r['hi']:+.2f}] | {r['trade_rate']:.0%} |")
@@ -169,9 +194,9 @@ def main() -> int:
     for fold, r in curve.iterrows():
         lines.append(f"| {fold} | " + " | ".join(f"{v:+.2f}" for v in r) + " |")
     text = "\n".join(lines) + "\n"
-    (out / "engine.md").write_text(text)
-    curve.to_csv(out / "engine_folds.csv")
-    missed.to_csv(out / "engine_missed.csv", index=False)
+    (out / f"engine{tag}.md").write_text(text)
+    curve.to_csv(out / f"engine{tag}_folds.csv")
+    missed.to_csv(out / f"engine{tag}_missed.csv", index=False)
     print("\n" + text)
     return 0
 

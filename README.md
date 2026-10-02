@@ -64,6 +64,7 @@ walk-forward predictions. Per sample it chooses short, flat or long and is paid
 ```bash
 python scripts/engine.py --config configs/etf_intraday.yaml    # after scripts/sweep.py
 # --feedback bandit|full|both (default both); --signal resnet1d grades the missed-opportunities table by one model
+python scripts/engine.py --config configs/sp500_multihour.yaml --neutral   # market-neutral, see below
 ```
 
 It learns online, fold by fold, from earlier feedback only, with a policy gradient (REINFORCE). It is
@@ -82,6 +83,18 @@ signal strength and shows each group's best fixed action (picked in hindsight, w
 each engine earned there. Training on every individual missed trade is the wrong fix: with noise much larger
 than the cost, almost every sample looks like a missed trade in hindsight, and a policy taught to copy the
 hindsight-best action traded everything and lost about 2 bps per opportunity on pure noise.
+
+**Market-neutral mode (`--neutral`).** On the real S&P 500 data the engine as first built failed: it traded
+76-98% of samples and lost 1.2-3.0 bps per opportunity, and under full feedback its P&L matched always-long's to
+the hundredth in 8 of 9 folds. Every stock sampled at the same date and bar shares that moment's market move, and
+the market's direction flips from quarter to quarter, so one quarter's drift looked like tens of thousands of
+confirmations of "go long" and did not hold the next quarter. Learning from all past quarters does not fix it
+(there are only about 14 independent quarters), so `--neutral` subtracts the cross-sectional mean at each date and
+bar from every return (the reward) and every model confidence (the input). On synthetic data with a drifting
+market it stays flat when there is no stock-specific edge and finds one when planted, while the raw engine loses
+on noise and finds the edge only erratically. It describes a long-short book with costs on the stock leg only, so it is
+optimistic by the hedging cost, and it needs a wide universe: it refuses the 12 ETFs, which are mostly the
+market.
 
 Because prices do not react to our trades, replay is a faithful simulator. That also means this is a
 contextual bandit (one-step RL): it has no inventory, holding limits or position-dependent costs. Those
@@ -215,7 +228,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, report and decision engine (138 unit
+Built and tested: data, gate, features, models, sweep, report and decision engine (142 unit
 tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
 `etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
 execution, risk firewall) and position sizing are designed, not built.

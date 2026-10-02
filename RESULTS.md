@@ -19,7 +19,9 @@ lives on Google Drive rather than in this repo. The runs finished in late Septem
   barely moves, so it may track volatility rather than skill.
 - **The measurement works.** On synthetic data the gate passes planted trends and refuses zig-zags and tick
   noise, and the models recover planted signals. The null on real data is a finding, not a broken pipeline.
-- **The decision engine (RL) is built** and passes its synthetic controls. It has not been run on real data yet.
+- **The decision engine (RL) finds nothing either.** On the ETFs it learns to stay flat. On the S&P 500 the
+  first version collapsed into always-long, a flaw in the engine, not a market finding. A market-neutral
+  version is built and its real-data run is pending.
 
 ## Common setup
 
@@ -234,7 +236,40 @@ Synthetic controls (`tests/test_engine.py`), in net bps per opportunity after a 
   best action in hindsight traded every sample and lost 1.98 and 1.91 bps per opportunity on pure noise. Missed
   opportunities are therefore measured by situation (gate verdict × signal strength) in `engine.md`.
 
-**Real data: pending.** Run Colab section 11; the results go here.
+### Real data, first run (2026-10-01)
+
+Net bps per opportunity after a 2 bps cost, folds 1–14, engines averaged over 3 training seeds; share of
+samples traded in brackets. Staying flat is 0 by construction.
+
+| | `etf_intraday` | `etf_gao` | `sp500_multihour` |
+|---|---:|---:|---:|
+| always long | −1.54 | −2.73 | −0.94 |
+| best fixed rule, chosen from the past | −0.50 [−0.84, −0.17] (23%) | −0.14 [−0.73, +0.38] (14%) | +0.18 [−0.07, +0.46] (2%) |
+| engine, bandit, models only | −0.08 [−0.34, +0.17] (7%) | −0.04 [−0.35, +0.30] (8%) | **−2.98** [−4.97, −1.21] (76%) |
+| engine, bandit, with gate | −0.15 [−0.40, +0.09] (13%) | +0.00 [−0.32, +0.35] (7%) | −1.17 [−1.89, −0.49] (23%) |
+| engine, full feedback, models only | −0.19 [−0.49, +0.10] (11%) | −0.27 [−0.65, +0.14] (11%) | −1.52 [−4.02, +1.34] (98%) |
+| engine, full feedback, with gate | −0.18 [−0.45, +0.08] (14%) | −0.17 [−0.50, +0.20] (9%) | −1.64 [−3.32, +0.32] (74%) |
+
+- **ETFs: the engine learned to stay out.** Every ETF interval includes zero. It beats trading every signal
+  (−1.5 to −2.2 bps) and, on `etf_intraday`, the rule chosen from the past. From fold 7 (`etf_intraday`) or
+  fold 4 (`etf_gao`) it sits at exactly 0 almost every fold. An agent that learns from feedback finds no edge
+  either, which matches the sweeps.
+- **Neither addition helped on real data.** The gate approves 3–4% of samples, 50–100 per cell, too few for
+  the engine to learn from, so the gate's effect on the engine is not testable at this size. Full feedback
+  traded more and earned slightly less than bandit on the ETFs.
+- **Missed opportunities: none found.** No cell has an interval above zero in any experiment. Choosing each
+  group's best action in hindsight, which flatters it, earns only +0.05, +0.05 and +0.28 bps per opportunity.
+- **S&P 500: the engine failed, because of how it was built.** It traded 76–98% of samples and lost. Under
+  full feedback its P&L equals always-long's net to the hundredth in 8 of 9 folds from fold 6 on (for example
+  +8.82 in fold 9 and −3.79 in fold 8). The market's direction flips from quarter to quarter, every stock shares
+  it, and the engine treated one quarter's drift as tens of thousands of independent confirmations of "go
+  long". The best row (+0.18) is one fold: the April 2025 rebound supplies about 1.90 of its 2.28 total.
+- **Learning from all past quarters instead of the latest does not fix it** (synthetic: −1.73 to −1.94 against
+  −1.85 to −2.33), because there are only about 14 independent quarters. Measuring returns relative to the other
+  stocks at each date and bar does: in the same synthetic test the engine stays at 0.00 with no stock-specific
+  edge and earns about +1.1 bps every time when 6 bps is planted, where the raw engine loses on noise and finds
+  the edge only erratically (from −0.9 to +1.3 bps across seeds).
+  That mode is built (`scripts/engine.py --neutral`); its S&P 500 result is pending.
 
 ## Advisor feedback and response (September 2026)
 
@@ -282,11 +317,11 @@ The response so far:
 | 2026-09-21 | Ordinal-pattern figure; confidence filtering and within-symbol gate scoring; incremental data top-up; IBKR capture tools |
 | 2026-09-29 | 2.5-hour horizon configs after the advisor's feedback; S&P 500 universe with parallel fetching and screening |
 | late September | Real-data runs of `spy_gao`, `etf_gao`, `etf_intraday` and `sp500_multihour` |
-| 2026-10-01 | Decision engine, then full feedback and the missed-opportunities table |
+| 2026-10-01 | Decision engine, then full feedback and the missed-opportunities table. First real-data run: flat on the ETFs, collapsed into always-long on the S&P 500. Market-neutral mode built |
 
 ## Next steps
 
-1. Run the decision engine on real data (Colab section 11) and record the results here.
+1. Run the market-neutral engine on the S&P 500 (last cell of Colab section 11) and record the result here.
 2. Run `etf_multihour`, the horizon the advisor pointed toward.
 3. Re-score the confidence filter in units of each day's volatility before citing it.
 4. Count gate approvals as episodes, not days.

@@ -79,6 +79,33 @@ def build_state(pred: pd.DataFrame, archs: list[str] | None = None, use_gate: bo
     return base
 
 
+def market_neutral(state: pd.DataFrame, min_peers: int = 20) -> pd.DataFrame:
+    """Express returns and model confidences relative to the other symbols at the same moment.
+
+    Every symbol sampled at the same date and bar shares that moment's market move. In a
+    quarter where the market drifts up, "long" pays on every sample, so one quarter's drift
+    looks like tens of thousands of confirmations of a rule that will not hold next quarter
+    (the engine collapsed into always-long on the S&P 500 this way). Subtracting the
+    cross-sectional mean of the forward return (what the engine is paid) and of each model's
+    confidence (what it sees) leaves what is specific to the stock, a long-short book.
+
+    The inputs stay causal: the demeaned confidences use only model outputs, which are all
+    known at decision time. The demeaned return is a reward, never an input. Moments with
+    fewer than `min_peers` symbols are dropped, since a mean over three stocks is not a market.
+    Costs are charged on the stock leg only; hedging the market leg would cost extra, so the
+    result is optimistic by that amount.
+    """
+    keys = ["date", "bar_index"]
+    peers = state.groupby(keys)["ret_bps"].transform("size")
+    if peers.median() < min_peers:
+        raise ValueError(f"market-neutral needs a wide cross-section: the median date and bar has "
+                         f"{peers.median():.0f} symbols, at least {min_peers} are required")
+    out = state[peers >= min_peers].copy()
+    for col in ["ret_bps"] + [c for c in out.columns if c.startswith("conf_")]:
+        out[col] -= out.groupby(keys)[col].transform("mean")
+    return out.reset_index(drop=True)
+
+
 def feature_columns(state: pd.DataFrame, use_gate: bool = True) -> list[str]:
     cols = [c for c in state.columns if c.startswith("conf_")] + ["slot"]
     if use_gate:

@@ -10,8 +10,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.engine import (
-    EngineConfig, action_rewards, baseline_positions, build_state, missed_opportunities, model_signal,
-    run_engine, score_positions, threshold_rule,
+    EngineConfig, action_rewards, baseline_positions, build_state, market_neutral, missed_opportunities,
+    model_signal, run_engine, score_positions, threshold_rule,
 )
 
 
@@ -184,6 +184,72 @@ def test_situations_are_graded_by_trained_models_not_rules():
     rule = pred.assign(arch="always_up", prob=1.0)
     state = build_state(pd.concat([pred, rule], ignore_index=True))
     np.testing.assert_array_equal(model_signal(state), state["conf_m1"].to_numpy())
+
+
+def _panel_predictions(edge_bps, drift_bps=6.0, n_symbols=12, n_folds=12, days=60, slots=(0, 12, 24, 36),
+                       seed=0, noise_bps=12.0, shock_bps=8.0):
+    """Many symbols at the same moments. All symbols share each date-and-bar's market move: a
+    drift whose sign flips by fold (the coin flip a quarter's market direction is) plus a shock.
+    The model's signal is stock-specific, independent of the market, and worth `edge_bps`."""
+    rng = np.random.default_rng(seed)
+    drift = rng.choice([-drift_bps, drift_bps], n_folds)
+    frames, day = [], 0
+    for fold in range(n_folds):
+        d, b, sym = (a.ravel() for a in np.meshgrid(np.arange(days), slots, np.arange(n_symbols), indexing="ij"))
+        market = (drift[fold] + shock_bps * rng.normal(size=(days, len(slots))))[d, np.searchsorted(slots, b)]
+        s = rng.uniform(-1, 1, len(d))
+        ret_bps = market + edge_bps * s + noise_bps * rng.normal(size=len(d))
+        frames.append(pd.DataFrame({
+            "fold": fold, "date": pd.Timestamp("2024-01-01") + pd.to_timedelta(day + d, unit="D"),
+            "symbol": [f"S{i:02d}" for i in sym], "bar_index": b,
+            "y": (ret_bps > 0).astype(int), "ret": ret_bps / 1e4,
+            "prob": 0.5 + 0.5 * s, "arch": "m1", "seed": 0, "n_params": 0, "best_epoch": -1,
+            "pass_trend": False, "pass_entropy": False, "pass_entropy_weighted": False,
+            "p_trend": 1.0, "has_reading": True,
+        }))
+        day += days
+    return pd.concat(frames, ignore_index=True)
+
+
+def test_market_neutral_removes_the_common_move_and_leaves_the_gate_alone():
+    state = build_state(_panel_predictions(edge_bps=4.0, n_folds=3, days=10))
+    neutral = market_neutral(state, min_peers=10)
+    for col in ("ret_bps", "conf_m1"):
+        np.testing.assert_allclose(neutral.groupby(["date", "bar_index"])[col].mean(), 0.0, atol=1e-9)
+    assert len(neutral) == len(state)
+    np.testing.assert_array_equal(neutral["pass_trend"], state["pass_trend"])
+    assert (neutral.groupby("date")["fold"].nunique() == 1).all()   # never mixes two folds' returns
+
+
+def test_market_neutral_needs_a_wide_cross_section_and_drops_thin_moments():
+    state = build_state(_panel_predictions(edge_bps=4.0, n_folds=2, days=10, n_symbols=12))
+    with pytest.raises(ValueError, match="wide cross-section"):
+        market_neutral(state, min_peers=20)
+    thin = state[~((state["date"] == state["date"].min()) & (state["symbol"] > "S02"))]   # one date left with 3 symbols
+    kept = market_neutral(thin, min_peers=10)
+    assert state["date"].min() not in set(kept["date"]) and len(kept) < len(thin)
+
+
+def test_raw_engine_chases_each_quarters_market_drift_and_market_neutral_does_not():
+    """No stock-specific edge anywhere. Each quarter the market drifts +-6 bps, so on raw returns
+    'long' (or 'short') looks right for tens of thousands of samples and then fails next quarter."""
+    for seed in (0, 1):
+        state = build_state(_panel_predictions(edge_bps=0.0, seed=seed))
+        raw = score_positions(run_engine(state, FULL, log=lambda _: None).query("fold >= 3"))
+        neutral = score_positions(
+            run_engine(market_neutral(state, min_peers=10), FULL, log=lambda _: None).query("fold >= 3"))
+        assert raw["net_bps"] < -0.5
+        assert neutral["net_bps"] > -0.05 and neutral["trade_rate"] < 0.05
+
+
+def test_market_neutral_engine_finds_a_stock_specific_edge_that_drift_hides_from_the_raw_engine():
+    for seed in (0, 1):
+        state = build_state(_panel_predictions(edge_bps=6.0, seed=seed))
+        raw = score_positions(run_engine(state, FULL, log=lambda _: None).query("fold >= 3"))
+        neutral = score_positions(
+            run_engine(market_neutral(state, min_peers=10), FULL, log=lambda _: None).query("fold >= 3"))
+        assert neutral["net_lo"] > 0.5
+        assert neutral["net_bps"] > raw["net_bps"] + 0.5
 
 
 def _with_pos(rows, pos, cost=2.0):
