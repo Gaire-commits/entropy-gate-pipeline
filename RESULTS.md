@@ -20,8 +20,9 @@ lives on Google Drive rather than in this repo. The runs finished in late Septem
 - **The measurement works.** On synthetic data the gate passes planted trends and refuses zig-zags and tick
   noise, and the models recover planted signals. The null on real data is a finding, not a broken pipeline.
 - **The decision engine (RL) finds nothing either.** On the ETFs it learns to stay flat. On the S&P 500 the
-  first version collapsed into always-long, a flaw in the engine, not a market finding. A market-neutral
-  version is built and its real-data run is pending.
+  first version collapsed into always-long, a flaw in the engine, not a market finding. The market-neutral
+  version fixes that and also stays flat (−0.1 to −0.2 bps, 4–8% of samples traded): no stock-specific signal
+  survives costs in the rules and logistic regression tested.
 
 ## Common setup
 
@@ -269,7 +270,41 @@ samples traded in brackets. Staying flat is 0 by construction.
   stocks at each date and bar does: in the same synthetic test the engine stays at 0.00 with no stock-specific
   edge and earns about +1.1 bps every time when 6 bps is planted, where the raw engine loses on noise and finds
   the edge only erratically (from −0.9 to +1.3 bps across seeds).
-  That mode is built (`scripts/engine.py --neutral`); its S&P 500 result is pending.
+  That mode is `scripts/engine.py --neutral`; its S&P 500 result follows.
+
+### Real data, market-neutral S&P 500 (2026-10-02)
+
+The same 503 stocks and saved predictions (rules and logistic regression), with every return and model
+confidence measured relative to the other stocks at the same date and bar. Net bps per opportunity after
+2 bps charged on the stock leg only, folds 1–14:
+
+| policy | net [95% CI] | traded |
+|---|---|---:|
+| always long (stock vs. the market) | −2.00 | 100% |
+| trade every logreg signal | −1.43 [−2.05, −0.77] | 100% |
+| trade every momentum_day signal | −1.29 [−1.96, −0.56] | 100% |
+| trade every momentum_window signal | −1.45 [−1.98, −0.88] | 100% |
+| best fixed rule, chosen from the past | +0.07 [−0.03, +0.18] | 1% |
+| engine, bandit, models only | −0.11 [−0.20, −0.02] | 7% |
+| engine, bandit, with gate | −0.18 [−0.28, −0.09] | 8% |
+| engine, full feedback, models only | −0.16 [−0.26, −0.06] | 7% |
+| engine, full feedback, with gate | −0.17 [−0.25, −0.08] | 4% |
+
+- **The collapse is fixed.** The engine trades 4–8% of samples (it was 76–98%) and loses 0.1–0.2 bps (it was
+  1.5–3.0). The small remaining loss is mostly the first learning step: fold 1 supplies about 70% of it, and
+  from fold 4 on the engine sits at about 0.
+- **No stock-specific signal survives cost.** Trading every signal relative to the market has a gross return
+  of +0.57 (logreg), +0.71 (momentum_day) and +0.55 (momentum_window) bps, about a third of the cost. The lower
+  ends of those intervals are near zero (−0.05, +0.04, +0.02), and the three signals are highly correlated, so
+  they are not three confirmations. The breakeven cost of about 0.6 bps is below any realistic cost, before
+  paying to hedge the market leg.
+- **No missed opportunities.** In all ten groups (gate verdict × signal strength) the best action is to stay
+  flat, so choosing in hindsight earns +0.00 bps per opportunity.
+- **The gate does not help the engine:** −0.18 and −0.17 with it, −0.11 and −0.16 without. About 23,500
+  samples (3.5%) are gate-approved, roughly 4,700 per cell.
+- **What this does not rule out.** Only rules and logistic regression ran at this scale. The logistic model
+  was trained to predict each stock's raw direction, not to rank stocks against each other, and the deep
+  models were never run on the S&P 500. This is a null on those inputs, not on stock-specific prediction.
 
 ## Advisor feedback and response (September 2026)
 
@@ -318,10 +353,13 @@ The response so far:
 | 2026-09-29 | 2.5-hour horizon configs after the advisor's feedback; S&P 500 universe with parallel fetching and screening |
 | late September | Real-data runs of `spy_gao`, `etf_gao`, `etf_intraday` and `sp500_multihour` |
 | 2026-10-01 | Decision engine, then full feedback and the missed-opportunities table. First real-data run: flat on the ETFs, collapsed into always-long on the S&P 500. Market-neutral mode built |
+| 2026-10-02 | Market-neutral engine run on the S&P 500: no stock-specific signal survives cost; the engine stays flat |
 
 ## Next steps
 
-1. Run the market-neutral engine on the S&P 500 (last cell of Colab section 11) and record the result here.
+1. Train models for the market-neutral question: a target relative to the cross-section (does this stock
+   beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules
+   and logistic regression so far.
 2. Run `etf_multihour`, the horizon the advisor pointed toward.
 3. Re-score the confidence filter in units of each day's volatility before citing it.
 4. Count gate approvals as episodes, not days.
