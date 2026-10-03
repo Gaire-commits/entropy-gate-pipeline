@@ -49,24 +49,30 @@ def train_fold(
     cfg,
     arch: str,
     seed: int = 0,
+    E_train: np.ndarray | None = None,
+    E_val: np.ndarray | None = None,
 ) -> tuple[torch.nn.Module, dict]:
     """Train one walk-forward fold, keeping the weights that scored best on validation.
 
-    Stops after `cfg.patience` epochs without a validation improvement.
+    Stops after `cfg.patience` epochs without a validation improvement. `E_*` are
+    the per-sample entropy features for architectures that take a second input.
     """
     set_deterministic(seed)
     dev = device()
-    model = build_model(arch, in_channels=X_train.shape[1], length=X_train.shape[2], dropout=cfg.dropout).to(dev)
+    n_extra = 0 if E_train is None else E_train.shape[1]
+    model = build_model(arch, in_channels=X_train.shape[1], length=X_train.shape[2],
+                        dropout=cfg.dropout, n_extra=n_extra).to(dev)
 
+    tensors = [torch.from_numpy(X_train)] + ([] if E_train is None else [torch.from_numpy(E_train)])
     generator = torch.Generator().manual_seed(seed)
     loader = DataLoader(
-        TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train)),
+        TensorDataset(*tensors, torch.from_numpy(y_train)),
         batch_size=cfg.batch_size,
         shuffle=True,
         drop_last=len(y_train) > cfg.batch_size,
         generator=generator,
     )
-    xv = torch.from_numpy(X_val).to(dev)
+    xv = [torch.from_numpy(X_val).to(dev)] + ([] if E_val is None else [torch.from_numpy(E_val).to(dev)])
     yv = torch.from_numpy(y_val).to(dev)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
@@ -74,24 +80,35 @@ def train_fold(
     patience = getattr(cfg, "patience", cfg.epochs)
 
     best = {"val_loss": float("inf"), "epoch": -1, "state": None}
+    if E_train is not None and hasattr(model, "warm_start"):
+        # Fit the entropy-only path first and keep it as the candidate to beat (epoch -1),
+        # so early stopping can never return a model that ignores the entropy features.
+        model.warm_start(torch.from_numpy(E_train).to(dev), torch.from_numpy(y_train).to(dev))
+        model.eval()
+        with torch.no_grad():
+            best = {
+                "val_loss": float(criterion(_batched_logits(model, *xv), yv).item()),
+                "epoch": -1,
+                "state": {k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
+            }
     for epoch in range(cfg.epochs):
         model.train()
-        for xb, yb in loader:
-            xb, yb = xb.to(dev), yb.to(dev)
+        for *inputs, yb in loader:
+            inputs, yb = [t.to(dev) for t in inputs], yb.to(dev)
             optimizer.zero_grad()
-            criterion(model(xb), yb).backward()
+            criterion(model(*inputs), yb).backward()
             optimizer.step()
 
         model.eval()
         with torch.no_grad():
-            val_loss = float(criterion(_batched_logits(model, xv), yv).item())
+            val_loss = float(criterion(_batched_logits(model, *xv), yv).item())
         if val_loss < best["val_loss"]:
             best = {
                 "val_loss": val_loss,
                 "epoch": epoch,
                 "state": {k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
             }
-        elif epoch - best["epoch"] >= patience:
+        elif epoch - max(best["epoch"], 0) >= patience:
             break
 
     if best["state"] is not None:
@@ -99,17 +116,20 @@ def train_fold(
     return model, {"best_epoch": best["epoch"], "best_val_loss": best["val_loss"], "epochs_run": epoch + 1}
 
 
-def _batched_logits(model: torch.nn.Module, x: torch.Tensor, batch_size: int = 1024) -> torch.Tensor:
-    return torch.cat([model(x[i : i + batch_size]) for i in range(0, len(x), batch_size)])
+def _batched_logits(model: torch.nn.Module, *inputs: torch.Tensor, batch_size: int = 1024) -> torch.Tensor:
+    n = len(inputs[0])
+    return torch.cat([model(*(t[i : i + batch_size] for t in inputs)) for i in range(0, n, batch_size)])
 
 
 @torch.no_grad()
-def predict(model: torch.nn.Module, X: np.ndarray, batch_size: int = 1024) -> np.ndarray:
+def predict(model: torch.nn.Module, X: np.ndarray, E: np.ndarray | None = None, batch_size: int = 1024) -> np.ndarray:
     """Probability of "up" for each sample."""
     dev = device()
     model.eval().to(dev)
     out = []
     for i in range(0, len(X), batch_size):
-        xb = torch.from_numpy(X[i : i + batch_size]).to(dev)
-        out.append(torch.softmax(model(xb), dim=1)[:, 1].cpu().numpy())
+        inputs = [torch.from_numpy(X[i : i + batch_size]).to(dev)]
+        if E is not None:
+            inputs.append(torch.from_numpy(E[i : i + batch_size]).to(dev))
+        out.append(torch.softmax(model(*inputs), dim=1)[:, 1].cpu().numpy())
     return np.concatenate(out) if out else np.empty(0)

@@ -54,7 +54,9 @@ validation:
   step_days: 63
 
 sweep:
-  archs: [always_up, momentum_day, momentum_window, logreg, cnn1d, resnet1d, inceptiontime, resnet2d]
+  # gbm/gbm_ent and resnet1d/resnet1d_ent are pairs that differ only by the entropy features.
+  archs: [always_up, momentum_day, momentum_window, logreg, cnn1d, resnet1d, inceptiontime, resnet2d,
+          gbm, gbm_ent, resnet1d_ent]
   seeds: [0, 1, 2]
 
 evaluation:

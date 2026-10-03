@@ -64,7 +64,9 @@ sweep:
   # cnn1d/resnet1d/inceptiontime/resnet2d are opt-in here (--archs ...): at ~500
   # symbols x 3 samples/day, a full walk-forward sweep of the deep models is a much
   # bigger job than the 12-ETF configs -- see the multi-hour config's timing notes.
-  archs: [always_up, momentum_day, momentum_window, logreg]
+  # gbm/gbm_ent (trees, CPU, roughly 1-2 min per fold each) differ only by the entropy features;
+  # resnet1d/resnet1d_ent are the deep pair, opt-in for the same reason as the other deep models.
+  archs: [always_up, momentum_day, momentum_window, logreg, gbm, gbm_ent]
   seeds: [0, 1, 2]
 
 evaluation:

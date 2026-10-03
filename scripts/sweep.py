@@ -3,6 +3,7 @@
 
     python scripts/sweep.py --config configs/spy_gao.yaml
     python scripts/sweep.py --config configs/etf_intraday.yaml --archs logreg resnet1d --seeds 0
+    python scripts/sweep.py --config configs/etf_intraday.yaml --archs gbm gbm_ent resnet1d_ent   # entropy as features
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from src.config import load_config
 from src.data import load_universe, resolve_universe
 from src.dataset import build_dataset, walk_forward_splits
 from src.experiment import run_arch
+from src.ml import is_tree
 
 
 def main() -> int:
@@ -51,7 +53,8 @@ def main() -> int:
           f"{len(folds)} folds  test {str(folds[0]['test_start'])[:10]} -> {str(folds[-1]['test_end'])[:10]}")
 
     for arch in archs:
-        for seed in ([seeds[0]] if is_rule(arch) else seeds):
+        # Rules have no randomness and the trees are deterministic, so one seed each.
+        for seed in ([seeds[0]] if is_rule(arch) or is_tree(arch) else seeds):
             started = time.time()
             print(f"\n{arch}  seed {seed}")
             ran = run_arch(data, folds, arch, seed, cfg, out)

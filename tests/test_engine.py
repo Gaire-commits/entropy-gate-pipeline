@@ -10,9 +10,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.engine import (
-    EngineConfig, action_rewards, baseline_positions, build_state, market_neutral, missed_opportunities,
-    model_signal, run_engine, score_positions, threshold_rule,
+    EngineConfig, action_rewards, baseline_positions, build_state, entropy_columns, market_neutral,
+    missed_opportunities, model_signal, run_engine, score_positions, threshold_rule,
 )
+from src.entropy_features import ENTROPY_COLUMNS
 
 
 def _predictions(edge_bps, n_folds=10, per_fold=3000, seed=0, noise_bps=12.0):
@@ -153,8 +154,8 @@ def test_full_feedback_finds_an_edge_that_exists_only_on_gate_approved_samples()
     lives where the gate says. Diluted over all samples the edge loses money, so a bandit learner
     that retreats to flat may never find the pocket; full feedback finds it, and only with the gate."""
     state = build_state(_gated_predictions())
-    with_gate = score_positions(run_engine(state, FULL, use_gate=True, log=lambda _: None).query("fold >= 4"))
-    without = score_positions(run_engine(state, FULL, use_gate=False, log=lambda _: None).query("fold >= 4"))
+    with_gate = score_positions(run_engine(state, FULL, use_entropy=True, log=lambda _: None).query("fold >= 4"))
+    without = score_positions(run_engine(state, FULL, use_entropy=False, log=lambda _: None).query("fold >= 4"))
     assert with_gate["net_lo"] > 0.3
     assert with_gate["net_bps"] > without["net_bps"] + 0.3
 
@@ -250,6 +251,55 @@ def test_market_neutral_engine_finds_a_stock_specific_edge_that_drift_hides_from
             run_engine(market_neutral(state, min_peers=10), FULL, log=lambda _: None).query("fold >= 3"))
         assert neutral["net_lo"] > 0.5
         assert neutral["net_bps"] > raw["net_bps"] + 0.5
+
+
+def _entropy_predictions(seed=0, edge_bps=8.0, **kw):
+    """Pure noise, except where one entropy feature is high: there the signal pays `edge_bps` per
+    unit of confidence. The other entropy features are noise. The informative one lives on its
+    real scale (about 0.35 +- 0.05, like the hourly trend share), so it only helps if scaled."""
+    pred = _predictions(edge_bps=0.0, seed=seed, **kw)
+    rng = np.random.default_rng(seed + 200)
+    for c in ENTROPY_COLUMNS:
+        pred[c] = rng.normal(size=len(pred))
+    pred["ent_trend3_hour"] = rng.normal(0.35, 0.05, len(pred))
+    high = pred["ent_trend3_hour"].to_numpy() > 0.38
+    pred["ret"] += np.where(high, edge_bps * 2 * (pred["prob"] - 0.5), 0.0) / 1e4
+    pred["y"] = (pred["ret"] > 0).astype(int)
+    return pred
+
+
+def test_engine_reads_continuous_entropy_when_saved_and_the_gate_flags_otherwise():
+    assert entropy_columns(build_state(_entropy_predictions(n_folds=2, per_fold=200)))[0].startswith("ent_")
+    old = build_state(_predictions(edge_bps=4.0, n_folds=2, per_fold=200))
+    assert entropy_columns(old) == ["pass_trend", "pass_entropy", "pass_entropy_weighted", "p_trend", "has_reading"]
+
+
+def test_entropy_comes_from_whichever_model_saved_it():
+    new = _entropy_predictions(n_folds=2, per_fold=200).assign(arch="m2")
+    old = new.drop(columns=ENTROPY_COLUMNS).assign(arch="m1")
+    import pandas as pd
+    state = build_state(pd.concat([old, new], ignore_index=True))
+    assert state["ent_trend3_hour"].notna().all()
+    assert {"conf_m1", "conf_m2"} <= set(state.columns)
+
+
+def test_full_feedback_finds_an_edge_that_only_continuous_entropy_reveals():
+    state = build_state(_entropy_predictions())
+    with_entropy = score_positions(run_engine(state, FULL, use_entropy=True, log=lambda _: None).query("fold >= 4"))
+    without = score_positions(run_engine(state, FULL, use_entropy=False, log=lambda _: None).query("fold >= 4"))
+    assert with_entropy["net_lo"] > 0.2
+    assert with_entropy["net_bps"] > without["net_bps"] + 0.2
+
+
+def test_entropy_scaling_comes_from_the_first_fold_only():
+    """Rescaling the future's entropy features must not change what the policy decides now."""
+    state = build_state(_entropy_predictions(n_folds=5, per_fold=1500))
+    changed = state.copy()
+    later = changed["fold"] >= 3
+    changed.loc[later, "ent_trend3_hour"] = changed.loc[later, "ent_trend3_hour"] * 10
+    a = run_engine(state, FULL, log=lambda _: None)
+    b = run_engine(changed, FULL, log=lambda _: None)
+    np.testing.assert_array_equal(a[a["fold"] <= 2]["pos"].to_numpy(), b[b["fold"] <= 2]["pos"].to_numpy())
 
 
 def _with_pos(rows, pos, cost=2.0):

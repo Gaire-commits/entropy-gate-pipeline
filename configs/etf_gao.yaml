@@ -57,7 +57,7 @@ validation:
 
 sweep:
   # cnn1d halves the sequence three times and cannot run on a 6-bar window.
-  archs: [always_up, momentum_day, logreg, resnet1d]
+  archs: [always_up, momentum_day, logreg, resnet1d, gbm, gbm_ent, resnet1d_ent]
   seeds: [0, 1, 2]
 
 evaluation:

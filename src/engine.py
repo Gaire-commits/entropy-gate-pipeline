@@ -40,6 +40,7 @@ import torch
 import torch.nn as nn
 
 from .baselines import is_rule
+from .entropy_features import ENTROPY_COLUMNS
 from .experiment import KEY, ensemble
 
 ACTIONS = np.array([-1.0, 0.0, 1.0])  # short, flat, long
@@ -49,13 +50,16 @@ FIXED_ACTIONS = ("long", "short", "follow signal", "fade signal")
 
 # ------------------------------------------------------------------ state
 
-def build_state(pred: pd.DataFrame, archs: list[str] | None = None, use_gate: bool = True) -> pd.DataFrame:
+def build_state(pred: pd.DataFrame, archs: list[str] | None = None) -> pd.DataFrame:
     """One row per sample with the engine's inputs and the realized return.
 
     Each model contributes its signed confidence, 2*(p-0.5) in [-1, 1], averaged
-    over seeds. The gate contributes its three pass flags and the trend p-value
-    (1.0 when there is no reading yet). Nothing here looks at the realized
-    return; `ret_bps` and `y` ride along for scoring only.
+    over seeds. Entropy information comes as the continuous features (`ent_*`) when
+    any model's predictions carry them (sweeps since entropy became a feature), taken
+    from whichever model has them; older predictions only have the gate's three pass
+    flags and the trend p-value (1.0 when there is no reading yet), and those are
+    used instead. Nothing here looks at the realized return; `ret_bps` and `y` ride
+    along for scoring only.
     """
     archs = archs or sorted(pred["arch"].unique())
     base = None
@@ -68,10 +72,14 @@ def build_state(pred: pd.DataFrame, archs: list[str] | None = None, use_gate: bo
                         + [f"conf_{arch}"]]
         else:
             base = base.merge(sub[keep], on=KEY, how="inner")
+    ent = [c for c in ENTROPY_COLUMNS if c in pred.columns]
+    if ent:
+        values = pred[KEY + ent].groupby(KEY, as_index=False).first()   # first non-missing across models
+        base = base.merge(values, on=KEY, how="left")
     base = base.sort_values(["date", "symbol", "bar_index"]).reset_index(drop=True)
     base["ret_bps"] = base["ret"] * 1e4
     base["slot"] = base["bar_index"] / 78.0
-    if use_gate and "pass_trend" in base.columns:
+    if "pass_trend" in base.columns:
         for col in GATE_FLAGS:
             base[col] = base[col].astype(float)
         base["p_trend"] = base["p_trend"].fillna(1.0)
@@ -106,11 +114,41 @@ def market_neutral(state: pd.DataFrame, min_peers: int = 20) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-def feature_columns(state: pd.DataFrame, use_gate: bool = True) -> list[str]:
+def entropy_columns(state: pd.DataFrame) -> list[str]:
+    """The entropy inputs available in this state: continuous features if present, else the gate's flags."""
+    ent = [c for c in ENTROPY_COLUMNS if c in state.columns and state[c].notna().any()]
+    if ent:
+        return ent + (["has_reading"] if "has_reading" in state.columns else [])
+    return [c for c in GATE_FLAGS + ["p_trend", "has_reading"] if c in state.columns]
+
+
+def feature_columns(state: pd.DataFrame, use_entropy: bool = True) -> list[str]:
     cols = [c for c in state.columns if c.startswith("conf_")] + ["slot"]
-    if use_gate:
-        cols += [c for c in GATE_FLAGS + ["p_trend", "has_reading"] if c in state.columns]
+    if use_entropy:
+        cols += entropy_columns(state)
     return cols
+
+
+def design_matrix(state: pd.DataFrame, cols: list[str], reference: np.ndarray) -> tuple[np.ndarray, list[str]]:
+    """Inputs as a float matrix. Entropy features are filled and scaled with statistics from the
+    `reference` rows only (the first fold, which the engine observes before it ever trades), so
+    later folds never shape how earlier ones are read. Confidences, slot and flags are already
+    on a small fixed scale and pass through. A feature with no value in the reference rows is dropped.
+    """
+    keep, columns = [], []
+    for c in cols:
+        x = state[c].to_numpy(float)
+        if c.startswith("ent_"):
+            ref = x[reference]
+            if not np.isfinite(ref).any():
+                continue
+            med = np.nanmedian(ref)
+            ref = np.where(np.isfinite(ref), ref, med)
+            sd = ref.std()
+            x = (np.where(np.isfinite(x), x, med) - ref.mean()) / (sd if sd > 0 else 1.0)
+        keep.append(x)
+        columns.append(c)
+    return np.column_stack(keep), columns
 
 
 # ------------------------------------------------------------------ policy
@@ -185,7 +223,7 @@ def decide(policy: Policy, X: np.ndarray) -> np.ndarray:
 
 # ------------------------------------------------------------------ walk-forward
 
-def run_engine(state: pd.DataFrame, cfg: EngineConfig, use_gate: bool = True, log=print) -> pd.DataFrame:
+def run_engine(state: pd.DataFrame, cfg: EngineConfig, use_entropy: bool = True, log=print) -> pd.DataFrame:
     """Online walk-forward. Adds `pos` and `pnl_bps` (net of cost) to every scored sample.
 
     The first fold has nothing to learn from, so the policy stays out and earns
@@ -194,10 +232,9 @@ def run_engine(state: pd.DataFrame, cfg: EngineConfig, use_gate: bool = True, lo
     if cfg.feedback not in ("bandit", "full"):
         raise ValueError(f"unknown feedback '{cfg.feedback}'; options: bandit, full")
     torch.manual_seed(cfg.seed)
-    cols = feature_columns(state, use_gate)
-    X_all = state[cols].to_numpy(float)
-    rewards = action_rewards(state["ret_bps"].to_numpy(), cfg.cost_bps)
     folds = np.sort(state["fold"].unique())
+    X_all, cols = design_matrix(state, feature_columns(state, use_entropy), state["fold"].to_numpy() == folds[0])
+    rewards = action_rewards(state["ret_bps"].to_numpy(), cfg.cost_bps)
 
     policy = Policy(len(cols), cfg.hidden)
     opt = torch.optim.Adam(policy.parameters(), lr=cfg.lr)

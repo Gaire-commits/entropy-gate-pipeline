@@ -1,10 +1,20 @@
 # Entropy Gate Pipeline
 
-Predictability screening before prediction, on SPY and the 11 Select Sector SPDR ETFs.
-A nightly gate reads the ordinal structure of each ETF's recent returns and decides
-whether it is worth trading the next day. A ladder of rules and models then
-predicts intraday direction, and every result is judged on returns after trading
-costs, with uncertainty measured in days.
+Predictability screening before prediction, on SPY, the 11 Select Sector SPDR ETFs and
+the S&P 500. Permutation entropy reads the ordinal structure of each symbol's recent
+returns. It started as a nightly pass/fail gate and is now a set of continuous features
+that the models and the decision engine weigh for themselves. A ladder of rules,
+gradient-boosted trees and deep networks predicts intraday direction, a reinforcement-
+learning engine decides whether to trade, and every result is judged on returns after
+trading costs, with uncertainty measured in days.
+
+```
+5-minute bars ─┬─ deep encoder (ResNet1D on the price window) ──┐
+               ├─ entropy features (overnight + intraday, ─────┼─ models: gbm, gbm_ent, resnet1d,
+               │   5-minute and hourly scales)                  │          resnet1d_ent, rules ...
+               └─ window summary statistics ───────────────────┘                │
+                                                     confidences + entropy ─ RL engine ─ short / flat / long
+```
 
 **Results so far and progress:** [RESULTS.md](RESULTS.md).
 
@@ -47,6 +57,7 @@ Each run answers the research questions from the same predictions:
 | Q2 | Do deep models beat simple rules and a linear model? | `summary.md` main table: `always_up`, `momentum_day`, `momentum_window`, `logreg`, then CNN1D, ResNet1D, InceptionTime |
 | Q4 | Does an image view of the window help? | ResNet2D (Gramian Angular Field images) vs. ResNet1D, same stages and filters |
 | Q5 | Does any edge survive costs? | net return at each cost level, and the breakeven cost |
+| Q6 | Do entropy features help, as inputs rather than a gate? | pairs that differ only by the entropy features: `gbm_ent` vs `gbm` (trees), `resnet1d_ent` vs `resnet1d` (deep), and the engine with vs. without them (`engine.md`) |
 
 Two further checks come free with the same predictions, no retraining:
 
@@ -68,9 +79,11 @@ python scripts/engine.py --config configs/sp500_multihour.yaml --neutral   # mar
 ```
 
 It learns online, fold by fold, from earlier feedback only, with a policy gradient (REINFORCE). It is
-compared with the best fixed rule chosen from the past. It runs with and without the entropy gate's verdict
+compared with the best fixed rule chosen from the past. It runs with and without the entropy information
 as input, which is the direct test of whether the entropy signal helps an agent that can learn from
-feedback, and with two kinds of feedback:
+feedback. That input is the continuous entropy features when the sweep saved them (scaled with statistics
+from the first fold, which the engine only observes), and the old gate's pass flags for older predictions.
+It also runs with two kinds of feedback:
 
 - **bandit**: only the reward of the action it took. Flat pays 0 and says nothing about what a trade would
   have paid, so once the policy settles on flat it stops seeing the opportunities it misses.
@@ -124,6 +137,37 @@ seeded from its own name, so parallel screening gives exactly the sequential res
 (a test checks this). A universe built from today's constituents carries
 survivorship bias against historical data: names that left the index are missing.
 
+## Entropy as features
+
+The hard gate approved about as often as pure noise and threw away everything about a
+reading except one bit, so the same ordinal statistics now enter as continuous inputs
+(`src/entropy_features.py`), all known before the trade:
+
+- **overnight**, from the nightly reading below: entropy and weighted entropy as z-scores
+  against shuffled copies, the share of monotone patterns and its excess over the shuffles,
+  statistical complexity, the share of tied values and cents per bar;
+- **intraday**, at the signal bar: permutation entropy (m = 3, 4) and the monotone share of
+  the last 60 five-minute returns, and the same at m = 3 on hourly returns over 5 sessions.
+
+**The blind spot behind the hourly features.** Ordinal patterns of 5-minute returns are nearly
+blind to a slowly varying drift, the kind of trend multi-hour momentum relies on: a drift
+that barely changes over three bars shifts all three returns alike and leaves their ranks
+as noise would. For a Gaussian process the monotone share at m = 3 depends on the
+autocorrelations only through (2ρ1 − 1 − ρ2) / (2(1 − ρ1)), so a drift with ρ1 ≈ ρ2 reads
+as noise however strong it is. In simulation, 5-minute patterns separate trending from
+noise spells by 0.07–0.17 standard deviations, hourly ones by about 0.9, and a plain
+variance ratio by about 2 (`tests/test_entropy_features.py` pins this down).
+
+**Making the deep model use them.** `resnet1d_ent` has ResNet1D's body plus an entropy path. With
+the window mostly noise, the body memorizes it within an epoch or two, and early stopping froze
+a plain concatenation before it used the entropy inputs at all (0.50 accuracy where 0.75 was
+available). So the linear entropy path is fitted first as a logistic regression, the classifier
+starts at zero, and that fit is the candidate the joint training has to beat.
+
+Trees (`gbm`, `gbm_ent`) use scikit-learn's histogram gradient boosting on summary statistics
+of the window, with the tree count chosen on the validation fold. They are deterministic, so the
+sweep runs them once.
+
 ## How the gate works
 
 Each evening, for every ETF, the gate takes the last 5 sessions of 5-minute log
@@ -175,12 +219,14 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | Path | Role |
 |---|---|
 | `src/entropy.py` | Permutation entropy, complexity, and the shuffle test |
+| `src/entropy_features.py` | Continuous entropy features, overnight and intraday |
 | `src/screening.py` | Nightly gate readings and pass/fail rules |
 | `src/data.py` | Alpaca download with caching, and the fixed 5-minute session grid |
 | `src/features.py` | Causal channels, windowing, normalization, GAF/MTF encoders |
 | `src/dataset.py` | Samples with gate verdicts attached; walk-forward splits |
 | `src/baselines.py` | Rules that need no training |
-| `src/models.py` | logreg / CNN1D / ResNet1D / InceptionTime / ResNet2D |
+| `src/models.py` | logreg / CNN1D / ResNet1D / InceptionTime / ResNet2D / ResNet1D + entropy |
+| `src/ml.py` | Gradient-boosted trees, with and without the entropy features |
 | `src/training.py` | Reproducible training with early stopping |
 | `src/stats.py` | Trade scoring and day-block bootstrap intervals |
 | `src/experiment.py` | Resumable sweep and the results report |
@@ -228,7 +274,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, report and decision engine (142 unit
+Built and tested: data, gate, features, models, sweep, report and decision engine (167 unit
 tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
 `etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
 execution, risk firewall) and position sizing are designed, not built.

@@ -132,6 +132,70 @@ class ResNet1D(nn.Module):
         return self.head(self.body(x))
 
 
+class ResNet1DEntropy(nn.Module):
+    """ResNet1D's body for the price window, plus the entropy features through two paths.
+
+    A linear path from the entropy features straight to the logits, which is fitted
+    first as a logistic regression (`warm_start`), and a small hidden branch whose
+    output joins the window's embedding before the classifier, so the network can
+    learn interactions such as "trust the window's direction when the trailing
+    returns are ordered". The classifier starts at zero, so before joint training the
+    model is exactly the entropy-only logistic regression.
+
+    Why the warm start: with the window mostly noise, the 500k-parameter body memorizes
+    it within an epoch or two, validation loss turns up, and early stopping froze a
+    plain concatenation before it had used the entropy features at all (0.50 accuracy
+    where 0.75 was available, in a test where only the entropy features carried signal).
+
+    The body is identical to ResNet1D, which makes resnet1d_ent minus resnet1d the
+    contribution of the entropy features.
+    """
+
+    needs_extra = True
+
+    def __init__(
+        self,
+        in_channels: int,
+        length: int,
+        n_extra: int = 0,
+        n_classes: int = 2,
+        filters: tuple[int, ...] = (64, 128, 128),
+        hidden: int = 16,
+        dropout: float = 0.2,
+        **_,
+    ):
+        super().__init__()
+        if n_extra < 1:
+            raise ValueError("resnet1d_ent needs entropy features (n_extra >= 1)")
+        blocks, c_in = [], in_channels
+        for f in filters:
+            blocks.append(_ResidualBlock1D(c_in, f))
+            c_in = f
+        self.body = nn.Sequential(*blocks)
+        self.pool = GlobalAvgPool()
+        self.extra = nn.Sequential(nn.Linear(n_extra, hidden), nn.ReLU())
+        self.head = nn.Sequential(nn.Dropout(dropout), nn.Linear(c_in + hidden, n_classes))
+        self.linear = nn.Linear(n_extra, n_classes)
+        with torch.no_grad():
+            self.head[1].weight.zero_()
+            self.head[1].bias.zero_()
+
+    def forward(self, x: torch.Tensor, e: torch.Tensor) -> torch.Tensor:
+        return self.head(torch.cat([self.pool(self.body(x)), self.extra(e)], dim=1)) + self.linear(e)
+
+    def warm_start(self, e: torch.Tensor, y: torch.Tensor, l2: float = 1e-3) -> None:
+        """Fit the linear entropy path as an L2-regularized logistic regression (deterministic L-BFGS)."""
+        opt = torch.optim.LBFGS(self.linear.parameters(), lr=1.0, max_iter=200, line_search_fn="strong_wolfe")
+
+        def closure():
+            opt.zero_grad()
+            loss = nn.functional.cross_entropy(self.linear(e), y) + l2 * self.linear.weight.pow(2).sum()
+            loss.backward()
+            return loss
+
+        opt.step(closure)
+
+
 class _InceptionModule(nn.Module):
     def __init__(self, in_ch: int, n_filters: int = 32, kernels: tuple[int, ...] = (39, 19, 9)):
         super().__init__()
@@ -263,11 +327,20 @@ ARCHITECTURES = {
     "resnet1d": ResNet1D,
     "inceptiontime": InceptionTime,
     "resnet2d": ResNet2D,
+    "resnet1d_ent": ResNet1DEntropy,
 }
+
+
+def needs_entropy(arch: str) -> bool:
+    """Architectures that take the entropy features as a second input."""
+    return getattr(ARCHITECTURES.get(arch), "needs_extra", False)
+
 
 def build_model(arch: str, in_channels: int, length: int, **kwargs) -> nn.Module:
     if arch not in ARCHITECTURES:
         raise ValueError(f"unknown arch '{arch}'; options: {sorted(ARCHITECTURES)}")
+    if not needs_entropy(arch):
+        kwargs.pop("n_extra", None)
     return ARCHITECTURES[arch](in_channels=in_channels, length=length, **kwargs)
 
 

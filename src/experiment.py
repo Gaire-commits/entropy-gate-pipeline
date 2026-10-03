@@ -15,8 +15,10 @@ import pandas as pd
 
 from .baselines import is_rule, rule_probability
 from .dataset import GATE_COLUMNS
+from .entropy_features import ENTROPY_COLUMNS, apply_entropy_inputs, entropy_matrix, fit_entropy_inputs
 from .features import apply_standardizer, fit_standardizer
-from .models import count_parameters
+from .ml import is_tree, predict_gbm, train_gbm, tree_features
+from .models import count_parameters, needs_entropy
 from .screening import GATE_STATISTICS
 from .stats import compare_subsets, coverage_eligible, coverage_mask, summarize
 
@@ -51,18 +53,30 @@ def run_arch(data: dict, folds: list[dict], arch: str, seed: int, cfg, out_dir: 
             if len(tr) < 50 or len(va) < 10:
                 log(f"  fold {i:3d} skipped: only {len(tr)} train / {len(va)} val samples")
                 continue
-            X = data["X"]
-            if cfg.features.normalize == "fold_standardize":
-                stats = fit_standardizer(X[tr])
-                Xtr, Xva, Xte = (apply_standardizer(X[j], stats) for j in (tr, va, te))
+            if is_tree(arch):
+                model, info = train_gbm(tree_features(data, tr, arch), data["y"][tr],
+                                        tree_features(data, va, arch), data["y"][va], seed=seed)
+                prob = predict_gbm(model, tree_features(data, te, arch), info)
+                n_params = info["n_leaves"]
             else:
-                Xtr, Xva, Xte = X[tr], X[va], X[te]
+                X = data["X"]
+                if cfg.features.normalize == "fold_standardize":
+                    stats = fit_standardizer(X[tr])
+                    Xtr, Xva, Xte = (apply_standardizer(X[j], stats) for j in (tr, va, te))
+                else:
+                    Xtr, Xva, Xte = X[tr], X[va], X[te]
+                Etr = Eva = Ete = None
+                if needs_entropy(arch):
+                    E = entropy_matrix(data)
+                    e_stats = fit_entropy_inputs(E[tr])
+                    Etr, Eva, Ete = (apply_entropy_inputs(E[j], e_stats) for j in (tr, va, te))
 
-            from .training import predict, train_fold
+                from .training import predict, train_fold
 
-            model, info = train_fold(Xtr, data["y"][tr], Xva, data["y"][va], cfg.model, arch, seed)
-            prob = predict(model, Xte)
-            n_params = count_parameters(model)
+                model, info = train_fold(Xtr, data["y"][tr], Xva, data["y"][va], cfg.model, arch, seed,
+                                         E_train=Etr, E_val=Eva)
+                prob = predict(model, Xte, Ete)
+                n_params = count_parameters(model)
 
         frame = pd.DataFrame(
             {
@@ -79,7 +93,7 @@ def run_arch(data: dict, folds: list[dict], arch: str, seed: int, cfg, out_dir: 
                 "best_epoch": info["best_epoch"],
             }
         )
-        for col in GATE_COLUMNS + ["has_reading"]:
+        for col in GATE_COLUMNS + ["has_reading"] + ENTROPY_COLUMNS:
             if col in data:
                 frame[col] = data[col][te]
 
@@ -93,7 +107,7 @@ def run_arch(data: dict, folds: list[dict], arch: str, seed: int, cfg, out_dir: 
         direction = np.where(taken["prob"] > 0.5, 1.0, -1.0)
         acc = ((direction > 0) == (taken["y"] == 1)).mean() if len(taken) else float("nan")
         gross = (direction * taken["ret"]).mean() * 1e4 if len(taken) else float("nan")
-        undertrained = not is_rule(arch) and info["best_epoch"] == cfg.model.epochs - 1
+        undertrained = not is_rule(arch) and info["best_epoch"] == info.get("limit", cfg.model.epochs) - 1
         log(
             f"  fold {i:3d} [{str(fold['test_start'])[:10]}..{str(fold['test_end'])[:10]}]  "
             f"acc {acc:.3f}  gross {gross:+6.2f}bps  trades {len(taken):,}  {time.time() - started:5.0f}s"
@@ -111,7 +125,7 @@ def load_predictions(out_dir: Path) -> pd.DataFrame:
 
 def ensemble(pred: pd.DataFrame) -> pd.DataFrame:
     """Average each sample's probability across seeds."""
-    extra = [c for c in GATE_COLUMNS + ["has_reading", "y", "ret"] if c in pred.columns]
+    extra = [c for c in GATE_COLUMNS + ["has_reading", "y", "ret"] + ENTROPY_COLUMNS if c in pred.columns]
     agg = {c: "first" for c in extra}
     agg["prob"] = "mean"
     return pred.groupby(KEY, as_index=False).agg(agg)
@@ -202,7 +216,8 @@ def markdown(overall: pd.DataFrame, gate: pd.DataFrame, confidence: pd.DataFrame
         f"# {cfg.experiment}",
         "",
         f"{int(overall['folds'].iloc[0])} walk-forward folds, {int(overall['test_days'].iloc[0])} test days. "
-        "Intervals are 95% day-block bootstrap. `±seeds` is the spread across training seeds.",
+        "Intervals are 95% day-block bootstrap. `±seeds` is the spread across training seeds. "
+        "For the tree models (gbm, gbm_ent) params counts leaves; `_ent` models also see the entropy features.",
         "",
         f"| model | params | accuracy [95% CI] | ±seeds | gross bps/trade [95% CI] | ±seeds | net @ {headline} bps | breakeven |",
         "|---|---:|---|---:|---|---:|---:|---:|",

@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .entropy_features import ENTROPY_COLUMNS, INTRADAY, OVERNIGHT, intraday_entropy, overnight_values
 from .features import build_channels, make_windows, normalize_windows, session_return
 from .screening import GATE_STATISTICS
 
@@ -25,6 +26,9 @@ def build_dataset(bars: dict[str, pd.DataFrame], screen: pd.DataFrame | None, cf
     X is (n, channels, window). Gate columns match a sample to the reading whose
     trade_date is the sample's session, i.e. a reading computed at the previous
     close. `has_reading` is False where no reading exists yet (warm-up days).
+    The continuous entropy features (`ent_*`, see entropy_features.py) come from the
+    same reading plus the trailing returns at the signal bar; without a screen the
+    overnight ones are NaN.
     """
     f = cfg.features
     lookup = None
@@ -32,12 +36,14 @@ def build_dataset(bars: dict[str, pd.DataFrame], screen: pd.DataFrame | None, cf
         if "trade_date" not in screen.columns or "pass_trend" not in screen.columns:
             raise ValueError("screen table is from an older version; re-run scripts/run_screen.py")
         dated = screen.dropna(subset=["trade_date"])
-        lookup = dated.set_index(["symbol", "trade_date"])[GATE_COLUMNS]
+        overnight = [c for c in OVERNIGHT if c in dated.columns]
+        lookup = dated.set_index(["symbol", "trade_date"])[GATE_COLUMNS + overnight]
 
     chunks: dict[str, list] = {
         k: [] for k in ("X", "y", "ret", "date", "symbol", "day_return", "window_return", "bar_index")
     }
     gate_chunks: dict[str, list] = {k: [] for k in GATE_COLUMNS + ["has_reading"]}
+    entropy_chunks: dict[str, list] = {k: [] for k in ENTROPY_COLUMNS}
 
     for symbol, df in bars.items():
         windows = make_windows(
@@ -66,6 +72,10 @@ def build_dataset(bars: dict[str, pd.DataFrame], screen: pd.DataFrame | None, cf
         chunks["window_return"].append(windows["window_return"])
         chunks["bar_index"].append(df["bar_index"].to_numpy()[signal])
 
+        intraday = intraday_entropy(build_channels(df, ["log_return"])[:, 0], signal)
+        for col in INTRADAY:
+            entropy_chunks[col].append(intraday[col])
+        matched = None
         if lookup is not None:
             keys = pd.MultiIndex.from_arrays([np.full(n, symbol), dates])
             matched = lookup.reindex(keys)
@@ -75,6 +85,11 @@ def build_dataset(bars: dict[str, pd.DataFrame], screen: pd.DataFrame | None, cf
                 if col.startswith("pass_"):
                     values = np.where(pd.isna(values), False, values).astype(bool)
                 gate_chunks[col].append(values)
+        for screen_col, col in OVERNIGHT.items():
+            if matched is not None and screen_col in matched.columns:
+                entropy_chunks[col].append(overnight_values(screen_col, matched[screen_col].to_numpy(dtype=float)))
+            else:
+                entropy_chunks[col].append(np.full(n, np.nan))
 
     if not chunks["X"]:
         raise RuntimeError("no samples could be built; check the date range and window geometry")
@@ -89,6 +104,8 @@ def build_dataset(bars: dict[str, pd.DataFrame], screen: pd.DataFrame | None, cf
     if lookup is not None:
         for key, parts in gate_chunks.items():
             data[key] = np.concatenate(parts)[order]
+    for key, parts in entropy_chunks.items():
+        data[key] = np.concatenate(parts)[order]
     return data
 
 

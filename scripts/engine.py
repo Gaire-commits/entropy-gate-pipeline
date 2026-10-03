@@ -17,7 +17,8 @@ needs a wide universe (the S&P 500), not 12 ETFs that are mostly the market.
 
 The reference is staying flat, which earns exactly 0: a policy that trades only
 loses money to costs unless it has found something. The engine runs with and
-without the entropy gate's verdict as input, and with two kinds of feedback:
+without the entropy information as input (the continuous entropy features when the
+sweep saved them, the old gate's pass flags otherwise), and with two kinds of feedback:
 bandit (only the reward of the action it took) and full (all three actions scored
 on every past sample, so the trades it skipped teach it too). The best fixed rule
 chosen from the past is the baseline to beat.
@@ -38,8 +39,8 @@ from _common import DEFAULT_CONFIG, output_dir
 
 from src.config import load_config
 from src.engine import (
-    EngineConfig, baseline_positions, build_state, market_neutral, missed_opportunities, model_signal,
-    run_engine, score_positions, threshold_rule,
+    EngineConfig, baseline_positions, build_state, entropy_columns, market_neutral, missed_opportunities,
+    model_signal, run_engine, score_positions, threshold_rule,
 )
 from src.experiment import load_predictions
 
@@ -74,7 +75,7 @@ def missed_lines(missed: pd.DataFrame, modes: list[str], gate_name: str, signal_
              "cost, is picked in hindsight for the whole group, never for a single sample. A group whose best action has an "
              "interval above zero (✓) is a real opportunity; where an engine earned clearly less, it missed it. With ten "
              "groups, one can clear that bar by luck."
-             + (" The engines here are the ones given the gate's verdict." if gated else ""), "",
+             + (" The engines here are the ones given the entropy information." if gated else ""), "",
              "| gate | strength | samples | best fixed action | its net [95% CI] | "
              + " | ".join(f"{fb} engine: trades · net" for fb in modes) + " |",
              "|---|---:|---:|---|---|" + "---:|" * len(modes)]
@@ -134,21 +135,24 @@ def main() -> int:
     statistic = getattr(cfg.screening, "gate_statistic", "trend")
     gate_flag = f"pass_{statistic}"
     gated = gate_flag in state.columns
+    informed = bool(entropy_columns(state))
+    continuous = any(c.startswith("ent_") for c in entropy_columns(state))
+    with_entropy = "models + entropy features" if continuous else "models + entropy gate"
     folds = np.sort(state["fold"].unique())
     scored_from = folds[1]
     modes = ["bandit", "full"] if args.feedback == "both" else [args.feedback]
     print(f"{cfg.experiment}: {len(state):,} samples, {len(folds)} folds, models {models}, cost {cost} bps, "
-          f"gate features: {gated}, feedback: {modes}")
+          f"entropy inputs: {entropy_columns(state) or 'none'}, feedback: {modes}")
 
-    def run(use_gate: bool, feedback: str):
+    def run(use_entropy: bool, feedback: str):
         frames = []
         for seed in args.seeds:
-            print(f"  engine seed {seed} gate={'on' if use_gate else 'off'} feedback={feedback}")
+            print(f"  engine seed {seed} entropy={'on' if use_entropy else 'off'} feedback={feedback}")
             frames.append(run_engine(state, EngineConfig(cost_bps=cost, seed=seed, feedback=feedback),
-                                     use_gate=use_gate, log=lambda _: None))
+                                     use_entropy=use_entropy, log=lambda _: None))
         return frames
 
-    runs = {(fb, g): run(g, fb) for fb in modes for g in ([False, True] if gated else [False])}
+    runs = {(fb, g): run(g, fb) for fb in modes for g in ([False, True] if informed else [False])}
 
     live = state["fold"] >= scored_from
     rows = [{"policy": "stay flat (reference)", "net": 0.0, "lo": 0.0, "hi": 0.0, "trade_rate": 0.0}]
@@ -162,11 +166,11 @@ def main() -> int:
     curves = {"rule": rule.groupby("fold")["pnl_bps"].mean()}
     for (fb, g), frames in runs.items():
         merged, rate = averaged_over_seeds([f[f["fold"] >= scored_from] for f in frames])
-        rows.append(row(f"engine, {'models + entropy gate' if g else 'models only'}, {fb} feedback", merged, rate))
-        curves[fb + (" + gate" if g else "")] = merged.groupby("fold")["pnl_bps"].mean()
+        rows.append(row(f"engine, {with_entropy if g else 'models only'}, {fb} feedback", merged, rate))
+        curves[fb + (" + entropy" if g else "")] = merged.groupby("fold")["pnl_bps"].mean()
 
     scored = state[live]
-    engines = {fb: [f.loc[scored.index, "pos"].to_numpy() for f in runs[(fb, gated)]] for fb in modes}
+    engines = {fb: [f.loc[scored.index, "pos"].to_numpy() for f in runs[(fb, informed)]] for fb in modes}
     missed = missed_opportunities(scored, engines, cost, model_signal(scored, args.signal), gate_flag=gate_flag)
 
     table = pd.DataFrame(rows)
@@ -186,7 +190,7 @@ def main() -> int:
              "| policy | net bps/opportunity [95% CI] | trades |", "|---|---|---:|"]
     for _, r in table.iterrows():
         lines.append(f"| {r['policy']} | {r['net']:+.2f} [{r['lo']:+.2f}, {r['hi']:+.2f}] | {r['trade_rate']:.0%} |")
-    lines += missed_lines(missed, modes, statistic, args.signal or "the trained models' average", gated)
+    lines += missed_lines(missed, modes, statistic, args.signal or "the trained models' average", informed)
     curve = pd.DataFrame(curves).loc[lambda d: d.index >= scored_from]
     lines += ["", "## Is it learning from feedback?", "",
               "Net bps per opportunity by fold. A learner should drift up (or stay out) as feedback accumulates.", "",

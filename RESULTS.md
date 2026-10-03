@@ -17,6 +17,11 @@ lives on Google Drive rather than in this repo. The runs finished in late Septem
 - **One unconfirmed lead.** Trading only a model's most confident predictions raises the return per trade in
   4 of 10 model runs, most strongly for S&P 500 logistic regression. Every interval includes zero and accuracy
   barely moves, so it may track volatility rather than skill.
+- **Permutation entropy has a blind spot that may explain part of the null.** Ordinal patterns of
+  5-minute returns barely react to a slowly varying drift, the kind of trend multi-hour momentum relies
+  on. In simulation they separate trending from noise spells by 0.07–0.17 standard deviations; patterns of
+  hourly returns separate them by about 0.9, and a plain variance ratio by about 2. Entropy is now a set
+  of continuous model inputs at both scales instead of a pass/fail gate; real-data results are pending.
 - **The measurement works.** On synthetic data the gate passes planted trends and refuses zig-zags and tick
   noise, and the models recover planted signals. The null on real data is a finding, not a broken pipeline.
 - **The decision engine (RL) finds nothing either.** On the ETFs it learns to stay flat. On the S&P 500 the
@@ -306,6 +311,50 @@ confidence measured relative to the other stocks at the same date and bar. Net b
   was trained to predict each stock's raw direction, not to rank stocks against each other, and the deep
   models were never run on the S&P 500. This is a null on those inputs, not on stock-specific prediction.
 
+## Entropy as features instead of a gate (2026-10-03)
+
+The gate was replaced by continuous entropy features that the models and the engine weigh for
+themselves (design in the README, "Entropy as features"). Three models were added in pairs that differ
+only by those features: gradient-boosted trees `gbm` / `gbm_ent`, and `resnet1d` / `resnet1d_ent` with
+the same deep encoder. The engine now reads the continuous features instead of the gate's flags.
+
+**What permutation entropy can and cannot see.** Ordinal patterns of returns depend on how each return
+ranks against its neighbours. A drift that barely changes over three bars lifts all three alike, so the
+ranks, and the patterns, look like noise. For a Gaussian process the monotone share at m = 3 depends on
+the autocorrelations only through (2ρ1 − 1 − ρ2) / (2(1 − ρ1)): a slow drift (ρ1 = 0.35, ρ2 ≈ 0.34) reads
+0.335 against 0.333 for noise, while a short-memory process with the same ρ1 = 0.35 reads 0.395.
+Simulated markets switching between trending spells and noise spells (equal volatility):
+
+| statistic, trailing 5 sessions | separation of trending from noise spells |
+|---|---:|
+| monotone share, 5-minute returns | 0.07–0.17 sd |
+| monotone share, hourly returns | 0.86–0.88 sd |
+| variance ratio (not an entropy measure) | 1.85–2.22 sd |
+
+Hourly-scale entropy features were added for this reason. Whether the 5-minute gate's null on real data
+comes from this blind spot is a hypothesis, not yet a result.
+
+**The synthetic regime control did not favour entropy, and that is informative.** In the same simulated
+market the trees without entropy already placed 82% of their most confident 30% of trades in trending
+spells, and 97% of the top 10%: a strong drift shows up as a large window move, so the window itself
+says when to trust the signal. With entropy the trees did no better (top-30% accuracy 0.764 against
+0.792). Entropy can only add something the price window does not already show.
+
+**A design problem found and fixed in the deep model.** With the window mostly noise, the 500k-parameter
+body memorized it within an epoch or two, and early stopping froze a plain concatenation before the entropy
+inputs were used: 0.50 accuracy where 0.75 was available, in a test where only entropy carried the signal.
+Fitting the entropy path first as a logistic regression fixed it (0.745–0.771), and with uninformative
+entropy it stays at chance (0.48–0.50).
+
+**Controls** (`tests/test_entropy_features.py`, `tests/test_ml.py`, `tests/test_engine.py`): the features
+match a direct calculation, never read past the signal bar and are missing rather than invented when
+history is short; `gbm_ent` uses a signal that only entropy reveals and `gbm` cannot; the engine earns
++0.15 to +0.43 bps per opportunity on an edge that only an entropy feature reveals (0 without it), with
+scaling taken from the first fold only.
+
+**Real data: pending.** Colab section 12 trains the new models on the ETFs (GPU, about 15–30 minutes) and
+the trees on the S&P 500 (CPU, an hour or more), then re-runs the engine.
+
 ## Advisor feedback and response (September 2026)
 
 The feedback asked for:
@@ -354,15 +403,17 @@ The response so far:
 | late September | Real-data runs of `spy_gao`, `etf_gao`, `etf_intraday` and `sp500_multihour` |
 | 2026-10-01 | Decision engine, then full feedback and the missed-opportunities table. First real-data run: flat on the ETFs, collapsed into always-long on the S&P 500. Market-neutral mode built |
 | 2026-10-02 | Market-neutral engine run on the S&P 500: no stock-specific signal survives cost; the engine stays flat |
+| 2026-10-03 | Entropy became continuous features (overnight, 5-minute and hourly scales); trees and a ResNet1D with an entropy path; the engine reads the features. Found the 5-minute blind spot to slow drift |
 
 ## Next steps
 
-1. Train models for the market-neutral question: a target relative to the cross-section (does this stock
+1. Run Colab section 12 (entropy as features) and record the results here.
+2. Train models for the market-neutral question: a target relative to the cross-section (does this stock
    beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules
    and logistic regression so far.
-2. Run `etf_multihour`, the horizon the advisor pointed toward.
-3. Re-score the confidence filter in units of each day's volatility before citing it.
-4. Count gate approvals as episodes, not days.
-5. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
-6. Fix wording: the S&P 500 gate table still says "ETF".
-7. Use point-in-time S&P 500 membership to remove survivorship bias.
+3. Run `etf_multihour`, the horizon the advisor pointed toward.
+4. Re-score the confidence filter in units of each day's volatility before citing it.
+5. Count gate approvals as episodes, not days.
+6. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
+7. Fix wording: the S&P 500 gate table still says "ETF".
+8. Use point-in-time S&P 500 membership to remove survivorship bias.

@@ -7,7 +7,8 @@
    and refuses tick-constrained prices.
 2. Positive controls: planted signals in both setups must be recovered, or a
    null result on real data would say nothing about the market.
-3. The sweep and report run end to end and write a summary.
+3. The sweep and report run end to end and write a summary, including a model
+   that takes the entropy features as inputs.
 """
 
 from __future__ import annotations
@@ -106,13 +107,13 @@ def main() -> int:
     folds = walk_forward_splits(data["date"], FAST_VALIDATION)[:2]
     gao.evaluation.bootstrap = 200
     with tempfile.TemporaryDirectory() as tmp:
-        for arch in ["always_up", "momentum_day", "logreg"]:
+        for arch in ["always_up", "momentum_day", "logreg", "gbm_ent"]:
             run_arch(data, folds, arch, 0, gao, Path(tmp), log=lambda _: None)
         rerun = run_arch(data, folds, "logreg", 0, gao, Path(tmp), log=lambda _: None)
         overall, gate, confidence = report(load_predictions(Path(tmp)), gao)
         text = markdown(overall, gate, confidence, gao)
     results.append(check("interrupted sweeps resume instead of retraining", rerun == 0, f"{rerun} folds re-run"))
-    results.append(check("report has every model and a Q1 table", len(overall) == 3 and len(gate) == 9,
+    results.append(check("report has every model and a Q1 table", len(overall) == 4 and len(gate) == 12,
                          f"{len(overall)} models, {len(gate)} gate rows"))
     print("\n" + "\n".join("     " + line for line in text.splitlines()[:9]))
 
