@@ -66,6 +66,26 @@ Two further checks come free with the same predictions, no retraining:
 - **Within-ETF gate comparison**: the Q1 difference after subtracting each ETF's own average. The gate refuses
   whole ETFs that move only a few cents a bar, so the raw split partly compares expensive ETFs against cheap ones.
 
+## Selective trading (the main case)
+
+`scripts/selective.py` trades only each model's strongest signals, the top 20%, 10%, 5% or 2% by
+confidence, with each quarter's cutoff set from earlier quarters only. Breadth keeps it frequent:
+the top 10% is about one trade a day on 12 ETFs and about 60 a day on the S&P 500. It reports
+trades per day, hit rate, net bps per trade and per day, and in how many quarters it made money.
+
+```bash
+python scripts/selective.py --config configs/sp500_multihour.yaml    # no retraining; reads predictions and bars
+```
+
+It also asks whether the strongest signals are skill or just volatility. A model that is most
+confident when the market is most volatile earns more bps on its confident trades simply because
+every move is bigger. So each trade's return is also divided by its symbol's trailing volatility
+times the square root of the hold (*risk-scaled*), and a placebo keeps the same share of signals
+ranked by trailing volatility instead of confidence. Skill means the confident trades earn more per
+unit of risk than the placebo. Compare in risk-scaled terms, not bps: in a test where a model was right
+66% of the time everywhere, the volatility placebo earned more bps (+40.8 against +32.5) because it
+picked the biggest moves, while risk-scaled return showed the skill (49 against 25).
+
 ## Decision engine
 
 `src/engine.py` and `scripts/engine.py` train a reinforcement-learning policy on the saved
@@ -232,6 +252,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/experiment.py` | Resumable sweep and the results report |
 | `src/synthetic.py` | Bars with known structure for tests |
 | `src/engine.py` | RL decision engine: policy, online walk-forward learning, baselines |
+| `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
 | `universe/` | Saved constituent lists for larger universes |
 | `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
 | `src/ibkr_capture.py` | TWS recorder for quotes, trades and depth |
@@ -274,7 +295,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, report and decision engine (167 unit
+Built and tested: data, gate, features, models, sweep, report and decision engine (172 unit
 tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
 `etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
 execution, risk firewall) and position sizing are designed, not built.

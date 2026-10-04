@@ -29,6 +29,16 @@ lives on Google Drive rather than in this repo. The runs finished in late Septem
   version fixes that and also stays flat (−0.1 to −0.2 bps, 4–8% of samples traded): no stock-specific signal
   survives costs in the rules and logistic regression tested.
 
+## Main case from here on: selective trading
+
+Trade only each model's strongest signals, across a wide universe so they still come often (the top
+10% of signals is about 60 trades a day on the S&P 500), with cutoffs from earlier quarters only
+(`scripts/selective.py`, Colab section 13). It is the main case because the one lead so far came from
+selectivity (S&P 500 logistic regression, +6.15 bps gross on its most confident 10%). Before it can
+be cited, the report has to show the lead is skill rather than volatility: confident trades must
+earn more per unit of their own risk than a placebo that picks the most volatile moments instead.
+**Pending: the first run of section 13.**
+
 ## Common setup
 
 | | |
@@ -404,15 +414,16 @@ The response so far:
 | 2026-10-01 | Decision engine, then full feedback and the missed-opportunities table. First real-data run: flat on the ETFs, collapsed into always-long on the S&P 500. Market-neutral mode built |
 | 2026-10-02 | Market-neutral engine run on the S&P 500: no stock-specific signal survives cost; the engine stays flat |
 | 2026-10-03 | Entropy became continuous features (overnight, 5-minute and hourly scales); trees and a ResNet1D with an entropy path; the engine reads the features. Found the 5-minute blind spot to slow drift |
+| 2026-10-03 | Selective trading made the main case, with a risk-scaled check and a volatility placebo |
 
 ## Next steps
 
-1. Run Colab section 12 (entropy as features) and record the results here.
-2. Train models for the market-neutral question: a target relative to the cross-section (does this stock
+1. Run Colab section 13 (selective trading, no retraining): is the S&P 500 lead skill or volatility?
+2. Run Colab section 12 (entropy as features) and record the results here.
+3. Train models for the market-neutral question: a target relative to the cross-section (does this stock
    beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules
    and logistic regression so far.
-3. Run `etf_multihour`, the horizon the advisor pointed toward.
-4. Re-score the confidence filter in units of each day's volatility before citing it.
+4. Run `etf_multihour`, the horizon the advisor pointed toward.
 5. Count gate approvals as episodes, not days.
 6. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
 7. Fix wording: the S&P 500 gate table still says "ETF".
