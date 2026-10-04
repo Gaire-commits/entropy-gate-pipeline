@@ -18,11 +18,14 @@ and 4 October 2026.
 - **Entropy adds nothing in any of three roles.** As a gate (above), as continuous model inputs (it moved
   returns by −0.45 to +0.27 bps with no consistent sign) and as inputs to the decision engine (which then
   traded two to five times as often and lost 0.1–0.6 bps more per opportunity).
-- **One unconfirmed lead.** Trading only a model's most confident predictions raises the return per trade for
-  all three S&P 500 models (logistic regression +6.15 bps on its top 10%, the trees +3.15 to +3.91 on their top
-  3%) and for most models on the 4-hour ETF setup, but rarely on the half-hour setups. Every interval includes
-  zero and accuracy rises only from about 0.50 to 0.53 at best, so it may track volatility rather than skill.
-  Colab section 13 decides.
+- **The one lead was volatility, not skill.** Trading only a model's most confident predictions raises the
+  return per trade, most for S&P 500 logistic regression (+6.15 bps on its top 10%). But those trades are 2–3
+  times as volatile as average, and picking the most volatile moments without any model does as well or
+  better, in bps and per unit of risk. Nothing beats costs through prediction: no model at any confidence
+  level, not entropy in any role, not the RL engine.
+- **A side finding, not yet checked.** Trading the models' mostly long direction at the S&P 500's most volatile
+  moments earned +15.21 bps gross on the top 2% [+1.57, +29.18], in 10 of 14 quarters. It is a market-level
+  effect, not stock prediction, and a flat 2 bps cost understates trading costs exactly then.
 - **Permutation entropy has a blind spot that may explain part of the null.** Ordinal patterns of
   5-minute returns barely react to a slowly varying drift, the kind of trend multi-hour momentum relies
   on. In simulation they separate trending from noise spells by 0.07–0.17 standard deviations; patterns of
@@ -35,16 +38,50 @@ and 4 October 2026.
   survives costs in the rules and logistic regression tested. Where it does learn, it learns the right thing:
   on synthetic data it finds planted edges and stays out of noise.
 
-## Main case from here on: selective trading
+## Main case: selective trading (2026-10-04)
 
-Trade only each model's strongest signals, across a wide universe so they still come often (the top
-10% of signals is about 60 trades a day on the S&P 500), with cutoffs from earlier quarters only
-(`scripts/selective.py`, Colab section 13). It is the main case because the one lead so far came from
-selectivity (S&P 500 logistic regression, +6.15 bps gross on its most confident 10%; the trees show the same
-rise). Before it can
-be cited, the report has to show the lead is skill rather than volatility: confident trades must
-earn more per unit of their own risk than a placebo that picks the most volatile moments instead.
-**Pending: the first run of section 13.**
+Trade only each model's strongest signals, across a wide universe so they still come often, with cutoffs from
+earlier quarters only (`scripts/selective.py`, Colab section 13). On the S&P 500 the top 10% of logistic
+regression's signals is about 65 trades a day; on the ETFs the top levels are 0.5–3.4 a day. It became the main
+case because the one lead so far came from selectivity. The test: confident trades must earn more per unit of
+their own risk (return ÷ trailing volatility × √hold, ×100, "risk-scaled") than a placebo that keeps the same
+share of signals ranked by trailing volatility instead of confidence and trades the model's direction.
+
+**Result: the lead is volatility, not skill.** S&P 500:
+
+| Selection | Kept | Gross bps/trade | Hit rate | Risk-scaled [95% CI] | Volatility vs. average | Quarters net > 0 |
+|---|---:|---:|---:|---|---:|---:|
+| logreg, every signal | 100% | +0.89 | 0.503 | +0.0 [−1.3, +1.4] | 1.0× | 3/14 |
+| logreg, top 10% by confidence | 8% | +6.15 | 0.512 | +1.7 [−1.3, +5.2] | 1.9× | 7/14 |
+| top 10% by volatility (placebo) | 11% | +9.07 | 0.512 | +2.8 [−0.7, +7.9] | 2.6× | 8/14 |
+| logreg, top 2% by confidence | 2% | +11.87 [+0.08, +24.40] | 0.524 | +2.4 [−1.3, +6.5] | 2.9× | 9/14 |
+| top 2% by volatility (placebo) | 2% | +15.21 [+1.57, +29.18] | 0.525 | +2.9 [−0.0, +6.0] | 4.5× | 10/14 |
+| gbm, top 2% by confidence | 3% | +4.76 | 0.537 | +4.9 [−0.0, +9.6] | 1.2× | 4/14 |
+| top 2% by volatility (placebo) | 2% | +6.26 | 0.514 | +1.6 [−2.6, +5.3] | 4.5× | 7/14 |
+
+- **Logistic regression picks volatile moments.** Its most confident trades are 1.9–2.9 times as volatile as
+  average, and picking the most volatile moments directly does as well or better at every level, in bps and per
+  unit of risk. Per unit of risk its confident trades earn +1.1 to +2.4 against +0.0 for all trades, every
+  interval including zero.
+- **The trees are a weak partial exception.** `gbm`'s and `gbm_ent`'s most confident S&P 500 trades are only
+  1.2–1.5 times as volatile as average and beat the placebo per unit of risk (+3.0 to +4.9 against +1.6 to
+  +3.5), with a hit rate of 0.53. But every interval touches zero, 95–98% of those trades are longs placed on
+  fewer than half the days (a bet on which days the market rises, not on which stocks), and they made money in
+  only 4–6 of 14 quarters.
+- **ETFs: the placebo matches or beats confidence almost everywhere.** The one exception is logistic regression
+  on the half-hour ETFs (top 10%: +5.2 [−2.6, +13.6] per unit of risk against −0.7 for the placebo), with
+  intervals that wide and under one trade a day.
+
+**A side finding, not yet checked.** Trading the models' direction, mostly long (68–95%), at the S&P 500's most
+volatile moments earned large gross returns: +15.21 bps on the top 2% [+1.57, +29.18], positive in 10 of 14
+quarters, and +8.81 to +9.50 on the top 10% with wide intervals. It is a market-level effect, not stock
+prediction. One plausible reading is buying into selloffs and catching the rebounds, in line with the finding that
+supplying liquidity pays more when volatility is high (Nagel 2012, "Evaporating Liquidity", Review of Financial
+Studies). Before it counts for anything:
+
+- **Costs:** a flat 2 bps understates trading costs exactly when spreads widen in volatile moments.
+- **One episode?** It may be mostly the April 2025 selloff and rebound.
+- **Market exposure:** it is unhedged; it has not been tested market-neutral.
 
 ## Common setup
 
@@ -224,9 +261,8 @@ rarely on the half-hour setups. It is not an edge yet:
   are most extreme.
 - **The models are not independent witnesses.** They share inputs and training data, so several of them showing
   the slope is not several confirmations.
-- **The check:** Colab section 13 (`scripts/selective.py`) scores the trades per unit of their own volatility
-  against a placebo that picks the most volatile moments instead. If the slope survives that, it is worth
-  pursuing.
+- **The check found volatility.** Scored per unit of their own volatility, against a placebo that picks the most
+  volatile moments instead, the confident trades do no better (Colab section 13; see "Main case" above).
 
 ## Checks on the measurement itself
 
@@ -491,14 +527,16 @@ The response so far:
 | 2026-10-03 | Entropy became continuous features (overnight, 5-minute and hourly scales); trees and a ResNet1D with an entropy path; the engine reads the features. Found the 5-minute blind spot to slow drift |
 | 2026-10-03 | Selective trading made the main case, with a risk-scaled check and a volatility placebo |
 | 2026-10-04 | Entropy as features on real data: no effect as model inputs, and as engine inputs more trading and bigger losses |
+| 2026-10-04 | Selective trading on real data: the confidence lead is volatility, not skill. Side finding on volatile moments, unchecked |
 
 ## Next steps
 
-1. Run Colab section 13 (selective trading, no retraining): is the S&P 500 lead skill or volatility?
+1. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
+   a higher cost in volatile moments) before it goes into the thesis even as a side note.
 2. Run `etf_multihour`, the horizon the advisor pointed toward.
 3. Train models for the market-neutral question: a target relative to the cross-section (does this stock
-   beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules
-   and logistic regression so far.
+   beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules,
+   logistic regression and trees so far.
 4. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
    inference by day, the drift blind spot of permutation entropy, the engine's failure modes).
 5. Count gate approvals as episodes, not days.
