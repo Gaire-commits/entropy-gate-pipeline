@@ -83,6 +83,30 @@ Studies). Before it counts for anything:
 - **One episode?** It may be mostly the April 2025 selloff and rebound.
 - **Market exposure:** it is unhedged; it has not been tested market-neutral.
 
+## Diversification: we have fewer independent bets than trades (2026-10-04)
+
+Every result above scores each trade against its own direction. Trades placed at the same moment share the
+market's move, and the models are almost always long: 97% of `gbm`'s and 79% of logistic regression's S&P 500
+signals, 95% and 84% of their top-10% trades. A day's hundreds of S&P 500 trades are therefore closer to one bet
+on the market than to hundreds of bets, which is also why 673,694 S&P 500 trades gave intervals no narrower than
+14,005 ETF trades, why the engine collapsed into always-long, and why the volatile-moment side finding is
+68–95% long. The 12 ETFs are one asset (SPY is the sum of the 11 sector ETFs), and one quarter (April 2025)
+carries several results.
+
+**Built, with synthetic controls (`tests/test_crosssection.py`), real-data run pending (Colab section 14):**
+
+- `scripts/breadth.py`: effective independent bets per day, cross-sectional IC (market-neutral, optionally
+  sector-neutral), market- and sector-neutral long-short books, how alike the models are, and what IC the data
+  could detect against what a long-short book needs to pay its cost.
+- `configs/cross_asset_multihour.yaml` and `universe/cross_asset.csv`: 37 ETFs in 7 asset classes (US and
+  international equities, government bonds, credit, commodities, real estate, currencies), for breadth that comes
+  from different drivers (Colab section 15, needs the data first).
+
+On synthetic markets the cross-sectional IC finds a stock-level skill the directional test cannot see, and invents
+nothing without one; that is what makes it the right instrument for the question the earlier tables could not
+answer. **What it can show is open**: it may find a small positive IC that no cost structure could use (a
+long-short book at 2 bps needs an IC of roughly 0.014 when stocks differ by about 80 bps), or nothing.
+
 ## Common setup
 
 | | |
@@ -528,18 +552,23 @@ The response so far:
 | 2026-10-03 | Selective trading made the main case, with a risk-scaled check and a volatility placebo |
 | 2026-10-04 | Entropy as features on real data: no effect as model inputs, and as engine inputs more trading and bigger losses |
 | 2026-10-04 | Selective trading on real data: the confidence lead is volatility, not skill. Side finding on volatile moments, unchecked |
+| 2026-10-04 | Diversification: breadth tools (independent bets, cross-sectional IC, market- and sector-neutral long-short books) and a 37-ETF cross-asset universe built and tested on synthetic markets; real-data runs pending |
 
 ## Next steps
 
-1. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
+1. Run Colab section 14 (`scripts/breadth.py`, no retraining): the effective number of independent bets, and the
+   cross-sectional IC and long-short results with the market and sectors removed. The one test that uses the full
+   breadth of the S&P 500.
+2. Run Colab section 15 (cross-asset universe: fetch, screen, sweep, breadth) for bets with different drivers.
+3. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
    a higher cost in volatile moments) before it goes into the thesis even as a side note.
-2. Run `etf_multihour`, the horizon the advisor pointed toward.
-3. Train models for the market-neutral question: a target relative to the cross-section (does this stock
+4. Run `etf_multihour`, the horizon the advisor pointed toward.
+5. Train models for the market-neutral question: a target relative to the cross-section (does this stock
    beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules,
    logistic regression and trees so far.
-4. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
+6. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
    inference by day, the drift blind spot of permutation entropy, the engine's failure modes).
-5. Count gate approvals as episodes, not days.
-6. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
-7. Fix wording: the S&P 500 gate table still says "ETF".
-8. Use point-in-time S&P 500 membership to remove survivorship bias.
+7. Count gate approvals as episodes, not days.
+8. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
+9. Fix wording: the S&P 500 gate table still says "ETF".
+10. Use point-in-time S&P 500 membership to remove survivorship bias.

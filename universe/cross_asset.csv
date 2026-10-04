@@ -1,0 +1,38 @@
+symbol,name,sector,fetched_at
+SPY,S&P 500,US equity,curated 2026-10-04
+QQQ,Nasdaq 100,US equity,curated 2026-10-04
+IWM,Russell 2000 small caps,US equity,curated 2026-10-04
+DIA,Dow Jones,US equity,curated 2026-10-04
+MDY,S&P 400 mid caps,US equity,curated 2026-10-04
+EFA,Developed ex-US,International equity,curated 2026-10-04
+EEM,Emerging markets,International equity,curated 2026-10-04
+EWJ,Japan,International equity,curated 2026-10-04
+FXI,China large caps,International equity,curated 2026-10-04
+EWZ,Brazil,International equity,curated 2026-10-04
+INDA,India,International equity,curated 2026-10-04
+EWG,Germany,International equity,curated 2026-10-04
+SHY,US Treasury 1-3y,Government bonds,curated 2026-10-04
+IEI,US Treasury 3-7y,Government bonds,curated 2026-10-04
+IEF,US Treasury 7-10y,Government bonds,curated 2026-10-04
+TLT,US Treasury 20y+,Government bonds,curated 2026-10-04
+TIP,Treasury inflation-protected,Government bonds,curated 2026-10-04
+AGG,US aggregate bonds,Credit,curated 2026-10-04
+LQD,Investment-grade corporate,Credit,curated 2026-10-04
+HYG,High-yield corporate,Credit,curated 2026-10-04
+JNK,High-yield corporate (SPDR),Credit,curated 2026-10-04
+EMB,Emerging-market bonds,Credit,curated 2026-10-04
+MUB,Municipal bonds,Credit,curated 2026-10-04
+GLD,Gold,Commodities,curated 2026-10-04
+SLV,Silver,Commodities,curated 2026-10-04
+USO,Crude oil,Commodities,curated 2026-10-04
+UNG,Natural gas,Commodities,curated 2026-10-04
+DBC,Broad commodities,Commodities,curated 2026-10-04
+DBA,Agriculture,Commodities,curated 2026-10-04
+CPER,Copper,Commodities,curated 2026-10-04
+VNQ,US REITs (Vanguard),Real estate,curated 2026-10-04
+IYR,US real estate (iShares),Real estate,curated 2026-10-04
+UUP,US dollar index,Currencies,curated 2026-10-04
+FXE,Euro,Currencies,curated 2026-10-04
+FXY,Japanese yen,Currencies,curated 2026-10-04
+FXA,Australian dollar,Currencies,curated 2026-10-04
+FXB,British pound,Currencies,curated 2026-10-04

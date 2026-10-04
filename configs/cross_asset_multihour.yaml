@@ -1,0 +1,73 @@
+# Cross-asset ETFs: equities, international equities, government bonds, credit, commodities, real
+# estate and currencies. 1-hour lookback -> 2.5-hour forward return, the same design as
+# etf_multihour and sp500_multihour.
+#
+# Why: the sector ETFs and the S&P 500 are all one asset class and mostly one bet (the market).
+# Bonds, commodities and currencies are driven by different things, so signals in them are
+# closer to independent bets: the breadth the equity universes lack (scripts/breadth.py measures
+# it). `sector` in the universe file is the asset class, so the sector-neutral columns of the
+# breadth report are asset-class-neutral here.
+#
+# Caveats: IEX is one exchange, and the thinner ETFs (CPER, DBA, FXB, FXA, UNG) print rarely, so
+# expect gaps in their 5-minute bars: check the "% of 5-min slots have a bar" column that
+# scripts/fetch_data.py prints and drop symbols below ~70%. Round-trip costs differ by class (short
+# Treasuries and the dollar are cheap, copper and the smaller currency ETFs are not); the single
+# headline cost below is a placeholder until measured.
+experiment: cross_asset_multihour
+
+data:
+  universe: "universe/cross_asset.csv"
+  start: "2020-07-01"     # Alpaca's free IEX history begins in late July 2020
+  end: "today"
+  timeframe: "5Min"
+  feed: "iex"
+  adjustment: "split"
+  cache_dir: "data/bars"
+
+screening:
+  embedding_dim: 4
+  delay: 1
+  window: 390
+  series: "log_return"
+  n_surrogates: 99
+  min_bars_required: 300
+  gate_statistic: "trend"
+  alpha: 0.05
+  max_tie_fraction: 0.5
+  min_ticks_per_bar: 6
+  seed: 0
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"
+  label_deadzone: 0.0005
+
+model:
+  epochs: 30
+  patience: 5
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+
+validation:
+  train_days: 504
+  val_days: 63
+  test_days: 63
+  step_days: 63
+
+sweep:
+  # About 37 symbols x 3 samples a day: deep models are feasible here (unlike the S&P 500).
+  archs: [always_up, momentum_day, momentum_window, logreg, gbm, gbm_ent, resnet1d]
+  seeds: [0, 1, 2]
+
+evaluation:
+  cost_bps: [0, 1, 2, 5]
+  headline_cost_bps: 2
+  bootstrap: 2000
+  coverage_levels: [1.0, 0.5, 0.2, 0.1]

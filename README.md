@@ -48,6 +48,7 @@ python scripts/summarize.py  --config $CONFIG   # -> outputs/spy_gao/summary.md
 | `configs/etf_intraday.yaml` | 12 ETFs | 4-hour window → 1-hour hold | Can learned features beat simple rules? |
 | `configs/etf_multihour.yaml` | 12 ETFs | 1-hour window → 2.5-hour hold | Same question at a horizon 5-minute bars fully support (no TAQ needed) |
 | `configs/sp500_multihour.yaml` | S&P 500 (~503 stocks) | 1-hour window → 2.5-hour hold | Does the gate find more structure in individual names than in diversified ETFs? |
+| `configs/cross_asset_multihour.yaml` | 37 ETFs in 7 asset classes | 1-hour window → 2.5-hour hold | Are signals in bonds, commodities and currencies closer to independent bets than another equity universe? |
 
 Each run answers the research questions from the same predictions:
 
@@ -65,6 +66,46 @@ Two further checks come free with the same predictions, no retraining:
   Each fold's cutoff comes from earlier folds only, so nothing uses the future.
 - **Within-ETF gate comparison**: the Q1 difference after subtracting each ETF's own average. The gate refuses
   whole ETFs that move only a few cents a bar, so the raw split partly compares expensive ETFs against cheap ones.
+
+## Breadth: how many independent bets are there?
+
+Trades placed at the same moment share the market's move, and our models are almost always long (79–98% of
+the S&P 500 trades), so hundreds of trades a day were closer to one bet on the market than to hundreds of
+bets. The fundamental law of active management (Grinold and Kahn) says why it matters: information ratio ≈
+IC × √breadth, and breadth counts *independent* bets.
+
+```bash
+python scripts/breadth.py --config configs/sp500_multihour.yaml    # no retraining; reads the saved predictions
+```
+
+For each model it reports, with day-block intervals:
+
+- **Effective independent bets per day** for the same model used three ways (every signal, its top 10%, a
+  long-short book): n / (1 + (n − 1)ρ), where ρ is the correlation between a day's positions, read from how
+  much more the day's average moves than independent positions would. About 1 is one bet on the market.
+- **Cross-sectional IC**: at each date and bar, the rank correlation between the score and the realized return
+  across stocks, averaged over days. The market move is the same for every stock at a moment, so it cancels,
+  and every stock contributes, which makes it the most powerful test of stock-level skill the data allows. The
+  sector-neutral version also cancels sector moves, so a model that only knows which sector will move scores
+  nothing.
+- **A long-short book**: long the top 10% and short the bottom 10% of the score at each moment (optionally within
+  each sector), market-neutral by construction, with the cost charged per position.
+- **What the data can rule out**: the smallest IC it would detect (2.8 standard errors), against the IC a
+  long-short book needs to pay its cost, cost ÷ (spread across stocks × average |z| of the picks). If the first is
+  smaller, a null result rules out a profitable signal of this kind; if not, it does not.
+- **How alike the models are**: their scores' average correlation and the number of independent models it
+  amounts to. Models trained on the same inputs and labels are close to one model.
+
+Asset-level breadth comes from the data: `configs/cross_asset_multihour.yaml` runs the same pipeline on 37 ETFs
+in 7 asset classes (`universe/cross_asset.csv`; the `sector` column is the asset class), whose drivers differ.
+Its caveats are in the config: IEX prints the thinner ETFs rarely, so check each symbol's bar coverage, and
+round-trip costs differ by class.
+
+Controls (`tests/test_crosssection.py`): on synthetic markets with a market factor, sector factors and an
+almost-always-long model, the IC finds a planted stock-level skill (t > 4) that the directional test cannot
+see (its interval spans zero), invents nothing when there is no signal, and the sector-neutral IC removes a
+signal that is only knowing the sector but keeps real skill; the long-short book has zero net exposure; the
+effective-bets estimator recovers a known correlation (ρ = 0, 0.1, 0.3, 0.7 within 0.03).
 
 ## Selective trading (the main case)
 
@@ -253,6 +294,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/synthetic.py` | Bars with known structure for tests |
 | `src/engine.py` | RL decision engine: policy, online walk-forward learning, baselines |
 | `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
+| `src/crosssection.py` | Breadth: effective independent bets, cross-sectional IC, long-short books, model similarity |
 | `universe/` | Saved constituent lists for larger universes |
 | `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
 | `src/ibkr_capture.py` | TWS recorder for quotes, trades and depth |
