@@ -1,40 +1,47 @@
 # Results and progress
 
-Last updated 2026-10-01. Numbers come from each experiment's `outputs/<experiment>/summary.md`, which
-lives on Google Drive rather than in this repo. The runs finished in late September 2026.
+Last updated 2026-10-04. Numbers come from each experiment's `outputs/<experiment>/summary.md` and
+`engine.md`, which live on Google Drive rather than in this repo. The runs finished between late September
+and 4 October 2026.
 
 ## In short
 
 - **Nothing beats trading costs.** Four experiments: SPY, the 12 sector ETFs at two horizons, and 503
   S&P 500 stocks. Every model and rule loses money after a 1–2 bps round-trip cost, and no gross return has
   a 95% interval above zero.
-- **Deep models do not beat simple ones.** No deep model (CNN1D, ResNet1D, InceptionTime, ResNet2D) is the best
-  row in any experiment. Where one edges past logistic regression, the margin is under 0.2 bps, far inside the
-  intervals.
+- **Model complexity buys nothing.** No deep model (CNN1D, ResNet1D, InceptionTime, ResNet2D) is the best row
+  in any experiment, and gradient-boosted trees are no clear improvement on logistic regression. Where one model
+  edges past another, the margin is under half a basis point, far inside the intervals.
 - **The entropy gate does not pick better days.** The default trend gate approves about as often as it would
-  on pure noise. Of 60 approved-vs-other comparisons, 5 have intervals that exclude zero, about 3 would by
-  chance, and 2 of the 5 point the wrong way.
-- **One unconfirmed lead.** Trading only a model's most confident predictions raises the return per trade in
-  4 of 10 model runs, most strongly for S&P 500 logistic regression. Every interval includes zero and accuracy
-  barely moves, so it may track volatility rather than skill.
+  on pure noise. Of 93 approved-vs-other comparisons, 7 have intervals that exclude zero, about 5 would by
+  chance, and 4 of the 7 point the wrong way.
+- **Entropy adds nothing in any of three roles.** As a gate (above), as continuous model inputs (it moved
+  returns by −0.45 to +0.27 bps with no consistent sign) and as inputs to the decision engine (which then
+  traded two to five times as often and lost 0.1–0.6 bps more per opportunity).
+- **One unconfirmed lead.** Trading only a model's most confident predictions raises the return per trade for
+  all three S&P 500 models (logistic regression +6.15 bps on its top 10%, the trees +3.15 to +3.91 on their top
+  3%) and for most models on the 4-hour ETF setup, but rarely on the half-hour setups. Every interval includes
+  zero and accuracy rises only from about 0.50 to 0.53 at best, so it may track volatility rather than skill.
+  Colab section 13 decides.
 - **Permutation entropy has a blind spot that may explain part of the null.** Ordinal patterns of
   5-minute returns barely react to a slowly varying drift, the kind of trend multi-hour momentum relies
   on. In simulation they separate trending from noise spells by 0.07–0.17 standard deviations; patterns of
-  hourly returns separate them by about 0.9, and a plain variance ratio by about 2. Entropy is now a set
-  of continuous model inputs at both scales instead of a pass/fail gate; real-data results are pending.
+  hourly returns separate them by about 0.9, and a plain variance ratio by about 2.
 - **The measurement works.** On synthetic data the gate passes planted trends and refuses zig-zags and tick
   noise, and the models recover planted signals. The null on real data is a finding, not a broken pipeline.
 - **The decision engine (RL) finds nothing either.** On the ETFs it learns to stay flat. On the S&P 500 the
   first version collapsed into always-long, a flaw in the engine, not a market finding. The market-neutral
   version fixes that and also stays flat (−0.1 to −0.2 bps, 4–8% of samples traded): no stock-specific signal
-  survives costs in the rules and logistic regression tested.
+  survives costs in the rules and logistic regression tested. Where it does learn, it learns the right thing:
+  on synthetic data it finds planted edges and stays out of noise.
 
 ## Main case from here on: selective trading
 
 Trade only each model's strongest signals, across a wide universe so they still come often (the top
 10% of signals is about 60 trades a day on the S&P 500), with cutoffs from earlier quarters only
 (`scripts/selective.py`, Colab section 13). It is the main case because the one lead so far came from
-selectivity (S&P 500 logistic regression, +6.15 bps gross on its most confident 10%). Before it can
+selectivity (S&P 500 logistic regression, +6.15 bps gross on its most confident 10%; the trees show the same
+rise). Before it can
 be cited, the report has to show the lead is skill rather than volatility: confident trades must
 earn more per unit of their own risk than a placebo that picks the most volatile moments instead.
 **Pending: the first run of section 13.**
@@ -53,12 +60,13 @@ earn more per unit of their own risk than a placebo that picks the most volatile
 | `spy_gao` | SPY | first half-hour → last half-hour | 1 bps | run |
 | `etf_gao` | 12 ETFs | first half-hour → last half-hour | 2 bps | run |
 | `etf_intraday` | 12 ETFs | 4-hour window → 1-hour hold | 2 bps | run |
-| `sp500_multihour` | 503 stocks | 1-hour window → 2.5-hour hold | 2 bps | run, rules and logreg only |
+| `sp500_multihour` | 503 stocks | 1-hour window → 2.5-hour hold | 2 bps | run: rules, logreg and trees |
 | `etf_multihour` | 12 ETFs | 1-hour window → 2.5-hour hold | 2 bps | not run yet |
 
 ## Does anything beat costs?
 
-Gross basis points per trade with 95% intervals, and net at each experiment's cost.
+Gross basis points per trade with 95% intervals, and net at each experiment's cost. For the tree models,
+params counts the leaves of the first quarter's model; `_ent` models also see the entropy features.
 
 **`spy_gao`** (net at 1 bps)
 
@@ -68,6 +76,9 @@ Gross basis points per trade with 95% intervals, and net at each experiment's co
 | momentum_day | 0 | 0.508 [0.476, 0.541] | +0.56 [−0.78, +1.95] | −0.44 |
 | logreg | 50 | 0.503 [0.470, 0.533] | −0.29 [−1.81, +1.12] | −1.29 |
 | resnet1d | 505,730 | 0.490 [0.458, 0.521] | −0.13 [−1.54, +1.29] | −1.13 |
+| gbm | 15 | 0.470 [0.437, 0.502] | −0.50 [−1.95, +0.90] | −1.50 |
+| gbm_ent | 15 | 0.477 [0.443, 0.510] | −0.23 [−1.66, +1.16] | −1.23 |
+| resnet1d_ent | 506,014 | 0.476 [0.442, 0.509] | −0.58 [−2.10, +0.84] | −1.58 |
 
 **`etf_gao`** (net at 2 bps)
 
@@ -77,6 +88,9 @@ Gross basis points per trade with 95% intervals, and net at each experiment's co
 | momentum_day | 0 | 0.517 [0.502, 0.531] | +0.52 [−0.33, +1.40] | −1.48 |
 | logreg | 50 | 0.502 [0.489, 0.516] | +0.58 [−0.21, +1.47] | −1.42 |
 | resnet1d | 505,730 | 0.505 [0.493, 0.519] | +0.20 [−0.50, +0.92] | −1.80 |
+| gbm | 90 | 0.503 [0.486, 0.519] | +0.45 [−0.48, +1.44] | −1.55 |
+| gbm_ent | 135 | 0.510 [0.493, 0.525] | +0.50 [−0.43, +1.42] | −1.50 |
+| resnet1d_ent | 506,014 | 0.505 [0.492, 0.517] | +0.17 [−0.62, +1.06] | −1.83 |
 
 **`etf_intraday`** (net at 2 bps)
 
@@ -90,6 +104,9 @@ Gross basis points per trade with 95% intervals, and net at each experiment's co
 | resnet1d | 505,730 | 0.513 [0.499, 0.526] | +0.40 [−0.55, +1.31] | −1.60 |
 | inceptiontime | 472,066 | 0.512 [0.500, 0.524] | −0.00 [−0.79, +0.85] | −2.00 |
 | resnet2d (GAF images) | 914,690 | 0.509 [0.497, 0.522] | +0.32 [−0.50, +1.10] | −1.68 |
+| gbm | 150 | 0.512 [0.498, 0.527] | +0.71 [−0.28, +1.72] | −1.29 |
+| gbm_ent | 30 | 0.510 [0.495, 0.526] | +0.47 [−0.57, +1.47] | −1.53 |
+| resnet1d_ent | 506,014 | 0.511 [0.498, 0.525] | +0.48 [−0.43, +1.34] | −1.52 |
 
 **`sp500_multihour`** (net at 2 bps, 673,694 trades)
 
@@ -99,10 +116,15 @@ Gross basis points per trade with 95% intervals, and net at each experiment's co
 | momentum_day | 0 | 0.496 [0.490, 0.501] | −0.87 [−2.28, +0.40] | −2.87 |
 | momentum_window | 0 | 0.496 [0.492, 0.500] | −0.63 [−1.51, +0.23] | −2.63 |
 | logreg | 98 | 0.503 [0.496, 0.510] | +0.86 [−0.95, +3.01] | −1.14 |
+| gbm | 15 | 0.504 [0.494, 0.515] | +0.71 [−1.91, +3.44] | −1.29 |
+| gbm_ent | 15 | 0.505 [0.495, 0.515] | +0.85 [−1.71, +3.63] | −1.15 |
 
 What the tables say:
 
-- **The best row in each experiment is a rule or logistic regression.** No deep model is best anywhere.
+- **The best row in each experiment is a rule, logistic regression or the trees.** On the 4-hour ETFs, `gbm`
+  (+0.71) edges always_up (+0.70) by a hundredth of a basis point. No deep model is best anywhere.
+- **The trees found little to learn.** On SPY and the S&P 500 the validation fold stopped them after a single
+  tree (15 leaves) in the first quarter; on the ETFs after 2 to 10 trees.
 - **Image view (Q4):** ResNet2D on Gramian Angular Field images, with 914,690 parameters, earns +0.32 against
   ResNet1D's +0.40 on the same windows. The image encoding adds nothing.
 - **The one accuracy interval clear of 50%** is half-hour momentum across the ETFs: 0.517 [0.502, 0.531]. The
@@ -111,7 +133,7 @@ What the tables say:
   +0.52 bps a trade, about a quarter of the cost.
 - **Single stocks lean the other way.** On the S&P 500 both momentum rules are right 49.6% of the time, a hint
   of short-term reversal. Fading them would earn under 1 bps gross, still below cost.
-- **At the longer horizons, simply holding long beat every model,** and that is mostly market drift. On the
+- **At the longer horizons, simply holding long beat or tied every model,** and that is mostly market drift. On the
   S&P 500 one quarter (February–May 2025, which includes the April 2025 selloff and rebound) earned +10.8 bps per
   trade for always_up, ten times its average.
 - **The intervals stay wide even with 673,694 S&P 500 trades.** Stocks move together within a day, so the
@@ -136,9 +158,9 @@ Share of test samples falling on days the gate approved:
   order, and each 5-session window overlaps the next four, so one volatile episode is approved on several
   consecutive days. In simulation, one planted jump was approved on 9 separate days.
 
-The same predictions, split by whether the gate approved the day: 60 comparisons (model × statistic ×
-experiment). Five have 95% intervals that exclude zero, where chance alone would give about 3, and two of the
-five point the wrong way:
+The same predictions, split by whether the gate approved the day: 93 comparisons (model × statistic ×
+experiment). Seven have 95% intervals that exclude zero, where chance alone would give about 5, and four of
+the seven point the wrong way:
 
 | Experiment | Model | Gate | Approved − other, bps [95% CI] |
 |---|---|---|---|
@@ -147,11 +169,13 @@ five point the wrong way:
 | `etf_gao` | logreg | entropy | +1.97 [+0.04, +3.99] |
 | `etf_intraday` | always_up | weighted entropy | −1.47 [−3.07, −0.03] |
 | `etf_intraday` | inceptiontime | entropy | +1.67 [+0.01, +3.29] |
+| `spy_gao` | gbm | entropy | −6.62 [−12.83, −1.44] |
+| `etf_intraday` | gbm_ent | weighted entropy | −2.17 [−3.71, −0.68] |
 
-- **The default trend gate:** 1 of its 20 comparisons excludes zero, and that one is negative.
+- **The default trend gate:** 1 of its 31 comparisons excludes zero, and that one is negative.
 - **Within each symbol:** the gate refuses whole low-priced symbols, so the raw split partly compares one
-  symbol with another. After subtracting each symbol's own average, 2 of 48 comparisons exclude zero, about what
-  chance gives (2.4).
+  symbol with another. After subtracting each symbol's own average, 3 of 72 comparisons exclude zero, about what
+  chance gives (3.6).
 - **The best-looking ETF lead did not replicate.** At 4h→1h on the ETFs, trend-approved days looked better for
   momentum_window (+2.47 [−0.19, +5.00]) and resnet1d (+2.02 [−0.42, +4.61]). On the S&P 500, momentum_window
   shows +0.22 [−1.17, +1.47].
@@ -163,28 +187,45 @@ Each fold's confidence cutoff is set from earlier folds only. Gross bps per trad
 | Experiment, model | 100% | 50% | 20% | 10% [95% CI] | net at 10% |
 |---|---:|---:|---:|---|---:|
 | `sp500_multihour`, logreg | +0.89 | +1.90 | +3.96 | +6.15 [−1.56, +14.80] | +4.15 |
+| `sp500_multihour`, gbm | +0.95 | +2.83 | +2.21 | +3.91 [−2.39, +10.05] | +1.91 |
+| `sp500_multihour`, gbm_ent | +1.08 | +2.09 | +0.84 | +3.15 [−3.73, +9.91] | +1.15 |
 | `etf_intraday`, resnet1d | +0.47 | +1.06 | +1.70 | +2.36 [−0.27, +4.84] | +0.36 |
-| `etf_gao`, logreg | +0.66 | +0.75 | +1.15 | +1.74 [−2.09, +5.88] | −0.26 |
+| `etf_intraday`, gbm | +0.48 | +0.45 | +0.99 | +1.97 [+0.00, +4.09] | −0.03 |
+| `etf_intraday`, resnet1d_ent | +0.40 | +0.85 | +0.69 | +1.59 [−0.93, +3.91] | −0.41 |
+| `etf_intraday`, gbm_ent | +0.29 | +0.50 | +1.06 | +1.26 [−0.67, +3.29] | −0.74 |
 | `etf_intraday`, cnn1d | +0.09 | +0.18 | +0.23 | +0.58 [−1.96, +2.79] | −1.42 |
 | `etf_intraday`, resnet2d | +0.39 | +0.32 | +0.42 | +0.34 [−1.24, +1.90] | −1.66 |
-| `etf_gao`, resnet1d | +0.27 | +0.57 | +0.47 | −0.02 [−3.92, +4.23] | −2.02 |
 | `etf_intraday`, logreg | −0.18 | −0.07 | −0.02 | −0.53 [−4.47, +3.90] | −2.53 |
-| `spy_gao`, resnet1d | −0.61 | −0.72 | −1.69 | −0.60 [−6.67, +5.21] | −1.60 (at 1 bps) |
 | `etf_intraday`, inceptiontime | −0.11 | −0.39 | −0.40 | −1.22 [−3.95, +1.23] | −3.22 |
+| `etf_gao`, logreg | +0.66 | +0.75 | +1.15 | +1.74 [−2.09, +5.88] | −0.26 |
+| `etf_gao`, resnet1d | +0.27 | +0.57 | +0.47 | −0.02 [−3.92, +4.23] | −2.02 |
+| `etf_gao`, resnet1d_ent | +0.31 | +0.52 | −0.02 | −0.17 [−5.03, +5.00] | −2.17 |
+| `etf_gao`, gbm_ent | +0.68 | +0.64 | +0.42 | −0.80 [−6.04, +3.88] | −2.80 |
+| `etf_gao`, gbm | +0.61 | −0.42 | −0.91 | −2.32 [−6.63, +1.24] | −4.32 |
+| `spy_gao`, gbm | −0.04 | −1.70 | +1.00 | +1.08 [−2.68, +4.98] | +0.08 (at 1 bps) |
+| `spy_gao`, resnet1d_ent | −0.72 | +0.70 | +1.26 | +0.03 [−5.50, +5.34] | −0.97 (at 1 bps) |
+| `spy_gao`, resnet1d | −0.61 | −0.72 | −1.69 | −0.60 [−6.67, +5.21] | −1.60 (at 1 bps) |
+| `spy_gao`, gbm_ent | +0.23 | −1.97 | −2.10 | −2.11 [−7.66, +3.24] | −3.11 (at 1 bps) |
 | `spy_gao`, logreg | +0.33 | −1.26 | +0.44 | −2.17 [−10.39, +5.76] | −3.17 (at 1 bps) |
 
 The 100% column differs slightly from the main tables because early folds without enough history to set a
-cutoff are dropped at every level. The realized share kept also differs a little from the target; for
-example, the S&P 500 logreg 10% level keeps 8%.
+cutoff are dropped at every level. The realized share kept also differs from the target, a lot for the
+trees, whose probabilities come in steps: the S&P 500 logreg 10% level keeps 8%, the S&P 500 trees keep 3%,
+and `gbm` on the 4-hour ETFs keeps 22%.
 
-Return rises with confidence in the top four rows and shows no consistent rise in the other six. It is not
-an edge yet:
+Return rises with confidence for all three S&P 500 models and for five of eight on the 4-hour ETFs, and
+rarely on the half-hour setups. It is not an edge yet:
 
 - **Every interval includes zero.**
 - **The levels are nested:** the 10% trades are part of the 20% trades, so each row is one result, not four.
-- **Accuracy barely moves.** S&P 500 logreg goes from 0.503 to 0.512, so the gain comes from bigger moves, not
-  more correct calls. That fits a model that is most confident on volatile days, when every move is larger.
-- **The next check:** re-score the trades in units of each day's volatility. If the slope survives, it is worth
+- **Accuracy barely moves.** S&P 500 logreg goes from 0.503 to 0.512 and the trees to 0.530 at most, so the gain
+  comes from bigger moves, not more correct calls. That fits models that are most confident on volatile days,
+  when every move is larger: logistic models and trees give their most extreme probabilities when their inputs
+  are most extreme.
+- **The models are not independent witnesses.** They share inputs and training data, so several of them showing
+  the slope is not several confirmations.
+- **The check:** Colab section 13 (`scripts/selective.py`) scores the trades per unit of their own volatility
+  against a placebo that picks the most volatile moments instead. If the slope survives that, it is worth
   pursuing.
 
 ## Checks on the measurement itself
@@ -362,8 +403,42 @@ history is short; `gbm_ent` uses a signal that only entropy reveals and `gbm` ca
 +0.15 to +0.43 bps per opportunity on an edge that only an entropy feature reveals (0 without it), with
 scaling taken from the first fold only.
 
-**Real data: pending.** Colab section 12 trains the new models on the ETFs (GPU, about 15–30 minutes) and
-the trees on the S&P 500 (CPU, an hour or more), then re-runs the engine.
+### Real data (2026-10-04)
+
+Gross bps per trade over all trades, for the pairs that differ only by the entropy features:
+
+| | `spy_gao` | `etf_gao` | `etf_intraday` | `sp500_multihour` |
+|---|---:|---:|---:|---:|
+| `gbm` | −0.50 | +0.45 | +0.71 | +0.71 |
+| `gbm_ent` | −0.23 | +0.50 | +0.47 | +0.85 |
+| entropy's effect | +0.27 | +0.05 | −0.24 | +0.14 |
+| `resnet1d` | −0.13 | +0.20 | +0.40 | not run |
+| `resnet1d_ent` | −0.58 | +0.17 | +0.48 | not run |
+| entropy's effect | −0.45 | −0.03 | +0.08 | |
+
+No consistent sign, and every difference is far inside its models' intervals (roughly ±1 to ±2.7 bps).
+
+The decision engine, models only → models plus the entropy features, net bps per opportunity after 2 bps
+(share of samples traded):
+
+| | bandit feedback | full feedback |
+|---|---|---|
+| `etf_intraday` | −0.18 (11%) → −0.35 (17%) | −0.28 (16%) → −0.80 (38%) |
+| `etf_gao` | −0.27 (11%) → −0.38 (37%) | −0.27 (11%) → −0.67 (30%) |
+| `sp500_multihour`, market-neutral | −0.20 (8%) → −0.79 (40%) | −0.19 (7%) → −0.60 (34%) |
+| `sp500_multihour`, raw returns | −2.95 (63%) → −2.34 (60%) | −1.26 (57%) → −1.53 (39%) |
+
+- **Uninformative inputs make the engine worse.** Given 13 entropy features with no signal, it finds patterns
+  in the noise, trades two to five times as often and loses more. The raw S&P 500 rows still show the
+  drift-chasing failure above, with or without entropy. (The models-only rows moved slightly from earlier runs
+  because the new models' confidences are now inputs too.)
+- **Missed opportunities: none.** No group has an interval above zero; choosing each group's best action in
+  hindsight earns +0.06 (both ETF setups), +0.34 (S&P 500 raw) and +0.01 (market-neutral) bps per opportunity.
+
+**Verdict on entropy.** Tested as a gate, as model inputs and as engine inputs, permutation entropy adds no
+information to predictions from 5-minute prices in this data. That is consistent with the synthetic results:
+what ordinal patterns of returns can see, the price window already shows, and the slow drift that matters at
+multi-hour horizons they barely see at all.
 
 ## Advisor feedback and response (September 2026)
 
@@ -415,15 +490,17 @@ The response so far:
 | 2026-10-02 | Market-neutral engine run on the S&P 500: no stock-specific signal survives cost; the engine stays flat |
 | 2026-10-03 | Entropy became continuous features (overnight, 5-minute and hourly scales); trees and a ResNet1D with an entropy path; the engine reads the features. Found the 5-minute blind spot to slow drift |
 | 2026-10-03 | Selective trading made the main case, with a risk-scaled check and a volatility placebo |
+| 2026-10-04 | Entropy as features on real data: no effect as model inputs, and as engine inputs more trading and bigger losses |
 
 ## Next steps
 
 1. Run Colab section 13 (selective trading, no retraining): is the S&P 500 lead skill or volatility?
-2. Run Colab section 12 (entropy as features) and record the results here.
+2. Run `etf_multihour`, the horizon the advisor pointed toward.
 3. Train models for the market-neutral question: a target relative to the cross-section (does this stock
    beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules
    and logistic regression so far.
-4. Run `etf_multihour`, the horizon the advisor pointed toward.
+4. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
+   inference by day, the drift blind spot of permutation entropy, the engine's failure modes).
 5. Count gate approvals as episodes, not days.
 6. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
 7. Fix wording: the S&P 500 gate table still says "ETF".
