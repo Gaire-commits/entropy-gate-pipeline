@@ -30,6 +30,10 @@ and 4 October 2026.
   5-minute returns barely react to a slowly varying drift, the kind of trend multi-hour momentum relies
   on. In simulation they separate trending from noise spells by 0.07–0.17 standard deviations; patterns of
   hourly returns separate them by about 0.9, and a plain variance ratio by about 2.
+- **With the market removed there is no stock-level skill.** Scored where breadth counts, across stocks at each
+  moment, every S&P 500 model's cross-sectional IC is about zero (−0.004 to +0.002), and the data could detect an
+  IC half the size a profitable long-short book needs (0.0075 against 0.0154), so this null rules out a
+  profitable signal of that kind. The 768 S&P 500 trades a day had amounted to only 7–14 independent bets.
 - **The measurement works.** On synthetic data the gate passes planted trends and refuses zig-zags and tick
   noise, and the models recover planted signals. The null on real data is a finding, not a broken pipeline.
 - **The decision engine (RL) finds nothing either.** On the ETFs it learns to stay flat. On the S&P 500 the
@@ -93,19 +97,81 @@ on the market than to hundreds of bets, which is also why 673,694 S&P 500 trades
 68–95% long. The 12 ETFs are one asset (SPY is the sum of the 11 sector ETFs), and one quarter (April 2025)
 carries several results.
 
-**Built, with synthetic controls (`tests/test_crosssection.py`), real-data run pending (Colab section 14):**
+**Built** (`scripts/breadth.py`, with synthetic controls in `tests/test_crosssection.py`): effective independent
+bets per day, the cross-sectional IC (market-neutral, optionally sector-neutral), market- and sector-neutral
+long-short books, how alike the models are, and the IC the data could detect against the IC a long-short book
+needs to pay its cost. Plus `configs/cross_asset_multihour.yaml`: 37 ETFs in 7 asset classes, for breadth from
+different drivers.
 
-- `scripts/breadth.py`: effective independent bets per day, cross-sectional IC (market-neutral, optionally
-  sector-neutral), market- and sector-neutral long-short books, how alike the models are, and what IC the data
-  could detect against what a long-short book needs to pay its cost.
-- `configs/cross_asset_multihour.yaml` and `universe/cross_asset.csv`: 37 ETFs in 7 asset classes (US and
-  international equities, government bonds, credit, commodities, real estate, currencies), for breadth that comes
-  from different drivers (Colab section 15, needs the data first).
+### Results (2026-10-05)
 
-On synthetic markets the cross-sectional IC finds a stock-level skill the directional test cannot see, and invents
-nothing without one; that is what makes it the right instrument for the question the earlier tables could not
-answer. **What it can show is open**: it may find a small positive IC that no cost structure could use (a
-long-short book at 2 bps needs an IC of roughly 0.014 when stocks differ by about 80 bps), or nothing.
+**How many independent bets a day's trading is**, S&P 500 (positions per day · net long exposure · effective
+independent bets per day):
+
+| model | every signal | its top 10% | long 10% / short 10% |
+|---|---|---|---|
+| `gbm` | 768 · +0.93 · **7.0** | 57 · +0.90 · **2.4** | 154 · 0.00 · **75.6** |
+| `gbm_ent` | 768 · +0.93 · **7.1** | 35 · +0.94 · **5.8** | 154 · 0.00 · **67.1** |
+| logistic regression | 768 · +0.59 · **14.4** | 65 · +0.55 · **12.4** | 154 · 0.00 · **48.5** |
+| momentum_window rule | 762 · +0.02 · **67.7** | 758 · +0.03 · **70.3** | 154 · 0.00 · **100.1** |
+
+The selective main case was the least diversified of all (2.4 bets a day for the trees' top 10%), which is why its
+results were so lumpy. A long-short book turns the same predictions into 50–100 independent bets a day.
+
+**Skill across stocks with the market removed**, S&P 500 (rank IC between score and return across stocks at each
+moment, averaged over days; long-short book of the top and bottom 10%, net of 2 bps per position):
+
+| model | IC [95% CI] | long-short net | sector-neutral IC [95% CI] |
+|---|---|---:|---|
+| `gbm` | −0.0037 [−0.0079, +0.0008] | −2.08 | −0.0040 [−0.0076, −0.0002] |
+| `gbm_ent` | −0.0032 [−0.0081, +0.0017] | −2.38 | −0.0029 [−0.0067, +0.0011] |
+| logistic regression | +0.0014 [−0.0039, +0.0070] | −0.86 | +0.0019 [−0.0026, +0.0063] |
+| momentum_day rule | +0.0021 [−0.0056, +0.0090] | −1.68 | +0.0022 [−0.0034, +0.0079] |
+| average of the three trained models | −0.0018 [−0.0069, +0.0034] | −1.54 | −0.0017 [−0.0058, +0.0024] |
+
+- **A profitable signal of this kind is ruled out.** Stocks differ from each other by about 74 bps over the hold,
+  so a 10%-a-side book needs an IC of at least 0.0154 to pay 2 bps; the data would detect an IC of 0.0075 (2.8
+  standard errors), and every model's interval stays below 0.009. At a 1 bp cost the bar halves to about 0.008,
+  at the edge of what the data can see, so for very cheap execution the null is less decisive.
+- **The models are not diverse either.** Their scores correlate 0.26 on average: three models are about 2.0
+  independent ones (on the ETFs, eight models are about 3.4).
+
+**The other universes.** On the 12 ETFs stocks differ by only 13–15 bps, so a book needs an IC of about 0.08,
+far above anything measured (all within ±0.03). A few ETF intervals exclude zero (logistic regression −0.028 and
+InceptionTime −0.024 on the 4-hour ETFs; `gbm_ent` +0.024 and the ensemble +0.025 on the half-hour ETFs), about
+what chance gives across some 25 comparisons. On the cross-asset universe (33 of the 37 ETFs had data in the run)
+every IC is within ±0.012, but there the data can only detect an IC of 0.034 against 0.029 needed, so that null
+does not rule a signal out; its sweep is the same null as everywhere (gross +0.05 to +0.79 bps, net negative for
+every model).
+
+## Hold-out test: trade stocks the models never saw (protocol fixed 2026-10-07)
+
+Train on the S&P 500 without the Nasdaq-100's members, trade the Nasdaq-100 members, rank them and hold a
+diversified long-short book (`configs/ndx_holdout.yaml`, Colab section 16).
+
+**Universes** (lists from Wikipedia: S&P 500 on 2026-09-29, Nasdaq-100 on 2026-10-07): 85 of the Nasdaq-100's
+100 members are in the S&P 500 list we trained on, so they are held out of training; the other 418 S&P 500
+stocks train the models; the 15 members outside the S&P 500 (ALAB, ALNY, ARM, ASML, CCEP, CRWV, FER, MELI, MSTR,
+NBIS, PDD, RKLB, SHOP, SPCX, TRI) are left out, with no comparable history. The 85 are concentrated: 35 are
+Information Technology.
+
+**Protocol, fixed before any result.** Target: did the stock beat its universe's average at that moment. Models:
+logistic regression, `gbm`, `gbm_ent`, and their average (4 looks). Book: 12 long and 12 short of the 85 at each
+moment, 2 bps per position. A finding needs both, for the same model: a cross-sectional IC with t ≥ 3, and a
+12-a-side book whose net 95% interval is above zero. Anything else is a null, reported with the IC the data can
+detect and the IC a book needs.
+
+**What to expect from this much data** (estimates before the run, to compare with what the report computes):
+with about 85 stocks the smallest detectable IC is roughly 0.014–0.018, against 0.0075 for the full S&P 500
+(scaled from the runs we have with 12, 33 and 501 symbols); a 12-a-side book needs an IC of roughly 0.012–0.017 to
+pay 2 bps if stocks differ by 74–95 bps. So a null here may not rule out a signal that would just pay. Its value is
+the other direction: a positive result on stocks the models never saw, against a rule fixed in advance, would be
+the most credible one this project could produce.
+
+**Caveats:** a hold-out across stocks, not across time (same dates and market episodes); today's lists, and the
+Nasdaq-100's in particular, are survivorship-biased toward stocks that rose.
+
+**Result: pending.**
 
 ## Common setup
 
@@ -553,22 +619,21 @@ The response so far:
 | 2026-10-04 | Entropy as features on real data: no effect as model inputs, and as engine inputs more trading and bigger losses |
 | 2026-10-04 | Selective trading on real data: the confidence lead is volatility, not skill. Side finding on volatile moments, unchecked |
 | 2026-10-04 | Diversification: breadth tools (independent bets, cross-sectional IC, market- and sector-neutral long-short books) and a 37-ETF cross-asset universe built and tested on synthetic markets; real-data runs pending |
+| 2026-10-05 | Breadth results: 7–14 independent bets a day where we had 768 trades; with the market removed no S&P 500 model has stock-level skill, and the data could have detected half the IC a book needs |
+| 2026-10-07 | Hold-out test built: train/trade universes, relative target, fixed-size books, Nasdaq-100 lists; protocol fixed before running |
 
 ## Next steps
 
-1. Run Colab section 14 (`scripts/breadth.py`, no retraining): the effective number of independent bets, and the
-   cross-sectional IC and long-short results with the market and sectors removed. The one test that uses the full
-   breadth of the S&P 500.
-2. Run Colab section 15 (cross-asset universe: fetch, screen, sweep, breadth) for bets with different drivers.
-3. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
+1. Run Colab section 16: the pre-registered hold-out test (train on 418 S&P 500 stocks, trade the 85 held-out
+   Nasdaq-100 members, 12 long and 12 short).
+2. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
    a higher cost in volatile moments) before it goes into the thesis even as a side note.
-4. Run `etf_multihour`, the horizon the advisor pointed toward.
-5. Train models for the market-neutral question: a target relative to the cross-section (does this stock
-   beat the others over the next 2.5 hours), and the deep models on the S&P 500, which has had only rules,
-   logistic regression and trees so far.
-6. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
+3. Run `etf_multihour`, the horizon the advisor pointed toward.
+4. If the hold-out shows anything: relative input features as well (each stock's window measured against its
+   peers), and the deep models on the relative target (a long GPU run).
+5. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
    inference by day, the drift blind spot of permutation entropy, the engine's failure modes).
-7. Count gate approvals as episodes, not days.
-8. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
-9. Fix wording: the S&P 500 gate table still says "ETF".
-10. Use point-in-time S&P 500 membership to remove survivorship bias.
+6. Count gate approvals as episodes, not days.
+7. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
+8. Fix wording: the S&P 500 gate table still says "ETF".
+9. Use point-in-time S&P 500 membership to remove survivorship bias.

@@ -111,12 +111,16 @@ def breakeven_ic(cost_bps: float, sigma_bps: float, q: float = 0.1) -> float:
 
 
 def quantile_book(frame: pd.DataFrame, score: str = "prob", q: float = 0.1, min_peers: int = 20,
-                  sector_neutral: bool = False, min_sector: int = 5, seed: int = 0) -> pd.DataFrame:
-    """Positions of a long-short book: +1 for the top q and -1 for the bottom q of `score` at each moment.
+                  sector_neutral: bool = False, min_sector: int = 5, seed: int = 0,
+                  n_per_side: int | None = None) -> pd.DataFrame:
+    """Positions of a long-short book: +1 for the top and -1 for the bottom of `score` at each moment.
 
-    Ranked within each sector when `sector_neutral` (a sector-balanced book), otherwise across the whole
-    moment. Ties, which coarse scores have a lot of, are broken at random so that symbol order cannot
-    decide who is picked. Returns one row per position with `direction` and `gross_bps`.
+    The top and bottom `q` of the cross-section, or with `n_per_side` a fixed number of names on each side
+    (a book of 2 x n_per_side stocks). Ranked within each sector when `sector_neutral` (a sector-balanced
+    book: with `n_per_side` each sector gets picks in proportion to its size, at least one a side),
+    otherwise across the whole moment. Ties, which coarse scores have a lot of, are broken at random so
+    that symbol order cannot decide who is picked. Returns one row per position with `direction` and
+    `gross_bps`.
     """
     need = MOMENT + ["symbol", score, "ret"] + (["sector"] if "sector" in frame else [])
     f = wide_moments(frame, min_peers)[need].copy()
@@ -124,9 +128,21 @@ def quantile_book(frame: pd.DataFrame, score: str = "prob", q: float = 0.1, min_
     keys = MOMENT + (["sector"] if sector_neutral else [])
     g = f.groupby(keys)["_s"]
     n = g.transform("size")
-    pct = (g.rank(method="first") - 0.5) / n
-    ok = n >= (min_sector if sector_neutral else min_peers)
-    f["direction"] = np.where(ok & (pct > 1 - q), 1.0, np.where(ok & (pct < q), -1.0, 0.0))
+    floor = min_sector if sector_neutral else min_peers
+    if n_per_side is None:
+        pct = (g.rank(method="first") - 0.5) / n
+        ok = n >= floor
+        long_, short = pct > 1 - q, pct < q
+    else:
+        if sector_neutral:
+            share = n / f.groupby(MOMENT)["_s"].transform("size")
+            k = np.maximum(1, np.round(n_per_side * share)).astype(int)
+        else:
+            k = pd.Series(n_per_side, index=f.index)
+        ok = (n >= floor) & (n >= 2 * k)
+        long_ = g.rank(method="first", ascending=False) <= k
+        short = g.rank(method="first", ascending=True) <= k
+    f["direction"] = np.where(ok & long_, 1.0, np.where(ok & short, -1.0, 0.0))
     book = f[f["direction"] != 0].drop(columns="_s")
     book["gross_bps"] = book["direction"] * book["ret"] * 1e4
     return book

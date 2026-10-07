@@ -49,6 +49,7 @@ python scripts/summarize.py  --config $CONFIG   # -> outputs/spy_gao/summary.md
 | `configs/etf_multihour.yaml` | 12 ETFs | 1-hour window → 2.5-hour hold | Same question at a horizon 5-minute bars fully support (no TAQ needed) |
 | `configs/sp500_multihour.yaml` | S&P 500 (~503 stocks) | 1-hour window → 2.5-hour hold | Does the gate find more structure in individual names than in diversified ETFs? |
 | `configs/cross_asset_multihour.yaml` | 37 ETFs in 7 asset classes | 1-hour window → 2.5-hour hold | Are signals in bonds, commodities and currencies closer to independent bets than another equity universe? |
+| `configs/ndx_holdout.yaml` | train: 418 S&P 500 stocks; trade: 85 Nasdaq-100 members they never saw | 1-hour window → 2.5-hour hold, relative target | Does a model of which stocks beat their peers carry over to stocks it was not trained on? |
 
 Each run answers the research questions from the same predictions:
 
@@ -106,6 +107,38 @@ almost-always-long model, the IC finds a planted stock-level skill (t > 4) that 
 see (its interval spans zero), invents nothing when there is no signal, and the sector-neutral IC removes a
 signal that is only knowing the sector but keeps real skill; the long-short book has zero net exposure; the
 effective-bets estimator recovers a known correlation (ρ = 0, 0.1, 0.3, 0.7 within 0.03).
+
+## Hold-out: train on one universe, trade another
+
+`configs/ndx_holdout.yaml` trains on the S&P 500 without the Nasdaq-100's members (418 stocks) and scores only
+the 85 Nasdaq-100 members in the S&P 500, which the models never see in training or validation. The other 15
+Nasdaq-100 members have no comparable history and are left out.
+
+```bash
+python scripts/build_universe.py --index nasdaq100       # universe/nasdaq100.csv (today's list)
+python scripts/build_universe.py --holdout nasdaq100     # universe/sp500_ex_nasdaq100.csv, nasdaq100_in_sp500.csv
+python scripts/sweep.py   --config configs/ndx_holdout.yaml
+python scripts/breadth.py --config configs/ndx_holdout.yaml   # ranks the 85 and holds 12 long, 12 short
+```
+
+- **Roles** (`data.train_universe`, `data.trade_universe`): training and validation rows come only from the
+  training universe, test rows only from the trading one (`src/holdout.py`). Without them every symbol does
+  both, as before.
+- **Relative target** (`features.target: relative`): did the stock beat the average of its own universe at that
+  date and bar? Training stocks are compared with training stocks and held-out stocks with held-out stocks, so
+  the market's move cancels from the label and neither universe's average leaks into the other. `ret` becomes
+  the return against peers everywhere downstream; always-long earns exactly zero by construction.
+- **Fixed-size books** (`evaluation.book_per_side`, `breadth.py --n-per-side`): the top and bottom n names at each
+  moment; the sector-balanced version gives each sector picks in proportion to its size.
+- **The rules for a finding are in the config, written before any result**: for the same model, a
+  cross-sectional IC with t ≥ 3 and a 12-a-side book whose net 95% interval is above zero.
+
+It is a hold-out across stocks, not across time: both universes live through the same dates. And today's
+Nasdaq-100 list holds the stocks that rose enough to be in it, which flatters anything that leans long.
+
+Controls (`tests/test_holdout.py`): no held-out stock in any training or validation row, and held-out returns
+never change a training label; models trained on synthetic stocks find a shared stock-level signal in stocks
+they never saw (IC above 0.2) and find nothing when only the training stocks carry it.
 
 ## Selective trading (the main case)
 
@@ -295,6 +328,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/engine.py` | RL decision engine: policy, online walk-forward learning, baselines |
 | `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
 | `src/crosssection.py` | Breadth: effective independent bets, cross-sectional IC, long-short books, model similarity |
+| `src/holdout.py` | Training and trading universes, the relative target, and the hold-out split |
 | `universe/` | Saved constituent lists for larger universes |
 | `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
 | `src/ibkr_capture.py` | TWS recorder for quotes, trades and depth |

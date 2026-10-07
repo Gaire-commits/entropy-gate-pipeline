@@ -159,3 +159,19 @@ def test_sectors_come_from_a_map_and_unmapped_symbols_stay_visible():
     mapped = with_sector(p, {"S000": "Energy", "S001": "Tech"})
     assert set(mapped["sector"]) == {"Energy", "Tech", "unknown"}
     assert set(with_sector(p, None)["sector"]) == {"all"}
+
+
+def test_fixed_count_book_holds_exactly_n_names_a_side_and_skips_thin_moments():
+    p = _panel(ic=0.05, days=20)                              # 60 symbols a moment
+    book = quantile_book(p, n_per_side=12)
+    sides = book.groupby(["date", "bar_index", "direction"]).size().unstack("direction")
+    assert (sides[1.0] == 12).all() and (sides[-1.0] == 12).all()
+    assert quantile_book(p, n_per_side=31, min_peers=20).empty    # 60 names cannot fill 31 a side
+
+
+def test_fixed_count_sector_book_is_balanced_in_every_sector_and_close_to_n_overall():
+    p = _panel(ic=0.05, days=20)                              # 6 sectors of 10
+    book = quantile_book(p, n_per_side=12, sector_neutral=True)
+    counts = book.groupby(["date", "bar_index", "sector", "direction"]).size().unstack("direction", fill_value=0)
+    assert (counts[1.0] == counts[-1.0]).all() and (counts[1.0] == 2).all()   # 12 x 10/60 = 2 per sector a side
+    assert (book.groupby(["date", "bar_index", "direction"]).size() == 12).all()

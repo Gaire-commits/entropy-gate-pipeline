@@ -1,0 +1,86 @@
+# Train on one universe, trade another, and rank stocks against their peers.
+#
+# Trained on the S&P 500 without the Nasdaq-100's members (418 stocks); scored only on the 85 Nasdaq-100
+# members that are in the S&P 500, which the models never see in training or validation. The 15
+# Nasdaq-100 members outside the S&P 500 are left out (no comparable history). Lists: universe/, built by
+# `scripts/build_universe.py --index nasdaq100` then `--holdout nasdaq100`.
+#
+# The target is relative (features.target): did the stock beat the average of its own universe at that
+# date and bar? So `ret` everywhere in this experiment, and every bps figure, is a return against peers.
+#
+# This is a hold-out across stocks, not across time: both universes live through the same dates and the
+# same market episodes. Today's constituent lists flatter long-leaning signals (survivorship bias); the
+# Nasdaq-100 list more than most, since its members got there by rising.
+#
+# PROTOCOL, fixed before any result (2026-10-07). What counts as finding something:
+#   models: logreg, gbm, gbm_ent, and their average (scripts/breadth.py's ensemble) -- 4 looks.
+#   book: 12 long and 12 short of the 85 at each moment (evaluation.book_per_side), 2 bps per position.
+#   success needs BOTH, for the same model: a cross-sectional IC with t >= 3 (strict, for the 4 looks
+#   and the many experiments before this one) AND a 12-a-side book whose net 95% interval is above zero.
+#   Anything else is reported as a null, together with the IC this data can detect and the IC a book
+#   needs to pay. No other book size, model or cost is promoted to the headline after seeing results.
+experiment: ndx_holdout
+
+data:
+  universe: "universe/sp500.csv"                       # what is loaded (the S&P 500 bars already cached)
+  train_universe: "universe/sp500_ex_nasdaq100.csv"     # training and validation rows only from these
+  trade_universe: "universe/nasdaq100_in_sp500.csv"     # test rows only from these
+  start: "2020-07-01"
+  end: "today"
+  timeframe: "5Min"
+  feed: "iex"
+  adjustment: "split"
+  cache_dir: "data/bars"
+
+# Identical to sp500_multihour.yaml (a test checks it), so that experiment's screen.parquet can be
+# copied here instead of screening 503 stocks again.
+screening:
+  embedding_dim: 4
+  delay: 1
+  window: 390
+  series: "log_return"
+  n_surrogates: 99
+  min_bars_required: 300
+  gate_statistic: "trend"
+  alpha: 0.05
+  max_tie_fraction: 0.5
+  min_ticks_per_bar: 6
+  seed: 0
+
+features:
+  window: 12              # 1h of history
+  embargo: 1
+  horizon: 30             # 2.5h forward return
+  stride: 12              # 3 samples a day per stock
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"     # statistics from the training universe's training fold only
+  label_deadzone: 0.0005            # training skips relative moves under 5 bps; the test set never does
+  target: relative                  # did the stock beat its universe's average at that moment
+  relative_min_peers: 20            # a moment's average needs at least this many stocks
+
+model:
+  epochs: 30
+  patience: 5
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+
+validation:
+  train_days: 504
+  val_days: 63
+  test_days: 63
+  step_days: 63
+
+sweep:
+  # The rules are baselines only: their signal is each stock's own direction, not a ranking.
+  archs: [always_up, momentum_day, momentum_window, logreg, gbm, gbm_ent]
+  seeds: [0, 1, 2]
+
+evaluation:
+  cost_bps: [0, 1, 2, 5]
+  headline_cost_bps: 2
+  bootstrap: 2000
+  coverage_levels: [1.0, 0.5, 0.2, 0.1]
+  book_per_side: 12       # the protocol's book: 12 long, 12 short of the 85 held-out stocks

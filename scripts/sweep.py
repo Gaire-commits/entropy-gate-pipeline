@@ -4,6 +4,11 @@
     python scripts/sweep.py --config configs/spy_gao.yaml
     python scripts/sweep.py --config configs/etf_intraday.yaml --archs logreg resnet1d --seeds 0
     python scripts/sweep.py --config configs/etf_intraday.yaml --archs gbm gbm_ent resnet1d_ent   # entropy as features
+    python scripts/sweep.py --config configs/ndx_holdout.yaml        # train on one universe, score another
+
+A config may name a `train_universe` and a `trade_universe` (models never see a trading-only symbol in
+training or validation) and `features.target: relative` (did the stock beat its peers at that moment);
+see src/holdout.py.
 """
 
 from __future__ import annotations
@@ -17,9 +22,10 @@ from _common import DEFAULT_CONFIG, output_dir
 
 from src.baselines import is_rule
 from src.config import load_config
-from src.data import load_universe, resolve_universe
+from src.data import load_universe
 from src.dataset import build_dataset, walk_forward_splits
 from src.experiment import run_arch
+from src.holdout import apply_target, resolve_roles, restrict_folds
 from src.ml import is_tree
 
 
@@ -35,7 +41,8 @@ def main() -> int:
     archs = args.archs or cfg.sweep.archs
     seeds = args.seeds if args.seeds is not None else cfg.sweep.seeds
 
-    bars = load_universe(cfg.data.cache_dir, resolve_universe(cfg.data.universe), cfg.data.timeframe)
+    load, train, trade = resolve_roles(cfg.data)
+    bars = load_universe(cfg.data.cache_dir, load, cfg.data.timeframe)
     if not bars:
         print(f"no cached bars in {cfg.data.cache_dir} — run scripts/fetch_data.py first")
         return 1
@@ -45,12 +52,18 @@ def main() -> int:
         print(f"note: {screen_path} missing, so predictions carry no gate columns and Q1 is skipped")
 
     data = build_dataset(bars, screen, cfg)
-    folds = walk_forward_splits(data["date"], cfg.validation)
+    target = getattr(cfg.features, "target", "direction")
+    keep = apply_target(data, target, train, trade, int(getattr(cfg.features, "relative_min_peers", 20)))
+    folds = restrict_folds(walk_forward_splits(data["date"], cfg.validation), data["symbol"], train, trade, keep)
     if not folds:
         print("not enough trading days for one walk-forward fold — shorten the validation windows")
         return 1
     print(f"{cfg.experiment}: {len(data['y']):,} samples  shape {data['X'].shape[1:]}  "
           f"{len(folds)} folds  test {str(folds[0]['test_start'])[:10]} -> {str(folds[-1]['test_end'])[:10]}")
+    if train != trade or target != "direction":
+        loaded = set(bars)
+        print(f"  target: {target}; training on {len(train & loaded)} symbols, scoring {len(trade & loaded)}"
+              f"{' held-out' if not train & trade else ''} symbols; {int((~keep).sum()):,} samples dropped for too few peers")
 
     for arch in archs:
         # Rules have no randomness and the trees are deterministic, so one seed each.
