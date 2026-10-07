@@ -31,6 +31,7 @@ from src.crosssection import (
     breakeven_ic, cross_sectional_ic, cross_sectional_sigma, directional_book, ensemble_scores, quantile_book,
     score_book, with_sector, wide_moments,
 )
+from src.data import resolve_universe
 from src.experiment import ensemble, load_predictions
 from src.holdout import resolve_roles
 from src.selective import top_share_mask
@@ -62,6 +63,8 @@ def main() -> int:
                         help="hold this many names long and as many short instead of a share (default: the "
                              "config's evaluation.book_per_side, if set)")
     parser.add_argument("--cost", type=float, default=None, help="round-trip bps per position (default: the config's headline cost)")
+    parser.add_argument("--only", default=None,
+                        help="universe CSV (or symbols) to restrict the scored symbols to; outputs get its name as a suffix")
     parser.add_argument("--min-peers", type=int, default=None, help="fewest symbols for a moment to count (default: 20, or 60%% of a small universe)")
     args = parser.parse_args()
 
@@ -75,6 +78,10 @@ def main() -> int:
     if pred.empty:
         print(f"no predictions under {out / 'predictions'} — run scripts/sweep.py first")
         return 1
+    tag = ""
+    if args.only:
+        pred = pred[pred["symbol"].isin(set(resolve_universe(args.only)))]
+        tag = "_" + Path(args.only).stem
 
     models = [m for m in (args.models or sorted(pred["arch"].unique())) if m != "always_up" and (pred["arch"] == m).any()]
     if not models:
@@ -139,12 +146,19 @@ def main() -> int:
 
     q_pct = f"{args.n_per_side} names" if args.n_per_side else f"{args.q:.0%}"
     setup = []
-    if holdout:
-        setup.append(f"Models were trained on {len(train)} symbols and are scored here only on {len(trade)} others "
+    scored = set(pred["symbol"])
+    if holdout and not scored & train:
+        setup.append(f"Models were trained on {len(train)} symbols and are scored here only on {len(scored)} others "
                      "they never saw (a hold-out across stocks, not across time).")
+    elif holdout and scored <= train:
+        setup.append(f"Models were trained on {len(train)} symbols; scored here are {len(scored)} of those same symbols, "
+                     "in later periods only (out of time, not out of universe).")
+    elif holdout:
+        setup.append(f"Models were trained on {len(train)} symbols; {len(scored - train)} of the {len(scored)} scored here "
+                     "were never seen. Use --only to score the two groups separately.")
     if target != "direction":
         setup.append(f"Target: {target} (each return is measured against its universe's average at the same moment).")
-    lines = [f"# {cfg.experiment}: breadth and cross-sectional skill", "",
+    lines = [f"# {cfg.experiment}: breadth and cross-sectional skill" + (f" ({Path(args.only).stem})" if args.only else ""), "",
              f"{n_symbols} symbols; moments (a date and bar) with fewer than {min_peers} symbols are left out. Net is after "
              f"{cost} bps per position round trip. Intervals are 95% day-block bootstrap. No retraining: saved walk-forward "
              "predictions only. " + " ".join(setup), "",
@@ -203,14 +217,14 @@ def main() -> int:
                      f"together they are about **{similarity['independent_models']:.1f} independent models**. "
                      "Averaging models that share inputs and labels buys little diversification.")
     text = "\n".join(lines) + "\n"
-    (out / "breadth.md").write_text(text)
+    (out / f"breadth{tag}.md").write_text(text)
 
     flat = []
     for r in rows:
         for kind in ("all", "top", "ls", "ls_sector", "ic", "ic_sector"):
             if kind in r:
                 flat.append({"model": r["model"], "measure": kind, **{k: v for k, v in r[kind].items()}})
-    pd.DataFrame(flat).to_csv(out / "breadth.csv", index=False)
+    pd.DataFrame(flat).to_csv(out / f"breadth{tag}.csv", index=False)
     print("\n" + text)
     return 0
 

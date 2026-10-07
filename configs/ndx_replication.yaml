@@ -1,0 +1,86 @@
+# Replication of the ndx_holdout result, out of time on the stocks the models trained on.
+#
+# ndx_holdout (2026-10-07) found a cross-sectional IC of +0.0141 (t = 3.37) for `gbm` on 85 Nasdaq-100
+# stocks it never saw, trained on 418 other S&P 500 stocks with the relative target; too small to pay a
+# 2 bps book, so by its protocol a null. This config trains exactly the same models on exactly the same
+# 418 stocks and labels, and scores every stock in the test quarters: the 418 in periods after their
+# training data (out of time, not out of universe), and the 85 again. With about five times as many
+# stocks, a real effect of that size should show clearly.
+#
+# The 85's predictions must come out identical to ndx_holdout's (same training rows, deterministic
+# training): scripts/breadth.py --only universe/nasdaq100_in_sp500.csv should reproduce its report.
+#
+# PROTOCOL, fixed before any result (2026-10-08). The finding replicates only if BOTH hold for `gbm` on
+# the 418 training stocks (scripts/breadth.py and scripts/skill_checks.py with
+# --only universe/sp500_ex_nasdaq100.csv):
+#   1. its cross-sectional IC has t >= 3, and
+#   2. its *timing* IC (skill_checks: the score minus the stock's earlier average, against returns minus
+#      each stock's own average) has a 95% interval above zero -- so the skill is not a fixed preference
+#      for stocks that kept beating their peers, which today's constituent lists reward (survivorship).
+# gbm_ent and logistic regression are reported, not decisive. Costs are not part of this rule: the
+# question here is whether the skill is real, not whether it pays.
+experiment: ndx_replication
+
+data:
+  universe: "universe/sp500.csv"                       # what is loaded (the S&P 500 bars already cached)
+  train_universe: "universe/sp500_ex_nasdaq100.csv"     # training and validation rows only from these
+  trade_universe: "universe/sp500.csv"                  # test rows from every stock: the 418 out of time, the 85 again
+  start: "2020-07-01"
+  end: "today"
+  timeframe: "5Min"
+  feed: "iex"
+  adjustment: "split"
+  cache_dir: "data/bars"
+
+# Identical to sp500_multihour.yaml and ndx_holdout.yaml (a test checks it), so the S&P 500 screen can be
+# copied here instead of screening 503 stocks again.
+screening:
+  embedding_dim: 4
+  delay: 1
+  window: 390
+  series: "log_return"
+  n_surrogates: 99
+  min_bars_required: 300
+  gate_statistic: "trend"
+  alpha: 0.05
+  max_tie_fraction: 0.5
+  min_ticks_per_bar: 6
+  seed: 0
+
+features:
+  window: 12              # 1h of history
+  embargo: 1
+  horizon: 30             # 2.5h forward return
+  stride: 12              # 3 samples a day per stock
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"     # statistics from the training universe's training fold only
+  label_deadzone: 0.0005            # training skips relative moves under 5 bps; the test set never does
+  target: relative                  # did the stock beat its universe's average at that moment
+  relative_min_peers: 20            # a moment's average needs at least this many stocks
+
+model:
+  epochs: 30
+  patience: 5
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+
+validation:
+  train_days: 504
+  val_days: 63
+  test_days: 63
+  step_days: 63
+
+sweep:
+  # gbm first: it is the one model the replication rule is about. `--archs gbm` runs only it.
+  archs: [gbm, gbm_ent, logreg]
+  seeds: [0, 1, 2]
+
+evaluation:
+  cost_bps: [0, 1, 2, 5]
+  headline_cost_bps: 2
+  bootstrap: 2000
+  coverage_levels: [1.0, 0.5, 0.2, 0.1]
+  book_per_side: 12       # the protocol's book: 12 long, 12 short of the 85 held-out stocks

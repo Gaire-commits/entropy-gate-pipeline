@@ -140,6 +140,19 @@ Controls (`tests/test_holdout.py`): no held-out stock in any training or validat
 never change a training label; models trained on synthetic stocks find a shared stock-level signal in stocks
 they never saw (IC above 0.2) and find nothing when only the training stocks carry it.
 
+Two follow-ups for a positive IC, both on saved predictions:
+
+```bash
+python scripts/skill_checks.py --config configs/ndx_holdout.yaml        # fixed tilt or timing? quarter by quarter, time of day
+python scripts/breadth.py      --config configs/ndx_replication.yaml --only universe/sp500_ex_nasdaq100.csv
+```
+
+`skill_checks.py` splits an IC into a *static* part (each stock ranked by its average score in earlier quarters, a
+fixed preference that survivorship in today's lists can reward) and a *timing* part (the score minus that average,
+against returns minus each stock's own average). `configs/ndx_replication.yaml` trains the same models on the same
+418 stocks and scores everything, so the 418 can be judged out of time (`--only` scores a group separately); its
+rule for a replication is written in the config.
+
 ## Selective trading (the main case)
 
 `scripts/selective.py` trades only each model's strongest signals, the top 20%, 10%, 5% or 2% by
@@ -371,7 +384,7 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, report and decision engine (172 unit
+Built and tested: data, gate, features, models, sweep, report and decision engine (216 unit
 tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
 `etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
 execution, risk firewall) and position sizing are designed, not built.

@@ -55,22 +55,19 @@ def _day_bootstrap(values: np.ndarray, weights: np.ndarray | None = None, n_boot
             float(np.percentile(boot, 97.5)), float(boot.std()))
 
 
-def cross_sectional_ic(frame: pd.DataFrame, score: str = "prob", min_peers: int = 20, sector_neutral: bool = False,
-                       n_boot: int = 2000, seed: int = 0) -> dict[str, float]:
-    """Mean cross-sectional rank IC with a day-block interval.
+def moment_ic(frame: pd.DataFrame, score: str = "prob", min_peers: int = 20, sector_neutral: bool = False,
+              ret: str = "ret") -> tuple[pd.Series, pd.Series]:
+    """(rank IC per (date, bar) moment, symbols per moment) for moments with at least `min_peers` symbols.
 
-    At each (date, bar) moment with enough symbols: the Pearson correlation of the ranks of `score` and of
-    the realized return `ret` across symbols. With `sector_neutral` each rank has its sector's average
-    rank at that moment subtracted first, so a model that only knows which sector will move scores zero.
-    Moments are averaged within each day, and days are resampled for the interval, because a day's
-    moments share news. `ic_min_detectable` is the IC this much data would detect 80% of the time.
+    The Pearson correlation of the ranks of `score` and of `ret` across symbols; with `sector_neutral`
+    each rank has its sector's average rank at that moment subtracted first.
     """
-    need = MOMENT + ["symbol", score, "ret"] + (["sector"] if sector_neutral else [])
+    need = list(dict.fromkeys(MOMENT + ["symbol", score, ret] + (["sector"] if sector_neutral else [])))
     f = wide_moments(frame, min_peers)[need].copy()
     if f.empty:
-        return {"days": 0}
+        return pd.Series(dtype=float), pd.Series(dtype=float)
     g = f.groupby(MOMENT)
-    f["x"], f["y"] = g[score].rank(method="average"), g["ret"].rank(method="average")
+    f["x"], f["y"] = g[score].rank(method="average"), g[ret].rank(method="average")
     if sector_neutral:
         sector = f.groupby(MOMENT + ["sector"])
         f["x"] -= sector["x"].transform("mean")
@@ -81,14 +78,34 @@ def cross_sectional_ic(frame: pd.DataFrame, score: str = "prob", min_peers: int 
     cov = s["xy"] - s["x"] * s["y"] / n
     var = (s["xx"] - s["x"] ** 2 / n) * (s["yy"] - s["y"] ** 2 / n)
     ic = (cov / np.sqrt(var.where(var > 1e-12))).dropna()
+    return ic, n.loc[ic.index]
+
+
+def summarize_ic(ic: pd.Series, peers: pd.Series | None = None, n_boot: int = 2000, seed: int = 0) -> dict[str, float]:
+    """Average a per-moment IC within days, then over days, with a day-block interval and a t-statistic."""
     if ic.empty:
         return {"days": 0}
     by_day = ic.groupby(level="date").mean()
     mean, lo, hi, se = _day_bootstrap(by_day.to_numpy(), n_boot=n_boot, seed=seed)
+    sd = by_day.std()
     return {"ic": mean, "ic_lo": lo, "ic_hi": hi, "ic_se": se, "ic_min_detectable": 2.8 * se,
-            "t": float(by_day.mean() / (by_day.std() / np.sqrt(len(by_day)))) if by_day.std() > 0 else float("nan"),
+            "t": float(by_day.mean() / (sd / np.sqrt(len(by_day)))) if sd > 0 else float("nan"),
             "share_days_positive": float((by_day > 0).mean()), "days": int(len(by_day)),
-            "moments": int(len(ic)), "peers": float(n.loc[ic.index].mean())}
+            "moments": int(len(ic)), "peers": float(peers.mean()) if peers is not None and len(peers) else float("nan")}
+
+
+def cross_sectional_ic(frame: pd.DataFrame, score: str = "prob", min_peers: int = 20, sector_neutral: bool = False,
+                       n_boot: int = 2000, seed: int = 0, ret: str = "ret") -> dict[str, float]:
+    """Mean cross-sectional rank IC with a day-block interval.
+
+    At each (date, bar) moment with enough symbols: the Pearson correlation of the ranks of `score` and of
+    the realized return across symbols. With `sector_neutral` each rank has its sector's average rank at
+    that moment subtracted first, so a model that only knows which sector will move scores zero. Moments
+    are averaged within each day, and days are resampled for the interval, because a day's moments share
+    news. `ic_min_detectable` is the IC this much data would detect 80% of the time.
+    """
+    ic, peers = moment_ic(frame, score, min_peers, sector_neutral, ret)
+    return summarize_ic(ic, peers, n_boot, seed)
 
 
 def cross_sectional_sigma(frame: pd.DataFrame, min_peers: int = 20, sector_neutral: bool = False) -> float:
@@ -227,3 +244,77 @@ def ensemble_scores(frames: dict[str, pd.DataFrame], min_peers: int = 20) -> tup
     corr = np.corrcoef(base[zs].to_numpy().T) if m > 1 else np.ones((1, 1))
     rho = float(corr[~np.eye(m, dtype=bool)].mean()) if m > 1 else float("nan")
     return base, {"models": m, "mean_corr": rho, "independent_models": float(m / (1 + (m - 1) * rho)) if m > 1 else 1.0}
+
+
+# ---------------------------------------------------------------- is the skill real? (scripts/skill_checks.py)
+
+def past_symbol_mean(frame: pd.DataFrame, col: str) -> np.ndarray:
+    """For each row, the mean of `col` over the same symbol's rows in earlier folds only (NaN before any)."""
+    g = frame.groupby(["symbol", "fold"])[col].agg(["sum", "count"]).sort_index()
+    earlier = g.groupby(level="symbol").cumsum() - g
+    mean = earlier["sum"] / earlier["count"].where(earlier["count"] > 0)
+    return mean.reindex(pd.MultiIndex.from_arrays([frame["symbol"], frame["fold"]])).to_numpy()
+
+
+def skill_decomposition(frame: pd.DataFrame, score: str = "prob", min_peers: int = 20, n_boot: int = 2000,
+                        seed: int = 0) -> dict[str, dict]:
+    """Is a cross-sectional IC a fixed preference for some stocks, or timing?
+
+    model: the plain IC.
+    model, returns net of stock averages: the same score against each return minus that stock's average
+        return over the whole period, which removes any stock's persistent out- or under-performance,
+        including what a list of today's index members carries (survivorship). It uses the future, which is
+        fine for a diagnosis; it is not a strategy.
+    static: each stock scored by its average score in earlier quarters only -- one fixed ranking of stocks.
+    timing: the score minus that earlier average, against returns net of stock averages.
+
+    Rows from the first quarter have no earlier average and are left out of all four, so they compare.
+    A static IC that carries the model's IC, with timing near zero, is the signature of a fixed tilt
+    (survivorship can produce one); timing near the model IC is skill at telling when.
+    """
+    f = frame.copy()
+    f["_static"] = past_symbol_mean(f, score)
+    f = f[np.isfinite(f["_static"])].copy()
+    f["_timing"] = f[score] - f["_static"]
+    f["_ret_net"] = f["ret"] - f.groupby("symbol")["ret"].transform("mean")
+    kw = {"min_peers": min_peers, "n_boot": n_boot, "seed": seed}
+    return {
+        "model": cross_sectional_ic(f, score, **kw),
+        "model, returns net of stock averages": cross_sectional_ic(f, score, ret="_ret_net", **kw),
+        "static": cross_sectional_ic(f, "_static", **kw),
+        "timing": cross_sectional_ic(f, "_timing", ret="_ret_net", **kw),
+    }
+
+
+def ic_by_period(frame: pd.DataFrame, by: str = "fold", score: str = "prob", min_peers: int = 20) -> pd.DataFrame:
+    """Mean IC, t and share of positive days for each value of `by` ("fold" for quarters, "bar_index" for the
+    time of day), from the same per-moment ICs as the overall figure."""
+    ic, _ = moment_ic(frame, score, min_peers)
+    if ic.empty:
+        return pd.DataFrame()
+    moments = ic.to_frame("ic")
+    if by in MOMENT:                                   # part of the moment's own key (e.g. the time of day)
+        moments["_by"] = moments.index.get_level_values(by)
+    else:
+        moments = moments.join(frame[MOMENT + [by]].drop_duplicates(MOMENT).set_index(MOMENT)[by].rename("_by"))
+    rows = []
+    for value, part in moments.groupby("_by"):
+        by_day = part["ic"].groupby(level="date").mean()
+        sd = by_day.std()
+        rows.append({by: value, "start": by_day.index.min(), "end": by_day.index.max(), "days": len(by_day),
+                     "ic": float(by_day.mean()), "share_days_positive": float((by_day > 0).mean()),
+                     "t": float(by_day.mean() / (sd / np.sqrt(len(by_day)))) if sd > 0 and len(by_day) > 1 else float("nan")})
+    return pd.DataFrame(rows)
+
+
+def consistency(per_period: pd.DataFrame) -> dict[str, float]:
+    """How many periods had a positive IC, the one-sided sign-test p-value of that count, and the largest
+    single period's share of the summed positive IC (near 1 = one period carries everything)."""
+    from scipy.stats import binomtest
+
+    ic = per_period["ic"].to_numpy()
+    k, n = int((ic > 0).sum()), len(ic)
+    positive = ic[ic > 0]
+    return {"positive": k, "periods": n,
+            "sign_p": float(binomtest(k, n, 0.5, alternative="greater").pvalue) if n else float("nan"),
+            "largest_share": float(positive.max() / positive.sum()) if positive.size else float("nan")}

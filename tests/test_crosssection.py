@@ -175,3 +175,68 @@ def test_fixed_count_sector_book_is_balanced_in_every_sector_and_close_to_n_over
     counts = book.groupby(["date", "bar_index", "sector", "direction"]).size().unstack("direction", fill_value=0)
     assert (counts[1.0] == counts[-1.0]).all() and (counts[1.0] == 2).all()   # 12 x 10/60 = 2 per sector a side
     assert (book.groupby(["date", "bar_index", "direction"]).size() == 12).all()
+
+
+# ---------------------------------------------------------------- is the skill real?
+
+from src.crosssection import consistency, ic_by_period, past_symbol_mean, skill_decomposition
+
+
+def _skill_panel(kind, days=200, n_symbols=60, folds=8, seed=0):
+    """'timing': the score predicts each stock's return at each moment; no stock has a lasting edge.
+    'tilt': some stocks beat their peers all the time and the model always prefers the same stocks,
+    with no timing at all: the shape a list of today's index members (survivorship) can produce."""
+    rng = np.random.default_rng(seed)
+    d, b, s = (a.ravel() for a in np.meshgrid(np.arange(days), SLOTS, np.arange(n_symbols), indexing="ij"))
+    if kind == "timing":
+        z = rng.normal(size=len(d))
+        ret = 0.12 * z + rng.normal(size=len(d))
+        score = z + 0.5 * rng.normal(size=len(d))
+    else:
+        edge = rng.normal(size=n_symbols)[s]
+        ret = 0.12 * edge + rng.normal(size=len(d))
+        score = edge + 0.3 * rng.normal(size=len(d))
+    return pd.DataFrame({"fold": d * folds // days, "date": pd.Timestamp("2024-01-01") + pd.to_timedelta(d, unit="D"),
+                         "bar_index": b, "symbol": [f"S{i:02d}" for i in s], "ret": ret * 80e-4,
+                         "prob": 1 / (1 + np.exp(-score))})
+
+
+def test_timing_skill_survives_removing_each_stocks_average_and_has_no_fixed_tilt():
+    out = skill_decomposition(_skill_panel("timing"), n_boot=200)
+    model, net, static, timing = (out[k]["ic"] for k in ("model", "model, returns net of stock averages", "static", "timing"))
+    assert model > 0.06 and out["model"]["ic_lo"] > 0
+    assert abs(static) < 0.03
+    assert timing == pytest.approx(model, abs=0.02) and net == pytest.approx(model, abs=0.02)
+
+
+def test_a_fixed_preference_for_lasting_winners_shows_as_static_with_no_timing():
+    out = skill_decomposition(_skill_panel("tilt"), n_boot=200)
+    assert out["model"]["ic_lo"] > 0.04                       # looks like skill on raw returns
+    assert out["static"]["ic"] == pytest.approx(out["model"]["ic"], abs=0.02)
+    assert abs(out["timing"]["ic"]) < 0.015 and out["timing"]["ic_lo"] < 0 < out["timing"]["ic_hi"]
+    assert abs(out["model, returns net of stock averages"]["ic"]) < 0.015
+
+
+def test_past_symbol_means_use_earlier_folds_only():
+    p = _skill_panel("timing", days=60, folds=4)
+    before = past_symbol_mean(p, "prob")
+    assert np.isnan(before[p["fold"].to_numpy() == 0]).all()
+    changed = p.assign(prob=np.where(p["fold"] >= 2, 0.99, p["prob"]))
+    after = past_symbol_mean(changed, "prob")
+    early = p["fold"].to_numpy() <= 2
+    np.testing.assert_allclose(after[early], before[early])     # fold 2 sees folds 0-1 only
+    one = p[(p["symbol"] == "S00")]
+    expected = one[one["fold"] < 3]["prob"].mean()
+    assert past_symbol_mean(p, "prob")[(p["symbol"] == "S00").to_numpy() & (p["fold"] == 3).to_numpy()][0] == pytest.approx(expected)
+
+
+def test_ic_by_period_splits_the_same_moments_and_consistency_counts_them():
+    p = _skill_panel("timing", days=160, folds=8)
+    per = ic_by_period(p, "fold")
+    assert len(per) == 8 and per["days"].sum() == 160 and (per["ic"] > 0).all()
+    c = consistency(per)
+    assert c["positive"] == 8 and c["sign_p"] < 0.01 and c["largest_share"] < 0.3
+    slots = ic_by_period(p, "bar_index")
+    assert sorted(slots["bar_index"]) == list(SLOTS)
+    one_quarter = consistency(pd.DataFrame({"ic": [0.5, -0.01, -0.02, 0.01]}))
+    assert one_quarter["positive"] == 2 and one_quarter["largest_share"] > 0.9

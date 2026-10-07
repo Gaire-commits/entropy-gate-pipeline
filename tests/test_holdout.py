@@ -140,3 +140,35 @@ def test_a_shared_stock_level_signal_transfers_to_stocks_the_model_never_saw(arc
 def test_a_signal_only_in_the_training_stocks_finds_nothing_in_the_held_out_ones(arch):
     ic = _transfer_ic(arch, signal_in_held_out=False)
     assert ic["ic_lo"] < 0 < ic["ic_hi"] and abs(ic["ic"]) < 0.05
+
+
+@pytest.mark.parametrize("arch", ["logreg", "gbm"])
+def test_scoring_more_stocks_leaves_the_held_out_predictions_unchanged(arch):
+    """The replication scores every stock; the held-out stocks' predictions must equal the hold-out run's."""
+    import tempfile
+
+    rng = np.random.default_rng(5)
+    sessions, market = 200, rng.normal(0, 0.0008, 200 * BARS)
+    bars = {f"S{i:02d}": bars_from_returns(f"S{i:02d}", _stock_returns(sessions, 0.0002, rng, market), seed=i,
+                                           start="2020-01-02") for i in range(30)}
+    train, held = {f"S{i:02d}" for i in range(20)}, {f"S{i:02d}" for i in range(20, 30)}
+    cfg = SimpleNamespace(
+        features=SimpleNamespace(channels=["log_return", "session_return"], window=12, horizon=30, embargo=1, stride=12,
+                                 allow_overnight=False, normalize="fold_standardize", label_deadzone=0.0),
+        model=SimpleNamespace(epochs=5, patience=3, batch_size=256, lr=1e-3, weight_decay=1e-4, dropout=0.2))
+    preds = []
+    for trade in (held, train | held):
+        data = build_dataset(bars, None, cfg)
+        keep = apply_target(data, "relative", train, trade, min_peers=8)
+        folds = walk_forward_splits(data["date"], SimpleNamespace(train_days=100, val_days=20, test_days=40, step_days=40))
+        folds = restrict_folds(folds, data["symbol"], train, trade, keep)[:2]
+        with tempfile.TemporaryDirectory() as tmp:
+            run_arch(data, folds, arch, 0, cfg, Path(tmp), log=lambda _: None)
+            preds.append(load_predictions(Path(tmp)))
+    holdout, everyone = preds
+    key = ["fold", "date", "symbol", "bar_index"]
+    a = holdout.sort_values(key).reset_index(drop=True)
+    b = everyone[everyone["symbol"].isin(held)].sort_values(key).reset_index(drop=True)
+    assert len(a) == len(b) and set(everyone["symbol"]) == train | held
+    np.testing.assert_allclose(a["prob"].to_numpy(), b["prob"].to_numpy(), rtol=0, atol=1e-6)
+    np.testing.assert_allclose(a["ret"].to_numpy(), b["ret"].to_numpy())

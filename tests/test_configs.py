@@ -59,3 +59,21 @@ def test_holdout_config_never_trains_on_what_it_trades_and_can_reuse_the_sp500_s
     assert vars(cfg.screening) == vars(sp500.screening), "screen.parquet is only reusable if screening is identical"
     for key in ("window", "embargo", "horizon", "stride", "channels"):
         assert getattr(cfg.features, key) == getattr(sp500.features, key)
+
+
+def test_replication_config_trains_exactly_like_the_holdout_and_scores_every_stock():
+    from src.holdout import resolve_roles
+
+    def roles(name):
+        cfg = load_config(ROOT / "configs" / name)
+        for key in ("universe", "train_universe", "trade_universe"):
+            setattr(cfg.data, key, str(ROOT / getattr(cfg.data, key)))
+        return cfg, resolve_roles(cfg.data)
+
+    hold, (_, hold_train, hold_trade) = roles("ndx_holdout.yaml")
+    rep, (load, rep_train, rep_trade) = roles("ndx_replication.yaml")
+    assert rep_train == hold_train                                   # same training stocks
+    assert hold_trade < rep_trade and rep_train < rep_trade          # scores the held-out 85 and the 418
+    for block in ("screening", "features", "model", "validation"):
+        assert vars(getattr(rep, block)) == vars(getattr(hold, block)), block
+    assert "gbm" in rep.sweep.archs

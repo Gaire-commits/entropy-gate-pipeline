@@ -30,10 +30,14 @@ and 4 October 2026.
   5-minute returns barely react to a slowly varying drift, the kind of trend multi-hour momentum relies
   on. In simulation they separate trending from noise spells by 0.07–0.17 standard deviations; patterns of
   hourly returns separate them by about 0.9, and a plain variance ratio by about 2.
-- **With the market removed there is no stock-level skill.** Scored where breadth counts, across stocks at each
-  moment, every S&P 500 model's cross-sectional IC is about zero (−0.004 to +0.002), and the data could detect an
+- **With the market removed, models trained to call direction have no stock-level skill.** Scored where breadth
+  counts, across stocks at each moment, every S&P 500 model's cross-sectional IC is about zero (−0.004 to +0.002), and the data could detect an
   IC half the size a profitable long-short book needs (0.0075 against 0.0154), so this null rules out a
   profitable signal of that kind. The 768 S&P 500 trades a day had amounted to only 7–14 independent bets.
+- **The first out-of-sample hint of stock-picking skill, too small to pay.** Trained instead to say which stocks
+  beat their peers, the tree model ranked 85 Nasdaq-100 stocks it never saw better than chance (IC +0.0141, t =
+  3.37), but its 12-a-side book earns +1.47 bps gross per position, under a 2 bps cost. By the rule fixed in
+  advance that is a null. Checks for survivorship and a replication on five times the stocks are built, pending.
 - **The measurement works.** On synthetic data the gate passes planted trends and refuses zig-zags and tick
   noise, and the models recover planted signals. The null on real data is a finding, not a broken pipeline.
 - **The decision engine (RL) finds nothing either.** On the ETFs it learns to stay flat. On the S&P 500 the
@@ -171,7 +175,42 @@ the most credible one this project could produce.
 **Caveats:** a hold-out across stocks, not across time (same dates and market episodes); today's lists, and the
 Nasdaq-100's in particular, are survivorship-biased toward stocks that rose.
 
-**Result: pending.**
+### Result (2026-10-07): a null by the protocol, with the project's first significant ranking skill
+
+Trained on 418 stocks, scored on the 85 they never saw, 940 test days, 12 long and 12 short at each moment:
+
+| model | IC [95% CI] | t | book gross [95% CI] | net after 2 bps |
+|---|---|---:|---|---:|
+| `gbm` | **+0.0141** [+0.0060, +0.0221] | **3.37** | **+1.47** [+0.45, +2.51] | −0.53 |
+| `gbm_ent` | +0.0141 [+0.0051, +0.0231] | 3.04 | +0.93 [−0.24, +2.09] | −1.07 |
+| average of the three trained models | +0.0138 [+0.0050, +0.0224] | 3.09 | +0.98 [−0.14, +2.04] | −1.02 |
+| logistic regression | +0.0057 [−0.0028, +0.0140] | 1.38 | +0.34 [−0.97, +1.50] | −1.66 |
+| momentum rules | −0.0036 to +0.0010 | < 1 | +0.05 to +0.78 | below −1.2 |
+
+- **By the rule, a null.** `gbm` clears the skill half (t = 3.37 ≥ 3), but its book's net interval after 2 bps,
+  about [−1.55, +0.51], is not above zero, and the rule needs both.
+- **Still the first evidence of ranking skill on data a model never saw.** On the S&P 500, the same tree model
+  trained to call each stock's direction scored an IC of −0.0037: asking which stocks beat their peers is what
+  changed. Both sides of the book earn (+1.26 bps on the longs, +1.68 on the shorts), and about 70% of the IC holds
+  within sectors (sector-neutral IC +0.0099, t = 2.56), so it is not one sector bet.
+- **Why it does not pay.** Because of IEX gaps, only about 56 of the 85 stocks have a complete window at a typical
+  moment, so 12 a side is the top and bottom fifth, and the book needs an IC of 0.0204 to pay 2 bps; `gbm` has
+  0.0141. Its gross 1.47 bps per position would pay only if a round trip cost under about 1.5 bps.
+- **Reasons for caution:** both lists are today's members, and a fixed preference for stocks that kept rising would
+  look like skill (survivorship); `gbm_ent` (3.04) and the average (3.09) clear the bar only just, after many tests
+  in this project; and this is one hold-out sample, across stocks but not across time.
+
+### Checks and replication (rule fixed 2026-10-08; results pending)
+
+- **Checks on the saved predictions** (`scripts/skill_checks.py`, Colab section 17, no retraining): does the IC
+  come from a fixed preference for some stocks (*static*: each stock ranked by its average score in earlier
+  quarters) or from timing (*timing*: the score minus that average, against returns minus each stock's own average
+  return, which strips survivorship)? And how many of the quarters had a positive IC? On synthetic markets the
+  check puts a planted timing skill in *timing* and a planted survivorship-like tilt in *static*, every time.
+- **Replication** (`configs/ndx_replication.yaml`): the same models on the same 418 training stocks, also scored on
+  those 418 in later periods, about five times the stocks. **It replicates only if** `gbm`'s IC on the 418 has t ≥ 3
+  **and** its timing IC's 95% interval is above zero. The 85's predictions come out identical to the hold-out run's
+  (a test checks this), so their report doubles as a reproducibility check.
 
 ## Common setup
 
@@ -621,19 +660,23 @@ The response so far:
 | 2026-10-04 | Diversification: breadth tools (independent bets, cross-sectional IC, market- and sector-neutral long-short books) and a 37-ETF cross-asset universe built and tested on synthetic markets; real-data runs pending |
 | 2026-10-05 | Breadth results: 7–14 independent bets a day where we had 768 trades; with the market removed no S&P 500 model has stock-level skill, and the data could have detected half the IC a book needs |
 | 2026-10-07 | Hold-out test built: train/trade universes, relative target, fixed-size books, Nasdaq-100 lists; protocol fixed before running |
+| 2026-10-07 | Hold-out result: a null by the protocol (book net −0.53 bps), with the first significant ranking skill on unseen stocks (`gbm` IC +0.0141, t = 3.37) |
+| 2026-10-08 | Skill checks (fixed tilt vs. timing, quarter by quarter) and a replication on the 418 training stocks out of time; rule fixed before running |
 
 ## Next steps
 
-1. Run Colab section 16: the pre-registered hold-out test (train on 418 S&P 500 stocks, trade the 85 held-out
-   Nasdaq-100 members, 12 long and 12 short).
-2. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
+1. Run Colab section 17: the skill checks on the hold-out (minutes), then the replication on the 418 training stocks
+   out of time, judged by the rule in `configs/ndx_replication.yaml`.
+2. If it replicates: measure real trading costs for these stocks (the IBKR recorder's quotes give spreads) and charge
+   cost only when a position changes; at a gross 1.47 bps per position, cost decides whether it pays.
+3. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
    a higher cost in volatile moments) before it goes into the thesis even as a side note.
-3. Run `etf_multihour`, the horizon the advisor pointed toward.
-4. If the hold-out shows anything: relative input features as well (each stock's window measured against its
+4. Run `etf_multihour`, the horizon the advisor pointed toward.
+5. If the hold-out shows anything: relative input features as well (each stock's window measured against its
    peers), and the deep models on the relative target (a long GPU run).
-5. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
+6. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
    inference by day, the drift blind spot of permutation entropy, the engine's failure modes).
-6. Count gate approvals as episodes, not days.
-7. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
-8. Fix wording: the S&P 500 gate table still says "ETF".
-9. Use point-in-time S&P 500 membership to remove survivorship bias.
+7. Count gate approvals as episodes, not days.
+8. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
+9. Fix wording: the S&P 500 gate table still says "ETF".
+10. Use point-in-time S&P 500 membership to remove survivorship bias.
