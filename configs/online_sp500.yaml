@@ -1,0 +1,66 @@
+# An online agent on the S&P 500: it learns while the bars stream past, one bar at a time.
+#
+# No walk-forward folds: the agent decides at each signal bar from what it has seen so far, and learns
+# from each trade only when its 2.5-hour return has matured (src/online.py). Every return is scored
+# before the agent learns from it, so the whole history after a 60-day warm-up is out of sample.
+# Rewards are market-neutral (each stock against the average of the stocks at that moment), 2 bps per
+# position. Exploration is held at a target policy entropy (adaptive bonus weight), raised for a while
+# when a drift detector sees the greedy policy's results drop.
+#
+# Same bars and windows as sp500_multihour.yaml (a test checks it), so the cached bars are reused.
+# Today's constituent list: survivorship bias as in every S&P 500 experiment here.
+#
+# PROTOCOL, fixed before any result (2026-10-07). The main run is full feedback with entropy control;
+# its greedy book is the headline. The agent has found something only if BOTH:
+#   1. the greedy book's net 95% day-block interval after 2 bps is above zero, and
+#   2. its net beats all 19 placebo runs (returns shuffled across stocks within each moment: same
+#      features, volatility and timing, nothing to learn), a permutation p-value of 0.05.
+# The bandit runs (with and without entropy control) and the explore and frozen books are reported
+# alongside but cannot carry the headline. Anything else is a null.
+experiment: online_sp500
+
+data:
+  universe: "universe/sp500.csv"
+  start: "2020-07-01"
+  end: "today"
+  timeframe: "5Min"
+  feed: "iex"
+  adjustment: "split"
+  cache_dir: "data/bars"
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"   # batch pipeline only (the replay check); the agent uses online.normalize
+  label_deadzone: 0.0005
+
+online:
+  normalize: cross_section        # each input standardized across the stocks at that moment
+  min_peers: 20
+  cost_bps: 2.0
+  neutral: true
+  hidden: 32
+  lr: 0.003
+  buffer: 50000                   # ~40 trading days of matured samples; older ones are forgotten
+  min_buffer: 2000
+  steps: 2
+  batch: 1024
+  warmup_moments: 180             # 60 days at 3 signal bars a day
+  target_entropy: 0.5             # nats; ln 3 = 1.10 is uniform over short / flat / long
+  drift: true
+  placebos: 19                    # main run; the other runs get `placebos_other`
+  placebos_other: 4
+  check_symbols: 40               # replay check against the batch pipeline on this many symbols
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

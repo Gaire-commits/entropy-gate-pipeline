@@ -243,6 +243,36 @@ breadth report below.)
 15 quarters positive), but the effect did not replicate on the other stocks, was not timing skill, and was too small
 to cover costs. Every step, including the replication rule, was fixed before the data was read.
 
+## Online agent on streaming bars (protocol fixed 2026-10-07; results pending)
+
+An RL agent that learns while the S&P 500 bars stream past, one bar at a time, instead of in quarterly folds
+(`src/online.py`, `configs/online_sp500.yaml`, Colab section 18). It picks short, flat or long for every stock at
+each signal bar and learns from a trade only when its 2.5-hour return has matured. Every scored return is
+scored before the agent learns from it, and scoring starts after a 60-day warm-up. Rewards are market-neutral,
+2 bps per position. Exploration is held at a target policy entropy of 0.5 nats by an adaptive bonus weight,
+raised for a while when a drift detector sees the greedy policy's results drop.
+
+**What the controls show** (synthetic, `tests/test_online.py`):
+
+- **The stream reproduces the batch pipeline exactly.** Features and returns match sample for sample, with
+  missing bars, missing days and an early close. Cutting off the future changes nothing before the cut.
+- **It learns a planted signal and makes nothing from noise.** This holds under both kinds of feedback and in
+  the placebo world.
+- **Entropy control is what lets it adapt.** When a planted signal flipped sign halfway, the agent with entropy
+  control earned +1.6 to +3.0 bps per opportunity over the last 300 moments; without it, −3.4 to −0.03. This
+  held under full feedback too: without the bonus the softmax saturates and the policy stops moving. Under
+  bandit feedback, flat also pays exactly zero and teaches nothing, so the agent never sees the new signal.
+
+**Protocol, fixed before any result.** The main run is full feedback with entropy control, and its greedy book is
+the headline. It has found something only if its net 95% day-block interval after 2 bps is above zero **and** it
+beats all 19 placebo runs (returns shuffled across stocks within each moment: same features, volatility and
+timing, nothing to learn), a permutation p of 0.05. The bandit runs, with and without entropy control, and the
+explore and frozen books are reported alongside but cannot carry the headline.
+
+**What to expect.** The walk-forward models found no stock-level skill on these inputs, and the hold-out's
+ranking skill did not replicate. So the likely result is a null, with the useful part being whether online
+learning manufactures an edge the placebo would expose.
+
 ## Common setup
 
 | | |
@@ -694,15 +724,15 @@ The response so far:
 | 2026-10-07 | Hold-out result: a null by the protocol (book net −0.53 bps), with the first significant ranking skill on unseen stocks (`gbm` IC +0.0141, t = 3.37) |
 | 2026-10-07 | Skill checks (fixed tilt vs. timing, quarter by quarter) and a replication on the 418 training stocks out of time; rule fixed before running (committed 17:55; labelled 10-08 in the configs by mistake) |
 | 2026-10-07 | Replication result: the hold-out skill does not replicate (416 stocks: IC +0.0005, t 0.2; timing −0.0055). On the 85 the IC is mostly a fixed tilt, timing +0.0019 (t 0.4). The reproduced 85 match the hold-out exactly |
+| 2026-10-07 | Online agent built: streaming featurizer identical to the batch pipeline, delayed rewards, entropy-controlled exploration with drift boosts, placebo replay; protocol fixed before running |
 
 ## Next steps
 
 1. Cost, only if wanted: measure real trading costs for these stocks (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes. The replication failed, so this would test whether a result that does
    not generalize would pay, which no longer needs to be a priority.
-2. If the thesis adds an online learning agent: build it around a placebo and a replay-equivalence test first, since
-   there is no surviving signal for it to adapt around. The question becomes whether online adaptation finds
-   anything at all.
+2. Run Colab section 18, the online agent on the S&P 500, judged by the rule in `configs/online_sp500.yaml`.
+   A live paper feed (Alpaca websocket bars into the same featurizer) comes only after that.
 3. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
    a higher cost in volatile moments) before it goes into the thesis even as a side note.
 4. Run `etf_multihour`, the horizon the advisor pointed toward.

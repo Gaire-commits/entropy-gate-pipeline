@@ -77,3 +77,12 @@ def test_replication_config_trains_exactly_like_the_holdout_and_scores_every_sto
     for block in ("screening", "features", "model", "validation"):
         assert vars(getattr(rep, block)) == vars(getattr(hold, block)), block
     assert "gbm" in rep.sweep.archs
+
+
+def test_online_config_streams_the_same_bars_and_windows_as_the_sp500_runs():
+    online = load_config(ROOT / "configs" / "online_sp500.yaml")
+    sp500 = load_config(ROOT / "configs" / "sp500_multihour.yaml")
+    assert vars(online.data) == vars(sp500.data), "the cached bars are only reusable with the same data block"
+    for key in ("window", "embargo", "horizon", "stride", "channels", "allow_overnight"):
+        assert getattr(online.features, key) == getattr(sp500.features, key)
+    assert online.online.placebos >= 19, "the protocol's p-value of 0.05 needs at least 19 placebos"

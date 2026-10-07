@@ -231,6 +231,44 @@ gate's verdict. Two traps found while building it: a flat-leaning initialization
 the agent never trades again, and with bandit feedback an edge barely above cost is sometimes not learned at
 all, which is the safe failure.
 
+## Online agent (streaming bars)
+
+`src/online.py` takes the engine off the quarterly folds: an agent that learns while the bars arrive, one
+bar at a time, as it would live.
+
+```bash
+python scripts/online_replay.py --config configs/online_sp500.yaml
+python scripts/online_replay.py --config configs/online_sp500.yaml --only universe/nasdaq100_in_sp500.csv
+```
+
+- **The stream.** `StreamFeaturizer` sees each bar once and keeps only short ring buffers. At each signal bar
+  it cuts the same windows as the batch pipeline. A trade's return is attached only when its exit bar
+  arrives, 31 bars later, and the agent learns from it then.
+- **Rewards.** Market-neutral: each stock against the average at that moment, 2 bps per position.
+- **Exploration.** Exploration is set by the policy's entropy H(π) = −Σ π log π, not a fixed bonus. The
+  bonus weight adapts so the entropy tracks a target (0.5 nats; ln 3 is uniform over short / flat / long).
+  A Page-Hinkley drift detector raises the target for a while when the greedy policy's results drop.
+- **Three books per agent.** *greedy* is the most likely action, what would be deployed. *explore* samples
+  from the policy and pays for exploring. *frozen* is the greedy policy at the end of warm-up, never
+  updated, which shows whether continuing to learn helps.
+- **Placebo worlds.** Each run is repeated with each moment's returns shuffled across its stocks: same
+  features, volatility and timing, nothing to learn. The rule for a finding is fixed in the config.
+- **Paper only.** Positions are paper positions; nothing here places an order.
+
+Controls in `tests/test_online.py`:
+
+- **Same as batch.** The stream reproduces every batch sample's features and returns with missing bars,
+  missing days and an early close. Cutting off the future changes nothing before the cut, and the script
+  repeats this check on real bars before it runs the agent.
+- **Nothing early.** A return is read only at its outcome event, exactly `embargo + horizon` bars after the
+  decision.
+- **Signal and noise.** The agent learns a planted cross-sectional signal under both kinds of feedback and
+  makes nothing on noise or in the placebo world.
+- **Entropy matters.** When a planted signal flips sign mid-stream, the agent with entropy control earns it
+  again (above +1 bps per opportunity over the last 300 moments). Without it the agent stays below +0.5,
+  under full feedback too: the softmax saturates and the policy stops moving. Under bandit feedback, flat
+  then pays exactly zero and teaches nothing.
+
 ## Larger universes
 
 A config's `universe` can be a list of symbols or a path to a CSV built by
@@ -345,6 +383,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
 | `src/crosssection.py` | Breadth: effective independent bets, cross-sectional IC, long-short books, model similarity |
 | `src/holdout.py` | Training and trading universes, the relative target, and the hold-out split |
+| `src/online.py` | Online agent: streaming featurizer, delayed rewards, entropy-controlled exploration, drift detector, placebo replay |
 | `universe/` | Saved constituent lists for larger universes |
 | `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
 | `src/ibkr_capture.py` | TWS recorder for quotes, trades and depth |
@@ -387,8 +426,8 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, report and decision engine (216 unit
-tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
+Built and tested: data, gate, features, models, sweep, report, decision engine and online agent
+(238 unit tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
 `etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
 execution, risk firewall) and position sizing are designed, not built.
 
