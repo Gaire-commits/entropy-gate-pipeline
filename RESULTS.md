@@ -1,8 +1,8 @@
 # Results and progress
 
-Last updated 2026-10-04. Numbers come from each experiment's `outputs/<experiment>/summary.md` and
+Last updated 2026-10-07. Numbers come from each experiment's `outputs/<experiment>/summary.md` and
 `engine.md`, which live on Google Drive rather than in this repo. The runs finished between late September
-and 4 October 2026.
+and 7 October 2026.
 
 ## In short
 
@@ -34,10 +34,12 @@ and 4 October 2026.
   counts, across stocks at each moment, every S&P 500 model's cross-sectional IC is about zero (−0.004 to +0.002), and the data could detect an
   IC half the size a profitable long-short book needs (0.0075 against 0.0154), so this null rules out a
   profitable signal of that kind. The 768 S&P 500 trades a day had amounted to only 7–14 independent bets.
-- **The first out-of-sample hint of stock-picking skill, too small to pay.** Trained instead to say which stocks
-  beat their peers, the tree model ranked 85 Nasdaq-100 stocks it never saw better than chance (IC +0.0141, t =
-  3.37), but its 12-a-side book earns +1.47 bps gross per position, under a 2 bps cost. By the rule fixed in
-  advance that is a null. Checks for survivorship and a replication on five times the stocks are built, pending.
+- **One hint of stock-picking skill, which did not replicate and would not pay.** Trained to say which stocks beat
+  their peers, the tree model ranked 85 Nasdaq-100 stocks it never saw better than chance (IC +0.0141, t = 3.37),
+  but its 12-a-side book earns +1.47 bps gross per position, under a 2 bps cost: a null by the rule fixed in
+  advance. The pre-registered replication then failed: on the 416 stocks it trained on, scored in later periods, the
+  IC is +0.0005 (t = 0.2) and the timing IC is −0.0055. On the 85, the IC is mostly a fixed preference for some
+  stocks, with timing skill indistinguishable from zero (+0.0019, t = 0.4).
 - **The measurement works.** On synthetic data the gate passes planted trends and refuses zig-zags and tick
   noise, and the models recover planted signals. The null on real data is a finding, not a broken pipeline.
 - **The decision engine (RL) finds nothing either.** On the ETFs it learns to stay flat. On the S&P 500 the
@@ -200,17 +202,46 @@ Trained on 418 stocks, scored on the 85 they never saw, 940 test days, 12 long a
   look like skill (survivorship); `gbm_ent` (3.04) and the average (3.09) clear the bar only just, after many tests
   in this project; and this is one hold-out sample, across stocks but not across time.
 
-### Checks and replication (rule fixed 2026-10-08; results pending)
+### Checks and replication (2026-10-07): the skill did not replicate
 
-- **Checks on the saved predictions** (`scripts/skill_checks.py`, Colab section 17, no retraining): does the IC
-  come from a fixed preference for some stocks (*static*: each stock ranked by its average score in earlier
-  quarters) or from timing (*timing*: the score minus that average, against returns minus each stock's own average
-  return, which strips survivorship)? And how many of the quarters had a positive IC? On synthetic markets the
-  check puts a planted timing skill in *timing* and a planted survivorship-like tilt in *static*, every time.
-- **Replication** (`configs/ndx_replication.yaml`): the same models on the same 418 training stocks, also scored on
-  those 418 in later periods, about five times the stocks. **It replicates only if** `gbm`'s IC on the 418 has t ≥ 3
-  **and** its timing IC's 95% interval is above zero. The 85's predictions come out identical to the hold-out run's
-  (a test checks this), so their report doubles as a reproducibility check.
+**Rule, fixed before running** (committed in `079f520` at 17:55 on 2026-10-07; the configs and the earlier
+version of this section say 2026-10-08, a mislabelled date, and the commit time is the one that counts): `gbm`
+replicates only if its IC on the 418 training stocks has t ≥ 3 **and** its timing IC's 95% interval is above zero.
+The 418 are scored in later periods only (out of time, not out of universe); the 85 are scored in the same run.
+The report scored 416 of the 418 (the two others are not in its predictions).
+
+| `gbm` | stocks | IC [95% CI] · t | net of stock averages | static | timing |
+|---|---:|---|---|---|---|
+| hold-out | 85 | +0.0146 [+0.0057, +0.0233] · 3.3 | +0.0103 [+0.0014, +0.0190] · 2.3 | +0.0137 [−0.0024, +0.0286] · 1.7 | +0.0019 [−0.0074, +0.0119] · 0.4 |
+| **replication** | 416 | **+0.0005** [−0.0048, +0.0057] · **0.2** | −0.0019 [−0.0072, +0.0033] · −0.7 | +0.0066 [−0.0034, +0.0158] · 1.4 | **−0.0055** [−0.0117, +0.0006] · −1.8 |
+
+(The 85 use at least 20 stocks per moment, as the skill report does, hence +0.0146 here against +0.0141 in the
+breadth report below.)
+
+- **Verdict: does not replicate.** The IC on the 416 is zero (t = 0.2, positive in 8 of 15 quarters, sign test
+  p = 0.50) and the timing IC is slightly negative, so both halves of the rule fail.
+- **The 85 reproduce exactly**: IC +0.0141, t = 3.4, book gross +1.47 bps and net −0.53, 23.8 independent bets a
+  day, identical to the hold-out run. The earlier result was not a bug. It did not generalize.
+- **On the 416, a profitable signal is ruled out.** The long-short book earns −0.15 bps gross [−1.06, +0.76]
+  (−2.15 net), the sector-neutral IC is −0.0006, and the data could detect an IC of 0.0073 against the 0.0138 a
+  book needs to pay.
+- **On the 85 the IC is mostly a fixed tilt, not timing.** Timing is about zero (+0.0019, t = 0.4). The static part
+  is positive but not significant on its own (+0.0137, t = 1.7), and removing each stock's average return shrinks the
+  IC to +0.0103 (t = 2.3), under the t ≥ 3 bar. A fixed preference for stocks that kept rising is what survivorship
+  in today's Nasdaq-100 list can reward. This is an explanation consistent with the numbers, not a tested one.
+- **Spread over time, but not independent evidence.** On the 85, `gbm` and `gbm_ent` have a positive IC in 12 of 15
+  quarters (sign test p = 0.018; `logreg` 10 of 15), the largest quarter holds 13–19% of the positive total, and
+  all three signal times (10:25, 11:25, 12:25) are positive (+0.0125 to +0.0148, t 2.0–2.3). It is the same 85
+  stocks and the same dates as the original IC, so it supports that number without adding a second sample.
+- **A model with general stock-picking skill would rank the 416 too.** It ranks them at chance, and ranks the 85
+  better. The simplest reading is that the 85 share a property (large technology and growth names) that happened to
+  line up with what the model scores in 2022–2026.
+- **It would not pay either way.** A book on the 85 needs an IC of 0.0205 to cover 2 bps, and the observed IC is
+  0.0141–0.0146. Its gross +1.47 bps would pay only if a round trip cost under about 1.5 bps.
+
+**What goes in the thesis:** a relative-target tree model ranked unseen Nasdaq-100 stocks above chance (t = 3.4, 12 of
+15 quarters positive), but the effect did not replicate on the other stocks, was not timing skill, and was too small
+to cover costs. Every step, including the replication rule, was fixed before the data was read.
 
 ## Common setup
 
@@ -661,19 +692,23 @@ The response so far:
 | 2026-10-05 | Breadth results: 7–14 independent bets a day where we had 768 trades; with the market removed no S&P 500 model has stock-level skill, and the data could have detected half the IC a book needs |
 | 2026-10-07 | Hold-out test built: train/trade universes, relative target, fixed-size books, Nasdaq-100 lists; protocol fixed before running |
 | 2026-10-07 | Hold-out result: a null by the protocol (book net −0.53 bps), with the first significant ranking skill on unseen stocks (`gbm` IC +0.0141, t = 3.37) |
-| 2026-10-08 | Skill checks (fixed tilt vs. timing, quarter by quarter) and a replication on the 418 training stocks out of time; rule fixed before running |
+| 2026-10-07 | Skill checks (fixed tilt vs. timing, quarter by quarter) and a replication on the 418 training stocks out of time; rule fixed before running (committed 17:55; labelled 10-08 in the configs by mistake) |
+| 2026-10-07 | Replication result: the hold-out skill does not replicate (416 stocks: IC +0.0005, t 0.2; timing −0.0055). On the 85 the IC is mostly a fixed tilt, timing +0.0019 (t 0.4). The reproduced 85 match the hold-out exactly |
 
 ## Next steps
 
-1. Run Colab section 17: the skill checks on the hold-out (minutes), then the replication on the 418 training stocks
-   out of time, judged by the rule in `configs/ndx_replication.yaml`.
-2. If it replicates: measure real trading costs for these stocks (the IBKR recorder's quotes give spreads) and charge
-   cost only when a position changes; at a gross 1.47 bps per position, cost decides whether it pays.
+1. Cost, only if wanted: measure real trading costs for these stocks (the IBKR recorder's quotes give spreads) and
+   charge cost only when a position changes. The replication failed, so this would test whether a result that does
+   not generalize would pay, which no longer needs to be a priority.
+2. If the thesis adds an online learning agent: build it around a placebo and a replay-equivalence test first, since
+   there is no surviving signal for it to adapt around. The question becomes whether online adaptation finds
+   anything at all.
 3. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
    a higher cost in volatile moments) before it goes into the thesis even as a side note.
 4. Run `etf_multihour`, the horizon the advisor pointed toward.
-5. If the hold-out shows anything: relative input features as well (each stock's window measured against its
-   peers), and the deep models on the relative target (a long GPU run).
+5. Optional: relative input features (each stock's window measured against its peers), and the deep models on the
+   relative target (a long GPU run). The tree model's relative-target skill did not replicate, so a deep model is
+   unlikely to turn it into one.
 6. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
    inference by day, the drift blind spot of permutation entropy, the engine's failure modes).
 7. Count gate approvals as episodes, not days.

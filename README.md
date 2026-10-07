@@ -153,6 +153,9 @@ against returns minus each stock's own average). `configs/ndx_replication.yaml` 
 418 stocks and scores everything, so the 418 can be judged out of time (`--only` scores a group separately); its
 rule for a replication is written in the config.
 
+Result: it did not replicate. On the 416 scored training stocks the `gbm` IC is +0.0005 (t = 0.2) and the timing IC
+is −0.0055; on the 85, timing is +0.0019 (t = 0.4), so the hold-out's IC is mostly a fixed tilt. See RESULTS.md.
+
 ## Selective trading (the main case)
 
 `scripts/selective.py` trades only each model's strongest signals, the top 20%, 10%, 5% or 2% by
