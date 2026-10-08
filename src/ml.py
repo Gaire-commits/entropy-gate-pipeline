@@ -45,9 +45,10 @@ def _log_loss(y: np.ndarray, p: np.ndarray) -> float:
 
 
 def train_gbm(F_train: np.ndarray, y_train: np.ndarray, F_val: np.ndarray, y_val: np.ndarray,
-              seed: int = 0, max_iter: int = 300):
+              seed: int = 0, max_iter: int = 300, max_leaf_nodes: int = 15):
     """Fit, then pick the tree count with the best validation log loss. Returns (model, info).
 
+    `max_leaf_nodes` sets each tree's size (capacity); 15 is what every experiment before E2 used.
     A feature with no value in the training rows (the overnight entropy readings when no
     screen was run) is dropped; `info["keep"]` applies the same choice at prediction.
     """
@@ -60,7 +61,7 @@ def train_gbm(F_train: np.ndarray, y_train: np.ndarray, F_val: np.ndarray, y_val
     # a fold, where a fixed 100 would forbid all but a split or two.
     leaf = int(np.clip(len(y_train) // 50, 20, 100))
     model = HistGradientBoostingClassifier(
-        learning_rate=0.05, max_iter=max_iter, max_leaf_nodes=15, min_samples_leaf=leaf,
+        learning_rate=0.05, max_iter=max_iter, max_leaf_nodes=max_leaf_nodes, min_samples_leaf=leaf,
         l2_regularization=1.0, early_stopping=False, random_state=seed,
     )
     model.fit(F_train, y_train)

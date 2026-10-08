@@ -54,8 +54,11 @@ def run_arch(data: dict, folds: list[dict], arch: str, seed: int, cfg, out_dir: 
                 log(f"  fold {i:3d} skipped: only {len(tr)} train / {len(va)} val samples")
                 continue
             if is_tree(arch):
+                # Tree size and count default to what every experiment before E2 used; only E2 sets them.
                 model, info = train_gbm(tree_features(data, tr, arch), data["y"][tr],
-                                        tree_features(data, va, arch), data["y"][va], seed=seed)
+                                        tree_features(data, va, arch), data["y"][va], seed=seed,
+                                        max_iter=int(getattr(cfg.model, "gbm_trees", 300)),
+                                        max_leaf_nodes=int(getattr(cfg.model, "gbm_leaves", 15)))
                 prob = predict_gbm(model, tree_features(data, te, arch), info)
                 n_params = info["n_leaves"]
             else:

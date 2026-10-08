@@ -86,3 +86,21 @@ def test_online_config_streams_the_same_bars_and_windows_as_the_sp500_runs():
     for key in ("window", "embargo", "horizon", "stride", "channels", "allow_overnight"):
         assert getattr(online.features, key) == getattr(sp500.features, key)
     assert online.online.placebos >= 19, "the protocol's p-value of 0.05 needs at least 19 placebos"
+
+
+def test_e1_reads_exactly_the_sp500_rows_the_lead_was_found_in():
+    e1 = load_config(ROOT / "configs" / "e1_volatility.yaml")
+    sp500 = load_config(ROOT / "configs" / "sp500_multihour.yaml")
+    assert vars(e1.data) == vars(sp500.data) and vars(e1.features) == vars(sp500.features)
+    assert e1.e1.share == 0.02 and e1.e1.claim_bps == 15.21 and e1.e1.discovery_start == "2022-10-27"
+
+
+def test_e2_trains_exactly_like_the_replication_apart_from_the_cells():
+    e2 = load_config(ROOT / "configs" / "e2_capacity.yaml")
+    rep = load_config(ROOT / "configs" / "ndx_replication.yaml")
+    for block in ("data", "features", "validation"):
+        assert vars(getattr(e2, block)) == vars(getattr(rep, block)), block
+    model = {k: v for k, v in vars(e2.model).items() if not k.startswith("gbm_")}
+    assert model == vars(rep.model) and e2.model.gbm_leaves == 15 and e2.model.gbm_trees == 300
+    assert (e2.capacity.default.train_days, e2.capacity.default.leaves) == (rep.validation.train_days, 15)
+    assert e2.planted.break_even in e2.planted.targets

@@ -1,0 +1,79 @@
+# E1: is the +15.21 bps at the most volatile moments a real effect, or one look among many?
+#
+# The lead (RESULTS.md, selective trading, sp500_multihour): trading the models' mostly long direction at
+# the 2% most volatile S&P 500 stock-moments earned +15.21 bps gross [+1.57, +29.18] per trade over the
+# test quarters (2022-10-27 onward), positive in 10 of 14 quarters. It was the best of many cells, so it
+# is tested once here, without a model, on data nothing in this project has scored (src/volatility_lead.py).
+#
+# The rule tested: long every stock-moment whose trailing volatility (78 five-minute returns, the same
+# measure as the lead) is in the top 2%, with each month's cutoff set from earlier months only; hold the
+# 30-bar return as everywhere else. Rows, windows and returns are exactly sp500_multihour's (a test checks
+# the data and features blocks are identical).
+#
+# Periods: "2020-2022" = from the end of a 60-day burn-in to 2022-10-26, before the first test quarter;
+# no result in this project has scored it (it was only ever training data). "Test quarters" = from
+# 2022-10-27, where the lead was found. Intervals: 95%, resampling blocks of 5 consecutive trading days.
+# Costs: flat 2 bps per trade, and a stress cost of 2 bps x (the stock's volatility / the median
+# volatility of earlier months), between 1x and 4x. The market-neutral version subtracts the average
+# return of all stocks at the same moment and pays 0.5 bps more to hedge.
+#
+# PROTOCOL, fixed before any result (2026-10-08). Applied in this order (src/volatility_lead.verdict):
+#   1. Gross interval not above zero in the test quarters -> NOT REPLICATED (no model, no lead).
+#   2. Gross interval not above zero in 2020-2022 -> NOT REPLICATED, unless 2020-2022 could not detect
+#      the claimed 15.21 bps (2.8 standard errors above it) -> INCONCLUSIVE.
+#   3. In the test quarters, the gross estimate must stay above zero without its largest volatile episode,
+#      without its 10 biggest days, and without April 2025; otherwise NOT REPLICATED (one episode).
+#   4. Replicated. It PAYS UNDER STRESS COSTS if the net interval with stress costs is above zero in both
+#      periods; else PAYS AT A FLAT 2 BPS ONLY if that holds with flat costs; else DOES NOT PAY.
+#   Separately: STOCK-LEVEL if the market-neutral gross interval is above zero in both periods; otherwise
+#   it is a bet on the market (rebounds after selloffs), not on stocks.
+# The 5% and 10% shares, the years, the signal times, the market-stress split and the reproduction of
+# the original +15.21 are reported, not decisive.
+experiment: e1_volatility
+
+data:
+  universe: "universe/sp500.csv"
+  start: "2020-07-01"
+  end: "today"
+  timeframe: "5Min"
+  feed: "iex"
+  adjustment: "split"
+  cache_dir: "data/bars"
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"
+  label_deadzone: 0.0005
+
+e1:
+  share: 0.02
+  burn_in_days: 60
+  block_days: 5
+  base_cost_bps: 2.0
+  cost_cap: 4.0
+  hedge_cost_bps: 0.5
+  discovery_start: "2022-10-27"
+  claim_bps: 15.21
+  n_boot: 2000
+  min_peers: 20
+  hot_quantile: 0.75        # a volatile episode: days in the top quarter by selected rows, merged when <= 5 days apart
+  merge_gap_days: 5
+  top_days: 10
+  excluded: ["2025-04-01", "2025-04-30"]
+  stress_share: 0.10        # market stress: moments whose average volatility is in the top 10% (descriptive)
+  other_shares: [0.05, 0.10]
+  reproduce_from: "outputs/sp500_multihour"   # saved predictions, to reproduce the original +15.21
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

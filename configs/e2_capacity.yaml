@@ -1,0 +1,101 @@
+# E2: is the bottleneck the model or the signal? (src/capacity.py)
+#
+# Setup identical to ndx_replication.yaml (a test checks the data, features, model and validation blocks):
+# trees trained on the 418 S&P 500 stocks outside the Nasdaq-100 with the relative target (did the stock
+# beat its universe's average at that moment), every stock scored in the 15 test quarters. The default
+# cell below reproduces the replication's `gbm` exactly; the script checks it against the saved
+# predictions when they are on Drive.
+#
+# E2a, learning curve and capacity ladder. Cells: the most recent 126, 252 or 504 training days, and
+# trees of 4, 15 or 63 leaves (the number of trees is chosen on validation, as always). Scored on the 416
+# training stocks out of time (primary) and on the 85 Nasdaq-100 stocks (reported, not decisive: their
+# earlier positive result is already known).
+#
+# E2b, planted edges. The real returns plus an edge built from the model's own inputs, sized so the edge
+# itself scores a cross-sectional IC of 0.005, 0.0075, 0.014 or 0.02 (`momentum`: the window's return;
+# `interaction`: the window's return only when the last bar's volume is high). 0.014 is the break-even
+# level: the replication's book needed 0.0138, the S&P 500 direction book 0.0154. Scored on every stock.
+# The real data is the zero-edge case: E2a's default cell.
+#
+# PROTOCOL, fixed before any result (2026-10-08).
+#   E2a: CAPACITY OR DATA HELPS if some cell beats the default (504 days, 15 leaves) on the same rows,
+#        with a 99% day-block interval of the IC difference above zero (99% for four comparisons), AND
+#        that cell's own IC has t >= 3. SIGNAL-LIMITED if no cell reaches t >= 3 and none beats the
+#        default. Otherwise MIXED.
+#   E2b: for each shape, the pipeline is ADEQUATE if the edge planted at the break-even IC (0.014) is
+#        recovered with t >= 3 and at least half of the oracle IC (the IC of the planted edge itself on the
+#        same test rows). Also reported: the smallest planted IC recovered.
+#   Together: if E2a is signal-limited and E2b adequate for both shapes, the real-data null is a lack of
+#   signal in these inputs, not a weak model. If E2b is not adequate, the null says nothing at that size.
+# Nothing is tuned or chosen on the test rows; no cell is promoted afterwards.
+experiment: e2_capacity
+
+data:
+  universe: "universe/sp500.csv"
+  train_universe: "universe/sp500_ex_nasdaq100.csv"
+  trade_universe: "universe/sp500.csv"
+  start: "2020-07-01"
+  end: "today"
+  timeframe: "5Min"
+  feed: "iex"
+  adjustment: "split"
+  cache_dir: "data/bars"
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"
+  label_deadzone: 0.0005
+  target: relative
+  relative_min_peers: 20
+
+model:
+  epochs: 30
+  patience: 5
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+  gbm_leaves: 15            # the default cell; E2a's cells override it
+  gbm_trees: 300
+
+validation:
+  train_days: 504
+  val_days: 63
+  test_days: 63
+  step_days: 63
+
+capacity:
+  default: {train_days: 504, leaves: 15}
+  cells:
+    - {train_days: 126, leaves: 15}
+    - {train_days: 252, leaves: 15}
+    - {train_days: 504, leaves: 4}
+    - {train_days: 504, leaves: 63}
+  ci_level: 0.99
+  t_bar: 3.0
+  min_peers: 20
+  primary_universe: "universe/sp500_ex_nasdaq100.csv"
+  secondary_universe: "universe/nasdaq100_in_sp500.csv"
+  replication_dir: "outputs/ndx_replication"     # saved predictions the default cell must reproduce
+
+planted:
+  shapes: [momentum, interaction]
+  targets: [0.005, 0.0075, 0.014, 0.02]
+  break_even: 0.014
+  t_bar: 3.0
+  share_of_oracle: 0.5
+  min_peers: 20
+
+sweep:
+  archs: [gbm]
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

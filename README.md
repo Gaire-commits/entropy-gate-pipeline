@@ -269,6 +269,50 @@ Controls in `tests/test_online.py`:
   under full feedback too: the softmax saturates and the policy stops moving. Under bandit feedback, flat
   then pays exactly zero and teaches nothing.
 
+## E1 and E2: settling the open questions
+
+Two pre-registered experiments; each rule is in its config, and `tests/test_frozen.py` fails if a
+pre-registered config is edited.
+
+**E1, the volatile-moment lead.**
+```bash
+python scripts/volatility_lead.py --config configs/e1_volatility.yaml
+```
+`src/volatility_lead.py` tests the +15.21 bps found at the 2% most volatile S&P 500 moments once, without a
+model.
+- **The rule:** go long the top 2% by trailing volatility, with each month's cutoff set from earlier months.
+- **Untouched data:** it is scored on 2020–2022, which nothing in this project had scored.
+- **Uncertainty:** intervals resample blocks of 5 trading days, because volatile days cluster.
+- **Costs:** a flat 2 bps, and a stress cost that rises with volatility.
+- **Market or stock:** a market-neutral version shows which one the gain belongs to.
+- **Not one episode:** the test quarters are rescored without the largest volatile episode, without the
+  10 biggest days, and without April 2025.
+
+**E2, model or signal?**
+```bash
+python scripts/capacity.py --config configs/e2_capacity.yaml --part curve
+python scripts/capacity.py --config configs/e2_capacity.yaml --part planted
+```
+`src/capacity.py` runs two tests on the replication's setup:
+- **Learning curve and capacity ladder:** trees trained on 126 to 504 days, with 4 to 63 leaves, all
+  scored on the same rows.
+- **Planted edges:** the real returns plus an edge built from the model's own inputs, at ICs from 0.005 to
+  0.02 (break-even 0.014). The question is whether the same pipeline finds it.
+
+The tree size became a setting for E2 (`model.gbm_leaves`, `model.gbm_trees`). Its defaults are what
+every earlier run used, and a test checks the predictions are unchanged.
+
+Controls in `tests/test_volatility_lead.py` and `tests/test_capacity.py`:
+- **E1 uses only the past:** cutoffs and medians come from earlier months.
+- **E1 sorts planted cases correctly:**
+  - no effect: not replicated;
+  - an effect in every period: replicated and stock-level;
+  - one episode only: not replicated;
+  - a market-wide rebound: replicated, not stock-level.
+- **E2 cells differ only where they claim to.**
+- **The planted edge uses only the inputs and hits its target IC.**
+- **The trees find a planted edge end to end, and find nothing when none is planted.**
+
 ## Larger universes
 
 A config's `universe` can be a list of symbols or a path to a CSV built by
@@ -383,6 +427,8 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
 | `src/crosssection.py` | Breadth: effective independent bets, cross-sectional IC, long-short books, model similarity |
 | `src/holdout.py` | Training and trading universes, the relative target, and the hold-out split |
+| `src/volatility_lead.py` | E1: the volatile-moment lead without a model, on untouched years, with block intervals and stress costs |
+| `src/capacity.py` | E2: learning curve, capacity ladder and planted edges |
 | `src/online.py` | Online agent: streaming featurizer, delayed rewards, entropy-controlled exploration, drift detector, placebo replay |
 | `universe/` | Saved constituent lists for larger universes |
 | `src/ibkr.py` | IBKR ticks to 5-minute bars, and depth replay |
@@ -426,8 +472,8 @@ indistinguishable from a broken pipeline.
 
 ## Status
 
-Built and tested: data, gate, features, models, sweep, report, decision engine and online agent
-(238 unit tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
+Built and tested: data, gate, features, models, sweep, report, decision engine, online agent, E1 and E2
+(266 unit tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
 `etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
 execution, risk firewall) and position sizing are designed, not built.
 

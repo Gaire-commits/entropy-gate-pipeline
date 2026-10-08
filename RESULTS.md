@@ -273,6 +273,67 @@ explore and frozen books are reported alongside but cannot carry the headline.
 ranking skill did not replicate. So the likely result is a null, with the useful part being whether online
 learning manufactures an edge the placebo would expose.
 
+## E1 and E2: settling the open questions (protocols fixed 2026-10-08; results pending)
+
+Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
+earlier pre-registered config, is edited.
+
+**E1: is the +15.21 bps at volatile moments real?** (`configs/e1_volatility.yaml`, Colab section 19)
+
+The lead was the best of many cells. It is now tested once:
+- **The rule, with no model:** go long every S&P 500 stock-moment in the top 2% by trailing volatility,
+  with each month's cutoff set from earlier months.
+- **Where it's scored:** on the test quarters, where the lead was found (the reproduction), and on 2020–2022,
+  which no result in this project had scored (the replication).
+- **Uncertainty:** 95% intervals resample blocks of 5 trading days, because volatile days cluster.
+
+The rule, applied in order:
+1. Gross interval not above zero in the test quarters, or in 2020–2022: **not replicated**. If 2020–2022
+   could not detect 15.21 bps at all, the result is **inconclusive** instead.
+2. In the test quarters, the gross must stay above zero without the largest volatile episode, without the
+   10 biggest days, and without April 2025. Otherwise it rests on one episode: **not replicated**.
+3. If replicated, it is graded:
+   - **pays under stress costs**: 2 bps × volatility relative to earlier months, between 1× and 4×;
+   - **pays at a flat 2 bps only**;
+   - **does not pay**.
+
+Separately, it is **stock-level** only if the market-neutral gross interval is above zero in both periods.
+Otherwise it is a bet on the market rebounding.
+
+**On synthetic data, the rule sorts planted cases as intended:**
+- no effect: not replicated;
+- an effect in every period: replicated and stock-level;
+- one episode only: not replicated;
+- a market-wide rebound: replicated, not stock-level.
+
+**E2: is the bottleneck the model or the signal?** (`configs/e2_capacity.yaml`, Colab section 20)
+
+The setup is the replication's: trees on the 418 stocks outside the Nasdaq-100, relative target.
+
+- **E2a, learning curve and capacity ladder.** Trees trained on the last 126, 252 or 504 days, with 4, 15
+  or 63 leaves, all scored on the same rows of the 416 training stocks, out of time.
+  - **Capacity or data helps** if some cell beats the default (504 days, 15 leaves): its 99% interval of
+    the paired IC difference is above zero, and the cell reaches t ≥ 3.
+  - **Signal-limited** if no cell reaches t ≥ 3 and none beats the default.
+- **E2b, planted edges.** The real returns plus an edge built from the model's own inputs, at an IC of
+  0.005, 0.0075, 0.014 (break-even) or 0.02. There are two kinds of edge: the window's return, and that
+  return only when volume is high.
+  - **Adequate** if the break-even edge is recovered with t ≥ 3 and at least half of the edge's own IC.
+
+**Reading them together.** If E2a is signal-limited and E2b is adequate, the real-data null is a lack of
+signal in these inputs, not a weak model.
+
+**Expectation from synthetic data at S&P 500 scale.** The existing tree setup recovered planted edges in a
+single test quarter:
+
+| Planted IC | t |
+|---|---:|
+| 0.0075 | 3.6 |
+| 0.014 | 4.8 |
+| 0.02 | 7.7 |
+
+So E2b can tell.
+
 ## Common setup
 
 | | |
@@ -725,16 +786,15 @@ The response so far:
 | 2026-10-07 | Skill checks (fixed tilt vs. timing, quarter by quarter) and a replication on the 418 training stocks out of time; rule fixed before running (committed 17:55; labelled 10-08 in the configs by mistake) |
 | 2026-10-07 | Replication result: the hold-out skill does not replicate (416 stocks: IC +0.0005, t 0.2; timing −0.0055). On the 85 the IC is mostly a fixed tilt, timing +0.0019 (t 0.4). The reproduced 85 match the hold-out exactly |
 | 2026-10-07 | Online agent built: streaming featurizer identical to the batch pipeline, delayed rewards, entropy-controlled exploration with drift boosts, placebo replay; protocol fixed before running |
+| 2026-10-08 | E1 (volatile-moment lead, no model, untouched 2020–2022) and E2 (learning curve, capacity ladder, planted edges) built and pre-registered; pre-registered configs frozen by a test |
 
 ## Next steps
 
-1. Cost, only if wanted: measure real trading costs for these stocks (the IBKR recorder's quotes give spreads) and
-   charge cost only when a position changes. The replication failed, so this would test whether a result that does
-   not generalize would pay, which no longer needs to be a priority.
-2. Run Colab section 18, the online agent on the S&P 500, judged by the rule in `configs/online_sp500.yaml`.
-   A live paper feed (Alpaca websocket bars into the same featurizer) comes only after that.
-3. Optional, about an hour: check the volatile-moment side finding (market-neutral, without April 2025, and with
-   a higher cost in volatile moments) before it goes into the thesis even as a side note.
+1. Record the online agent's result (Colab section 18 ran on 2026-10-07: a null, greedy net −0.73 bps
+   [−1.14, −0.35], worse than all 19 placebos; see HANDOVER.md), and add the placebo runs' trade rate to its report.
+2. Run E1 (Colab section 19), then E2 (section 20), judged by the rules in their configs.
+3. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
+   charge cost only when a position changes.
 4. Run `etf_multihour`, the horizon the advisor pointed toward.
 5. Optional: relative input features (each stock's window measured against its peers), and the deep models on the
    relative target (a long GPU run). The tree model's relative-target skill did not replicate, so a deep model is
