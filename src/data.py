@@ -3,10 +3,15 @@
 Credentials are read from the environment (or a local .env) and never passed as
 arguments, so no key can end up in a config file, a notebook, or a traceback.
 
-Free-tier notes: the `iex` feed carries only IEX-routed volume, a few percent of
-the consolidated tape, so volume is a sample rather than the true figure. A bar
-only exists when a trade printed on IEX, so quiet intervals come back missing.
-`to_session_grid` puts those gaps back as NaN rows: without that, a missing bar
+Feeds: the `iex` feed carries only IEX-routed volume, a few percent of the
+consolidated tape, so volume is a sample rather than the true figure. A bar only
+exists when a trade printed on IEX, so quiet intervals come back missing, and its
+history starts in July 2020. The `sip` feed is the consolidated tape, back to
+2016; per Alpaca's docs the free plan serves it for data older than 15 minutes
+(configs for it use `end: "yesterday"`). The two must never share a cache folder:
+the cache is keyed by symbol and timeframe, not feed, so `plan_fetch` and
+`save_symbol` refuse to overwrite one feed's bars with another's.
+`to_session_grid` puts the gaps back as NaN rows: without that, a missing bar
 silently shifts every later bar, and "the last 6 bars of the day" stops meaning
 3:30 to 4:00.
 """
@@ -232,6 +237,31 @@ def _meta_path(cache_dir: str | Path, symbol: str, timeframe: str) -> Path:
     return cache_path(cache_dir, symbol, timeframe).with_suffix(".meta.json")
 
 
+class FeedMismatch(ValueError):
+    """The cache holds bars fetched with a different feed or adjustment than the one requested."""
+
+
+def _mismatch(m: dict, feed: str, adjustment: str) -> bool:
+    return m.get("feed") != feed or m.get("adjustment") != adjustment
+
+
+def feed_conflicts(cache_dir, symbols, timeframe, feed, adjustment) -> list[tuple[str, str, str]]:
+    """(symbol, cached feed, cached adjustment) for every symbol already cached some other way."""
+    out = []
+    for symbol in symbols:
+        m = read_meta(cache_dir, symbol, timeframe)
+        if m and _mismatch(m, feed, adjustment):
+            out.append((symbol, str(m.get("feed")), str(m.get("adjustment"))))
+    return out
+
+
+def _refuse(symbol, cache_dir, m, feed, adjustment) -> None:
+    raise FeedMismatch(
+        f"{symbol}: {cache_dir} holds feed={m.get('feed')} adjustment={m.get('adjustment')} bars, but feed={feed} "
+        f"adjustment={adjustment} was requested, and saving would overwrite them (the cache is not keyed by feed). "
+        "Use a different cache_dir for the new feed, or pass allow_feed_change=True to replace the cache on purpose.")
+
+
 def read_meta(cache_dir, symbol, timeframe) -> dict | None:
     meta = _meta_path(cache_dir, symbol, timeframe)
     if not meta.exists() or not cache_path(cache_dir, symbol, timeframe).exists():
@@ -239,18 +269,22 @@ def read_meta(cache_dir, symbol, timeframe) -> dict | None:
     return json.loads(meta.read_text())
 
 
-def plan_fetch(cache_dir, symbol, timeframe, start, end, feed, adjustment) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+def plan_fetch(cache_dir, symbol, timeframe, start, end, feed, adjustment,
+               allow_feed_change: bool = False) -> tuple[pd.Timestamp, pd.Timestamp] | None:
     """What to download for one symbol, or None when the cache already covers it.
 
-    Nothing cached, or cached with a different feed or adjustment: download the
-    whole range. Otherwise download only from the last cached day onward and
-    merge. The last cached day is fetched again because it may have been saved
+    Nothing cached: download the whole range. Cached with a different feed or
+    adjustment: raise `FeedMismatch` (the new bars would replace the old ones in
+    the same file) unless `allow_feed_change`, which downloads the whole range.
+    Otherwise download only from the last cached day onward and merge. The last cached day is fetched again because it may have been saved
     while its session was still in progress. Coverage is judged from what was
     requested, not from the first bar returned, so a fund that launched after
     `start` does not get re-downloaded on every run.
     """
     stop = resolve_end(end)
     m = read_meta(cache_dir, symbol, timeframe)
+    if m and _mismatch(m, feed, adjustment) and not allow_feed_change:
+        _refuse(symbol, cache_dir, m, feed, adjustment)
     usable = m and m.get("feed") == feed and m.get("adjustment") == adjustment and pd.Timestamp(m["start"]) <= pd.Timestamp(start)
     if not usable:
         return pd.Timestamp(start), stop
@@ -261,9 +295,15 @@ def plan_fetch(cache_dir, symbol, timeframe, start, end, feed, adjustment) -> tu
     return last_day, stop
 
 
-def save_symbol(df, cache_dir, symbol, timeframe, start, end, feed, adjustment) -> Path:
-    """Save bars and record the range that was requested, keeping the earliest start ever covered."""
+def save_symbol(df, cache_dir, symbol, timeframe, start, end, feed, adjustment,
+                allow_feed_change: bool = False) -> Path:
+    """Save bars and record the range that was requested, keeping the earliest start ever covered.
+
+    Refuses (`FeedMismatch`) to replace bars cached with a different feed or adjustment unless
+    `allow_feed_change`."""
     prior = read_meta(cache_dir, symbol, timeframe)
+    if prior and _mismatch(prior, feed, adjustment) and not allow_feed_change:
+        _refuse(symbol, cache_dir, prior, feed, adjustment)
     if prior and prior.get("feed") == feed and prior.get("adjustment") == adjustment:
         start = min(pd.Timestamp(prior["start"]), pd.Timestamp(start))
     path = cache_path(cache_dir, symbol, timeframe)

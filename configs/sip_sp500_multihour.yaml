@@ -1,0 +1,92 @@
+# SIP rerun of sp500_multihour.yaml: the same questions and rules on the consolidated feed (decided 2026-10-09).
+#
+# Alpaca's free plan serves consolidated (SIP) bars older than 15 minutes, back to 2016. The IEX feed used
+# so far prints a bar only when a trade happened on IEX (about a third of S&P 500 windows are incomplete),
+# carries a few percent of the volume, and starts in July 2020. SIP is the headline dataset from here on;
+# the IEX results stay in RESULTS.md as the robustness appendix. Only the data changes: start 2016-01-04,
+# feed sip, its own cache folder (data/bars_sip: the cache is not keyed by feed, so it must not share
+# `data/bars`), `end: yesterday` (SIP is not served for the latest 15 minutes). Every other block is
+# identical to sp500_multihour.yaml (tests/test_configs.py checks it), and so are the rules below.
+# Survivorship bias: today's constituent lists applied back to 2016, so the bias covers four more years.
+#
+# This is the sweep behind the SIP reruns: fetch, screen (scripts/run_screen.py) and sweep with this config,
+# then copy its outputs/sip_sp500_multihour/screen.parquet to the other sip_* configs' output folders
+# (their screening blocks are identical).
+#
+# S&P 500 constituents: same 1-hour lookback -> 2.5-hour forward return as
+# etf_multihour.yaml, run over ~500 individual stocks instead of 12 broad ETFs.
+# Answers a different question than the ETF configs: does the gate find more (or
+# more capacity-constrained) structure in individual names than in diversified
+# baskets, where idiosyncratic moves have not been averaged away?
+#
+# Universe: universe/sp500.csv, built by scripts/build_universe.py. This is
+# TODAY's constituent list applied to 2020-2026 history -- survivorship bias is
+# real here (see that script's docstring) and should be disclosed alongside any
+# result from this config, not silently absorbed into it.
+experiment: sip_sp500_multihour
+
+data:
+  universe: "universe/sp500.csv"   # resolved by src.data.resolve_universe
+  # Alpaca's free IEX history begins in late July 2020; earlier years come back empty.
+  start: "2016-01-04"        # SIP history; IEX's begins in July 2020
+  # "today" tops the cache up to now; a fixed date (inclusive) pins it. A session still
+  # in progress is dropped automatically, so running mid-day is safe.
+  end: "yesterday"
+  timeframe: "5Min"
+  feed: "sip"             # free tier
+  adjustment: "split"     # traded prices, so tick-size checks see real cents
+  cache_dir: "data/bars_sip"   # never share a folder with the IEX bars
+
+screening:
+  embedding_dim: 4
+  delay: 1
+  window: 390             # 5 sessions of 5-min bars
+  series: "log_return"
+  n_surrogates: 99        # shuffled copies per reading; p-values resolve to 0.01
+  min_bars_required: 300
+  gate_statistic: "trend" # trend | entropy | entropy_weighted
+  alpha: 0.05
+  max_tie_fraction: 0.5
+  min_ticks_per_bar: 6    # below ~6 cents a bar, rounding alone creates zig-zags
+  seed: 0
+
+features:
+  # window + embargo + horizon must fit inside one 78-bar session (max start = 78-12-1-30 = 35).
+  window: 12              # 1h of history -- the predictor
+  embargo: 1              # execution lag: you cannot trade the bar you just read
+  horizon: 30             # 2.5h forward return -- the target
+  stride: 12              # new sample every hour -> 3 samples/day/symbol (0, 60, 120 min into the session)
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: "fold_standardize"   # stats from the training fold only; keeps the trend visible
+  label_deadzone: 0.0005  # training skips moves under 5 bps; the test set never does
+
+model:
+  epochs: 30
+  patience: 5
+  batch_size: 256
+  lr: 0.001
+  weight_decay: 0.0001
+  dropout: 0.2
+
+validation:
+  train_days: 504         # ~2 years
+  val_days: 63
+  test_days: 63           # one quarter, retrained every quarter
+  step_days: 63
+
+sweep:
+  # cnn1d/resnet1d/inceptiontime/resnet2d are opt-in here (--archs ...): at ~500
+  # symbols x 3 samples/day, a full walk-forward sweep of the deep models is a much
+  # bigger job than the 12-ETF configs -- see the multi-hour config's timing notes.
+  # gbm/gbm_ent (trees, CPU, roughly 1-2 min per fold each) differ only by the entropy features;
+  # resnet1d/resnet1d_ent are the deep pair, opt-in for the same reason as the other deep models.
+  archs: [always_up, momentum_day, momentum_window, logreg, gbm, gbm_ent]
+  seeds: [0, 1, 2]
+
+evaluation:
+  cost_bps: [0, 1, 2, 5]  # round trip; sector ETFs cross roughly 1-3 bps of spread
+  headline_cost_bps: 2  # unchanged: still an intraday ETF round trip, just held longer
+  bootstrap: 2000
+  # re-score using only the most confident predictions; 1.0 keeps everything
+  coverage_levels: [1.0, 0.5, 0.2, 0.1]

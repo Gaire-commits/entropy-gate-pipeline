@@ -273,6 +273,39 @@ explore and frozen books are reported alongside but cannot carry the headline.
 ranking skill did not replicate. So the likely result is a null, with the useful part being whether online
 learning manufactures an edge the placebo would expose.
 
+## Data: SIP becomes the headline feed (decided 2026-10-09, before any SIP result)
+
+Every result above uses Alpaca's IEX feed, which has three weaknesses:
+- **Gaps:** a bar exists only when a trade printed on IEX, so about a third of S&P 500 windows are
+  incomplete, and about 56 of the 85 hold-out stocks are usable at a typical moment.
+- **Volume:** a few percent of the consolidated tape.
+- **History:** from July 2020 only.
+
+Alpaca's free plan also serves the consolidated tape (SIP) for data older than 15 minutes, back to 2016.
+The project assumed the free tier meant IEX only and did not check; that was a mistake in this project's
+setup.
+
+**Decisions, fixed before any SIP data was read:**
+1. **SIP is the headline dataset.** The IEX results stay in this file as the robustness appendix.
+2. **Same rules.** The reruns use the existing pre-registered rules unchanged. `configs/sip_*.yaml`
+   differ from their IEX configs only in feed, start (2016-01-04), end (`yesterday`, since SIP is not
+   served for the latest 15 minutes) and cache folder. `tests/test_configs.py` checks this, and
+   `tests/test_frozen.py` freezes them.
+3. **E1's untouched period becomes 2016 to July 2020,** which no analysis here has scored. "July 2020
+   on" takes the place of the test quarters (`configs/sip_e1_volatility.yaml` explains the mapping).
+4. **Where a verdict differs between feeds, SIP's is the headline** and IEX's is reported beside it.
+5. **Survivorship is disclosed:** today's lists applied back to 2016 stretch the bias over four more
+   years.
+
+**A guard added before any fetch.** The cache is keyed by symbol and timeframe, not feed. Fetching SIP
+into the IEX folder would have silently overwritten the bars behind every result above. The fetch code
+now refuses that (`FeedMismatch`), and the SIP configs use their own folder, `data/bars_sip`.
+
+**Reruns (Colab sections 21–22):**
+1. The feed check.
+2. The SIP fetch.
+3. Then, with the existing rules: the S&P 500 screen and sweep, E1, E2, the hold-out and the replication.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08; results pending)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -787,21 +820,23 @@ The response so far:
 | 2026-10-07 | Replication result: the hold-out skill does not replicate (416 stocks: IC +0.0005, t 0.2; timing −0.0055). On the 85 the IC is mostly a fixed tilt, timing +0.0019 (t 0.4). The reproduced 85 match the hold-out exactly |
 | 2026-10-07 | Online agent built: streaming featurizer identical to the batch pipeline, delayed rewards, entropy-controlled exploration with drift boosts, placebo replay; protocol fixed before running |
 | 2026-10-08 | E1 (volatile-moment lead, no model, untouched 2020–2022) and E2 (learning curve, capacity ladder, planted edges) built and pre-registered; pre-registered configs frozen by a test |
+| 2026-10-09 | SIP (consolidated) feed adopted as the headline dataset before any SIP result; feed check, a guard against one feed overwriting another's cache, and data-only SIP copies of the sweep, E1, E2, hold-out and replication configs, frozen |
 
 ## Next steps
 
 1. Record the online agent's result (Colab section 18 ran on 2026-10-07: a null, greedy net −0.73 bps
    [−1.14, −0.35], worse than all 19 placebos; see HANDOVER.md), and add the placebo runs' trade rate to its report.
-2. Run E1 (Colab section 19), then E2 (section 20), judged by the rules in their configs.
-3. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
+2. Record E1 and E2 (run 2026-10-08 on IEX: E1 not replicated; E2a signal-limited; E2b adequate for the simple edge, not the conditional one).
+3. Run the SIP feed check and fetch (Colab section 21), then the SIP reruns (section 22), judged by the existing rules.
+4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.
-4. Run `etf_multihour`, the horizon the advisor pointed toward.
-5. Optional: relative input features (each stock's window measured against its peers), and the deep models on the
+5. Run `etf_multihour`, the horizon the advisor pointed toward.
+6. Optional: relative input features (each stock's window measured against its peers), and the deep models on the
    relative target (a long GPU run). The tree model's relative-target skill did not replicate, so a deep model is
    unlikely to turn it into one.
-6. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
+7. Then stop adding complexity and write up: a careful null with its methodological findings (leakage fixes,
    inference by day, the drift blind spot of permutation entropy, the engine's failure modes).
-7. Count gate approvals as episodes, not days.
-8. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
-9. Fix wording: the S&P 500 gate table still says "ETF".
-10. Use point-in-time S&P 500 membership to remove survivorship bias.
+8. Count gate approvals as episodes, not days.
+9. Optionally, run the deep models on the S&P 500 (`--archs resnet1d cnn1d`), a long run.
+10. Fix wording: the S&P 500 gate table still says "ETF".
+11. Use point-in-time S&P 500 membership to remove survivorship bias.

@@ -5,11 +5,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.data import (
-    bar_minutes, completeness, merge_bars, plan_fetch, resolve_end, save_symbol, to_session_grid,
+    FeedMismatch, bar_minutes, completeness, feed_conflicts, merge_bars, plan_fetch, read_meta, resolve_end,
+    save_symbol, to_session_grid,
 )
 
 
@@ -124,10 +126,39 @@ def test_a_rolling_end_always_tops_up(tmp_path):
     assert plan_fetch(tmp_path, "SPY", "5Min", "2016-01-01", "today", "iex", "split") is not None
 
 
-def test_a_different_feed_or_an_earlier_start_downloads_everything(tmp_path):
+def test_an_earlier_start_downloads_everything(tmp_path):
     _save(tmp_path, "2026-06-30")
-    assert plan_fetch(tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split")[0] == pd.Timestamp("2016-01-01")
     assert plan_fetch(tmp_path, "SPY", "5Min", "2015-01-01", "2026-06-30", "iex", "split")[0] == pd.Timestamp("2015-01-01")
+
+
+def test_a_different_feed_is_refused_so_one_feed_never_overwrites_another(tmp_path):
+    """The cache is keyed by symbol and timeframe, not feed: replacing IEX bars with SIP bars in the
+    same folder would silently invalidate every result computed from them."""
+    _save(tmp_path, "2026-06-30")
+    before = (tmp_path / "5Min" / "SPY.parquet").read_bytes()
+    with pytest.raises(FeedMismatch, match="overwrite"):
+        plan_fetch(tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split")
+    with pytest.raises(FeedMismatch):
+        plan_fetch(tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "iex", "all")           # adjustment too
+    with pytest.raises(FeedMismatch):
+        save_symbol(_raw(["2024-03-04"]), tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split")
+    assert (tmp_path / "5Min" / "SPY.parquet").read_bytes() == before
+    assert feed_conflicts(tmp_path, ["SPY", "QQQ"], "5Min", "sip", "split") == [("SPY", "iex", "split")]
+    assert feed_conflicts(tmp_path, ["SPY"], "5Min", "iex", "split") == []
+    # on purpose, with a flag: the whole range is downloaded and the cache replaced
+    assert plan_fetch(tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split",
+                      allow_feed_change=True)[0] == pd.Timestamp("2016-01-01")
+    save_symbol(_raw(["2024-03-04"]), tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split",
+                allow_feed_change=True)
+    assert read_meta(tmp_path, "SPY", "5Min")["feed"] == "sip"
+
+
+def test_a_separate_cache_folder_holds_another_feed_without_touching_the_first(tmp_path):
+    _save(tmp_path / "iex", "2026-06-30")
+    save_symbol(_raw(["2018-06-04"]), tmp_path / "sip", "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split")
+    assert read_meta(tmp_path / "iex", "SPY", "5Min")["feed"] == "iex"
+    assert read_meta(tmp_path / "sip", "SPY", "5Min")["feed"] == "sip"
+    assert plan_fetch(tmp_path / "sip", "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split") is None
 
 
 def test_a_later_listing_is_not_redownloaded_on_every_run(tmp_path):

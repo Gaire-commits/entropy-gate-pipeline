@@ -40,7 +40,8 @@ def params(e) -> LeadParams:
                       cost_cap=e.cost_cap, hedge_cost_bps=e.hedge_cost_bps, discovery_start=e.discovery_start,
                       claim_bps=e.claim_bps, n_boot=e.n_boot, min_peers=e.min_peers, hot_quantile=e.hot_quantile,
                       merge_gap_days=e.merge_gap_days, top_days=e.top_days, excluded=tuple(e.excluded),
-                      stress_share=e.stress_share, other_shares=tuple(e.other_shares))
+                      stress_share=e.stress_share, other_shares=tuple(e.other_shares),
+                      labels=tuple(getattr(e, "labels", ("2020-2022", "the test quarters"))))
 
 
 def reproduce(pred_dir: Path, bars, horizon: int, n_boot: int) -> dict | None:
@@ -90,8 +91,9 @@ def main() -> int:
 def write_report(cfg, out: Path, p: LeadParams, res: dict, rep: dict | None) -> None:
     v = res["verdict"]
     pre, disc = res["pre"], res["disc"]
+    early, late = p.labels
     names = {"pre": f"untouched ({res['periods']['pre'][0]} to {res['periods']['pre'][1]})",
-             "disc": f"test quarters ({res['periods']['disc'][0]} to {res['periods']['disc'][1]})"}
+             "disc": f"{late} ({res['periods']['disc'][0]} to {res['periods']['disc'][1]})"}
     lines = [f"# {cfg.experiment}: the volatile-moment lead, tested once", "",
              f"**Verdict: {v['level'].upper()}** — {v['reason']}. "
              + ("The gain survives removing the market's move (stock-level)." if v["stock_level"] else
@@ -109,7 +111,7 @@ def write_report(cfg, out: Path, p: LeadParams, res: dict, rep: dict | None) -> 
                      f"{ci(r['net_flat'])} | {ci(r['net_stress'])} ({fmt(r['mean_cost_stress'], '.1f')}) | "
                      f"{ci(r['neutral_gross'])} | {ci(r['neutral_net_stress'])} | {fmt(r['gross']['mde'], '.1f')} |")
     lines += ["", "**detectable**: the gross effect this period would detect 80% of the time (2.8 standard errors).", "",
-              "## Does it rest on a few days? (test quarters)", "",
+              f"## Does it rest on a few days? ({late})", "",
               "| left out | gross without it | its share of the gross |", "|---|---|---:|"]
     le = disc.get("largest_episode")
     if le:
@@ -119,7 +121,7 @@ def write_report(cfg, out: Path, p: LeadParams, res: dict, rep: dict | None) -> 
     lines.append(f"| {p.excluded[0]} to {p.excluded[1]} | {ci(disc['without_excluded'])} | |")
 
     lines += ["", "## Described, not decisive", "", "**Other shares** (gross):", "",
-              "| share | untouched | test quarters |", "|---|---|---|"]
+              f"| share | untouched | {late} |", "|---|---|---|"]
     for sh in p.other_shares:
         lines.append(f"| top {sh:.0%} | {ci(pre['other_shares'][sh])} | {ci(disc['other_shares'][sh])} |")
     lines += ["", f"**Market stress** (moments whose average volatility is in the top {p.stress_share:.0%}), gross:", "",
@@ -132,11 +134,11 @@ def write_report(cfg, out: Path, p: LeadParams, res: dict, rep: dict | None) -> 
     for k in ("pre", "disc"):
         for y, r in res[k]["by_year"].items():
             lines.append(f"| {y} ({'untouched' if k == 'pre' else 'test'}) | {ci(r)} | {r['rows']:,} |")
-    lines += ["", "**By signal time** (gross):", "", "| bar | untouched | test quarters |", "|---|---|---|"]
+    lines += ["", "**By signal time** (gross):", "", f"| bar | untouched | {late} |", "|---|---|---|"]
     for b in sorted(set(pre["by_bar"]) | set(disc["by_bar"])):
         cells = [ci(res[k]["by_bar"][b]) if b in res[k]["by_bar"] else "—" for k in ("pre", "disc")]
         lines.append(f"| {b} | " + " | ".join(cells) + " |")
-    lines += ["", "**Volatile episodes in the test quarters**:", "", "| start | end | selected trades | share of gross |",
+    lines += ["", f"**Volatile episodes in {late}**:", "", "| start | end | selected trades | share of gross |",
               "|---|---|---:|---:|"]
     for e in sorted(disc["episodes"], key=lambda e: -abs(e["pnl_share"]) if np.isfinite(e["pnl_share"]) else 0)[:10]:
         lines.append(f"| {e['start']} | {e['end']} | {e['rows']:,} | {fmt(e['pnl_share'], '.0%')} |")

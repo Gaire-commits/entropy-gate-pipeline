@@ -18,7 +18,7 @@ agent. Universes: SPY, 12 sector ETFs, the S&P 500, 37 cross-asset ETFs, and a N
 | What | Where |
 |---|---|
 | Code | `~/entropy-gate-pipeline`, GitHub `Gaire-commits/entropy-gate-pipeline` (private), branch `main` |
-| Tests | 266 pass (`python3 -m pytest -q`, about 2 min). `tests/test_frozen.py` fails if a pre-registered config is edited |
+| Tests | 287 pass (`python3 -m pytest -q`, about 2 min). `tests/test_frozen.py` fails if a pre-registered config is edited |
 | Bars and outputs | Google Drive: `My Drive/entropy-gate-pipeline-data/{data,outputs}`. Not on this Mac and never committed |
 | Runner | `notebooks/colab.ipynb` on Colab Pro. Cells 1–3 mount Drive, pull the code and link `data/` and `outputs/` to Drive |
 | Reading results | Kshitiz runs a Colab section; Claude reads `outputs/<experiment>/*.md` from Drive through the Google Drive connector (`search_files`, then `read_file_content`) |
@@ -44,6 +44,8 @@ Use a GPU only for the deep models.
 | 18 | Online agent |
 | 19 | E1: the volatile-moment lead |
 | 20 | E2: model or signal |
+| 21 | SIP feed check and fetch |
+| 22 | SIP reruns with the existing rules |
 | 9 | All results |
 
 ## Where things stand
@@ -110,17 +112,26 @@ Net bps per opportunity, flat counted as zero, market-neutral, 2 bps per positio
 
 ## Unfinished: do these next
 
-0. **Run E1 and E2.** Both are built and pre-registered (2026-10-08) but not run yet. See RESULTS.md,
-   "E1 and E2".
-   - E1: Colab section 19, about 15 minutes.
-   - E2: Colab section 20, about 2 hours for the learning curve plus 3–4 hours for the planted edges.
-   - Then read `outputs/e1_volatility/e1.md`, `outputs/e2_capacity/capacity.md` and `planted.md`, and
-     judge them by the rules in their configs.
-   - The agreed plan after that:
-     1. E1, then E2.
+0. **Switch to the SIP feed, then rerun.** Decided 2026-10-09, before any SIP result: SIP (consolidated)
+   is the headline dataset, and IEX results become the appendix. See RESULTS.md, "Data: SIP becomes the
+   headline feed".
+   - **Section 21:** `feed_check.py` first. Read `outputs/feed_check.md` to confirm the account serves SIP
+     from 2016. Then the fetch into `data/bars_sip`, about 1–2 hours.
+   - **Section 22:** screen and sweep, E1 (untouched period now 2016 to July 2020), E2, hold-out and
+     replication. All use `configs/sip_*.yaml` with the existing rules.
+   - **Never point a SIP config at `data/bars`.** The fetch refuses it (`FeedMismatch`), because it would
+     overwrite the IEX bars behind every earlier result.
+   - **E1 and E2 on IEX ran on 2026-10-08 but aren't recorded in RESULTS.md yet:**
+     - E1: not replicated. The rule without a model: +7.70 [−3.03, +18.17] in the test quarters; 57% of the
+       gain came from Mar–May 2025; the stress cost averaged about 8 bps.
+     - E2a: signal-limited. No cell reached t ≥ 3; the default reproduced the replication exactly.
+     - E2b: momentum adequate, interaction not adequate. The detection limit for simple edges is about
+       IC 0.015.
+   - **The agreed plan:**
+     1. SIP reruns.
      2. A better formulation: longer horizons, residual or market-neutral targets.
-     3. A few economically motivated features (sector-relative, market state, volume and volatility,
-        intraday seasonality).
+     3. A few economically motivated features, built as explicit interactions, each checked with planted
+        edges.
      4. Serious tuning only after a signal reproduces.
 
 1. **Record section 18 in RESULTS.md and push.**

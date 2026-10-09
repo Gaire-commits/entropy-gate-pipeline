@@ -313,6 +313,31 @@ Controls in `tests/test_volatility_lead.py` and `tests/test_capacity.py`:
 - **The planted edge uses only the inputs and hits its target IC.**
 - **The trees find a planted edge end to end, and find nothing when none is planted.**
 
+## Data feeds: SIP is the headline from 2026-10-09
+
+The pipeline started on Alpaca's IEX feed. IEX prints a bar only when a trade happened on IEX, so about
+a third of S&P 500 windows are incomplete. It also carries a few percent of the volume, and its history
+starts in July 2020. Alpaca's free plan also serves the consolidated tape (SIP) for data older than 15
+minutes, back to 2016.
+
+**SIP is the headline dataset for everything from here on.** That was decided before any SIP result. The
+IEX results stay as a robustness appendix.
+
+```bash
+python scripts/feed_check.py                                                      # account check, IEX vs SIP side by side
+python scripts/fetch_data.py --config configs/sip_sp500_multihour.yaml --workers 3  # into data/bars_sip
+```
+
+- **Separate cache folder.** The cache is keyed by symbol and timeframe, not feed, so SIP bars live in
+  their own folder, `data/bars_sip`.
+- **No overwriting across feeds.** `plan_fetch`, `save_symbol` and `fetch_data.py` refuse to replace one
+  feed's bars with another's; only `--allow-feed-change` overrides this.
+- **SIP configs are data-only copies.** The `configs/sip_*.yaml` files rerun the S&P 500 sweep, E1, E2,
+  the hold-out and the replication with the same rules. `tests/test_configs.py` checks that only the feed,
+  the years and the folder differ.
+- **They're frozen.** `tests/test_frozen.py` locks them like every other pre-registered config.
+- **E1 gets a new untouched period.** It is scored on 2016 to July 2020, years IEX never covered.
+
 ## Larger universes
 
 A config's `universe` can be a list of symbols or a path to a CSV built by
@@ -427,6 +452,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
 | `src/crosssection.py` | Breadth: effective independent bets, cross-sectional IC, long-short books, model similarity |
 | `src/holdout.py` | Training and trading universes, the relative target, and the hold-out split |
+| `src/feed_compare.py` | IEX against consolidated (SIP) bars: grid completeness, volume, price agreement |
 | `src/volatility_lead.py` | E1: the volatile-moment lead without a model, on untouched years, with block intervals and stress costs |
 | `src/capacity.py` | E2: learning curve, capacity ladder and planted edges |
 | `src/online.py` | Online agent: streaming featurizer, delayed rewards, entropy-controlled exploration, drift detector, placebo replay |
@@ -473,7 +499,7 @@ indistinguishable from a broken pipeline.
 ## Status
 
 Built and tested: data, gate, features, models, sweep, report, decision engine, online agent, E1 and E2
-(266 unit tests plus the smoke test). Run on real data for SPY, the 12 ETFs and the S&P 500;
+(287 unit tests plus the smoke test). Data: SIP is the headline feed from 2026-10-09; IEX results are the appendix. Run on real data for SPY, the 12 ETFs and the S&P 500;
 `etf_multihour` not yet. Findings are in [RESULTS.md](RESULTS.md). The live path (IBKR
 execution, risk firewall) and position sizing are designed, not built.
 

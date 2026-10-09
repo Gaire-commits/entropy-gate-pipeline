@@ -54,6 +54,7 @@ class LeadParams:
     merge_gap_days: int = 5
     excluded: tuple = ("2025-04-01", "2025-04-30")
     stress_share: float = 0.10
+    labels: tuple = ("2020-2022", "the test quarters")     # names of the earlier and later period in messages
     other_shares: tuple = (0.05, 0.10)
     extra: dict = field(default_factory=dict)
 
@@ -238,24 +239,25 @@ def verdict(res: dict, p: LeadParams) -> dict:
     """The rule in configs/e1_volatility.yaml, applied in order."""
     pre, disc = res["pre"], res["disc"]
     gp, gd = pre["gross"], disc["gross"]
+    early, late = p.labels
     out = {"stock_level": bool(pre["neutral_gross"]["lo"] > 0 and disc["neutral_gross"]["lo"] > 0)}
     if not gd["lo"] > 0:
         return {**out, "level": "not replicated",
-                "reason": "the rule without a model shows no gain whose interval is above zero even in the test quarters, "
+                "reason": f"the rule without a model shows no gain whose interval is above zero even in {late}, "
                           "where the lead was found"}
     if not gp["lo"] > 0:
         if not gp["mde"] <= p.claim_bps:
             return {**out, "level": "inconclusive",
-                    "reason": f"2020-2022 cannot tell (it would detect {gp['mde']:.1f} bps, the claim is {p.claim_bps} bps)"}
+                    "reason": f"{early} cannot tell (it would detect {gp['mde']:.1f} bps, the claim is {p.claim_bps} bps)"}
         return {**out, "level": "not replicated",
-                "reason": "no gain whose interval is above zero in 2020-2022, the period nothing had scored before"}
+                "reason": f"no gain whose interval is above zero in {early}, the period nothing had scored before"}
     if not disc.get("largest_episode", {}).get("without", {}).get("mean", np.nan) > 0:
-        return {**out, "level": "not replicated", "reason": "in the test quarters it rests on one volatile episode"}
+        return {**out, "level": "not replicated", "reason": f"in {late} it rests on one volatile episode"}
     if not disc["top_days"]["without"]["mean"] > 0:
         return {**out, "level": "not replicated",
-                "reason": f"in the test quarters it rests on its {p.top_days} biggest days"}
+                "reason": f"in {late} it rests on its {p.top_days} biggest days"}
     if not disc["without_excluded"]["mean"] > 0:
-        return {**out, "level": "not replicated", "reason": "in the test quarters it rests on April 2025"}
+        return {**out, "level": "not replicated", "reason": f"in {late} it rests on April 2025"}
     if pre["net_stress"]["lo"] > 0 and disc["net_stress"]["lo"] > 0:
         return {**out, "level": "replicated, pays under stress costs", "reason": "every condition holds"}
     if pre["net_flat"]["lo"] > 0 and disc["net_flat"]["lo"] > 0:

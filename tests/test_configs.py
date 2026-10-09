@@ -104,3 +104,31 @@ def test_e2_trains_exactly_like_the_replication_apart_from_the_cells():
     assert model == vars(rep.model) and e2.model.gbm_leaves == 15 and e2.model.gbm_trees == 300
     assert (e2.capacity.default.train_days, e2.capacity.default.leaves) == (rep.validation.train_days, 15)
     assert e2.planted.break_even in e2.planted.targets
+
+
+SIP_PAIRS = [("sip_sp500_multihour", "sp500_multihour"), ("sip_ndx_holdout", "ndx_holdout"),
+             ("sip_ndx_replication", "ndx_replication"), ("sip_e1_volatility", "e1_volatility"),
+             ("sip_e2_capacity", "e2_capacity")]
+SIP_CHANGES = {"e1": {"discovery_start", "reproduce_from", "labels"}, "capacity": {"replication_dir"}}
+
+
+@pytest.mark.parametrize("sip,base", SIP_PAIRS)
+def test_sip_rerun_changes_only_the_data_and_keeps_every_rule(sip, base):
+    """A SIP rerun asks the same question with the same rules: only the feed, years and cache folder differ."""
+    a, b = load_config(ROOT / "configs" / f"{sip}.yaml"), load_config(ROOT / "configs" / f"{base}.yaml")
+    assert a.experiment == sip
+    d, e = vars(a.data), vars(b.data)
+    assert {k for k in d if d[k] != e.get(k)} == {"start", "end", "feed", "cache_dir"}
+    assert (d["feed"], d["cache_dir"], d["end"]) == ("sip", "data/bars_sip", "yesterday")
+    assert pd.Timestamp(d["start"]) == pd.Timestamp("2016-01-04")
+    assert d["cache_dir"] != e["cache_dir"], "SIP bars must never share the IEX cache folder"
+    for block in sorted(set(vars(b)) - {"data", "experiment"}):
+        x, y = vars(getattr(a, block)), vars(getattr(b, block))
+        changed = {k for k in set(x) | set(y) if x.get(k) != y.get(k)}
+        assert changed <= SIP_CHANGES.get(block, set()), (block, changed)
+
+
+def test_sip_e1_scores_the_years_iex_never_covered_as_the_untouched_period():
+    cfg = load_config(ROOT / "configs" / "sip_e1_volatility.yaml")
+    assert cfg.e1.discovery_start == "2020-07-28" and len(cfg.e1.labels) == 2
+    assert pd.Timestamp(cfg.data.start) < pd.Timestamp(cfg.e1.discovery_start) - pd.Timedelta(days=365 * 3)
