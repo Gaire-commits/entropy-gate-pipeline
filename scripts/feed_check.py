@@ -20,6 +20,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import _common  # noqa: F401 - puts the repo root on the path
+
 from src.data import fetch_symbol, get_client
 from src.feed_compare import compare_feeds, gridded, summarize
 
