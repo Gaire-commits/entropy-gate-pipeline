@@ -132,3 +132,12 @@ def test_sip_e1_scores_the_years_iex_never_covered_as_the_untouched_period():
     cfg = load_config(ROOT / "configs" / "sip_e1_volatility.yaml")
     assert cfg.e1.discovery_start == "2020-07-28" and len(cfg.e1.labels) == 2
     assert pd.Timestamp(cfg.data.start) < pd.Timestamp(cfg.e1.discovery_start) - pd.Timedelta(days=365 * 3)
+
+
+def test_leadlag_config_reads_the_sip_bars_and_fixes_one_geometry():
+    e5 = load_config(ROOT / "configs" / "sip_e5_leadlag.yaml")
+    sip = load_config(ROOT / "configs" / "sip_sp500_multihour.yaml")
+    assert vars(e5.data) == vars(sip.data)
+    ll = e5.leadlag
+    assert ll.lookback + ll.embargo + ll.hold < 78 and ll.secondary.lookback + ll.embargo + ll.secondary.hold < 78
+    assert {"symbol", "sector"} <= set(pd.read_csv(ROOT / e5.data.universe).columns)

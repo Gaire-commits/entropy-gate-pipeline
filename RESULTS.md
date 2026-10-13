@@ -306,6 +306,25 @@ now refuses that (`FeedMismatch`), and the SIP configs use their own folder, `da
 2. The SIP fetch.
 3. Then, with the existing rules: the S&P 500 screen and sweep, E1, E2, the hold-out and the replication.
 
+## E5: does a stock catch up with its sector? (protocol fixed 2026-10-13; not run)
+
+The first test that gives a signal information from other stocks (`configs/sip_e5_leadlag.yaml`, Colab
+section 23, SIP data).
+
+- **Signal:** the average return of a stock's sector peers over the last 30 minutes minus its own.
+- **Trade:** enter one bar later and hold 30 minutes. Bars without a trade are excluded, so stale prices
+  cannot pass for followers.
+
+The rule, in order:
+1. The gap's IC must reach t ≥ 3.
+2. It must beat the same gap computed with shuffled sector labels on the same moments (95% interval of the
+   difference above zero). Otherwise it is the stock's own reversal, not lead-lag.
+3. Its IC must be positive both before and after 2020-07-28.
+4. It pays only if the top-and-bottom-fifth book's net 95% interval after 2 bps is above zero.
+
+On synthetic markets the rule finds a planted sector lead, finds nothing in noise or in sectors that move
+at the same time, and classifies a stock's own price reversal as reversal.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08; results pending)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -821,6 +840,7 @@ The response so far:
 | 2026-10-07 | Online agent built: streaming featurizer identical to the batch pipeline, delayed rewards, entropy-controlled exploration with drift boosts, placebo replay; protocol fixed before running |
 | 2026-10-08 | E1 (volatile-moment lead, no model, untouched 2020–2022) and E2 (learning curve, capacity ladder, planted edges) built and pre-registered; pre-registered configs frozen by a test |
 | 2026-10-09 | SIP (consolidated) feed adopted as the headline dataset before any SIP result; feed check, a guard against one feed overwriting another's cache, and data-only SIP copies of the sweep, E1, E2, hold-out and replication configs, frozen |
+| 2026-10-13 | E5 (sector lead-lag with a shuffled-sector control) built and pre-registered on SIP; not run |
 
 ## Next steps
 

@@ -1,0 +1,66 @@
+# E5: when a stock's sector has moved and the stock has not, does it catch up? (src/leadlag.py)
+#
+# The lead-lag idea: news reaches some stocks first and their sector peers follow a little later. Every
+# model before this saw only a stock's own window; this adds what its sector did. Consolidated (SIP) bars,
+# 2016 onward: IEX's gaps would make stale prices look like followers.
+#
+# Signal (the gap): over the last 6 bars (30 minutes), the average return of the stock's sector peers
+# (itself excluded; GICS sectors from universe/sp500.csv; at least 5 peers) minus the stock's own return.
+# Trade: enter one bar after the signal bar, hold 6 bars; a moment every 6 bars (11 a day). Every bar from
+# the start of the lookback to the signal bar, and the entry and exit bars, must have a trade.
+# Scored across stocks at each moment: rank IC with a 95% day-block interval, and a long-short book of the
+# top and bottom fifth by gap, 2 bps per position.
+#
+# PROTOCOL, fixed before any result (2026-10-13). Applied in this order (src/leadlag.verdict):
+#   1. The gap's IC must reach t >= 3; otherwise NO CATCH-UP EFFECT.
+#   2. The gap must predict better with the real sectors than with sector labels shuffled between stocks,
+#      on the same moments (95% day-block interval of the IC difference above zero); otherwise OWN
+#      REVERSAL, NOT LEAD-LAG. The gap contains the stock's own return with a minus sign, so any
+#      short-term reversal of a stock's own price would make it "work"; shuffling keeps that and removes
+#      the sector.
+#   3. The gap's IC must be positive both before 2020-07-28 and from it; otherwise NOT STABLE.
+#   4. CATCHES UP AND PAYS if the book's net 95% interval after 2 bps is above zero; otherwise CATCHES UP,
+#      DOES NOT PAY.
+# Reported, not decisive: the gap against each sector's three most traded stocks (dollar volume over the
+# previous 20 days), the peers-only and own-only parts of the gap, the pipeline's usual geometry (12-bar
+# lookback, 30-bar hold), and results by year. One geometry and one signal carry the verdict; no pairs of
+# stocks are searched.
+experiment: sip_e5_leadlag
+
+data: {universe: universe/sp500.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+leadlag:
+  lookback: 6
+  hold: 6
+  embargo: 1
+  stride: 6
+  min_sector: 5
+  n_leaders: 3
+  leader_days: 20
+  min_peers: 20
+  q: 0.2
+  cost_bps: 2.0
+  t_bar: 3.0
+  split: "2020-07-28"
+  shuffle_seed: 0
+  secondary: {lookback: 12, hold: 30, stride: 12}
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

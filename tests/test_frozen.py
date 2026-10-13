@@ -22,6 +22,7 @@ FROZEN = {
     "sip_e2_capacity.yaml": "995e294acf4a4c2070f16dc3399d6c4af26f0a79c36a8ae4e822be76138f77e3",      # 2026-10-09
     "sip_ndx_holdout.yaml": "5747b6878724a5b3487557a6294ce6bda00082cc1008907146ac9d8dd29870b3",      # 2026-10-09
     "sip_ndx_replication.yaml": "d6108049b29712a015f64d22537c3feaf571d505627c9be1f98e61e1ea67bd3c",  # 2026-10-09
+    "sip_e5_leadlag.yaml": "1c21cc07bd4e0994bbd72768793f57813fd29b6e2c93b7e72ef04788a5c86cff",        # 2026-10-13
 }
 
 

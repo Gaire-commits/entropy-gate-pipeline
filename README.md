@@ -313,6 +313,22 @@ Controls in `tests/test_volatility_lead.py` and `tests/test_capacity.py`:
 - **The planted edge uses only the inputs and hits its target IC.**
 - **The trees find a planted edge end to end, and find nothing when none is planted.**
 
+## E5: lead-lag within sectors
+
+```bash
+python scripts/leadlag.py --config configs/sip_e5_leadlag.yaml
+```
+`src/leadlag.py` asks whether a stock catches up when its sector peers have moved over the last 30 minutes
+and it has not. It is the first test to use other stocks' information.
+- **Stale prices are excluded:** every bar from the start of the lookback to the exit must have a trade.
+- **The control is shuffled sectors.** The signal contains the stock's own return with a minus sign, so a
+  stock's own short-term reversal would make it "work". Shuffling sector labels keeps that reversal and
+  removes the sector; only real sectors beating shuffled ones counts.
+- **No pair search:** sectors come from the universe file, leaders from past volume.
+
+Controls in `tests/test_leadlag.py`: a planted sector lead is found, noise and same-time sector moves give
+nothing, and a stock's own reversal is classified as reversal, not lead-lag.
+
 ## Data feeds: SIP is the headline from 2026-10-09
 
 The pipeline started on Alpaca's IEX feed. IEX prints a bar only when a trade happened on IEX, so about
@@ -452,6 +468,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
 | `src/crosssection.py` | Breadth: effective independent bets, cross-sectional IC, long-short books, model similarity |
 | `src/holdout.py` | Training and trading universes, the relative target, and the hold-out split |
+| `src/leadlag.py` | E5: sector lead-lag, with a shuffled-sector control |
 | `src/feed_compare.py` | IEX against consolidated (SIP) bars: grid completeness, volume, price agreement |
 | `src/volatility_lead.py` | E1: the volatile-moment lead without a model, on untouched years, with block intervals and stress costs |
 | `src/capacity.py` | E2: learning curve, capacity ladder and planted edges |
