@@ -17,3 +17,13 @@ def test_script_starts_from_the_repo_root(name):
     out = subprocess.run([sys.executable, f"scripts/{name}", "--help"], cwd=ROOT, capture_output=True, text=True,
                          env={"PATH": "/usr/bin:/bin", "EGP_DEVICE": "cpu"})
     assert out.returncode == 0, out.stderr[-600:]
+
+
+def test_a_half_fetched_cache_is_refused(capsys):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _common import enough_symbols
+
+    universe = [f"S{i}" for i in range(100)]
+    assert enough_symbols({s: 1 for s in universe[:95]}, universe, "data/bars_sip")
+    assert not enough_symbols({s: 1 for s in universe[:56]}, universe, "data/bars_sip")
+    assert "56 of 100" in capsys.readouterr().out

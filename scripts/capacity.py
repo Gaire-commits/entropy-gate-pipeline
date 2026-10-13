@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _common import output_dir
+from _common import enough_symbols, output_dir
 
 from src.capacity import (
     calibrate_edge, capacity_verdict, cell_config, cell_name, paired_ic_difference, plant, planted_signal,
@@ -58,6 +58,8 @@ def main() -> int:
     load, train, trade = resolve_roles(cfg.data)
     t0 = time.time()
     bars = load_universe(cfg.data.cache_dir, load, cfg.data.timeframe)
+    if bars and not enough_symbols(bars, load, cfg.data.cache_dir):
+        return 1
     if not bars:
         print(f"no cached bars under {cfg.data.cache_dir} — run scripts/fetch_data.py first")
         return 1

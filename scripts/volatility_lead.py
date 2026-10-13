@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _common import output_dir
+from _common import enough_symbols, output_dir
 
 from src.config import load_config
 from src.data import load_universe, resolve_universe
@@ -67,6 +67,8 @@ def main() -> int:
 
     t0 = time.time()
     bars = load_universe(cfg.data.cache_dir, resolve_universe(cfg.data.universe), cfg.data.timeframe)
+    if bars and not enough_symbols(bars, resolve_universe(cfg.data.universe), cfg.data.cache_dir):
+        return 1
     if not bars:
         print(f"no cached bars under {cfg.data.cache_dir} — run scripts/fetch_data.py first")
         return 1

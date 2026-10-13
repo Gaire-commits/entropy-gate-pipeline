@@ -15,7 +15,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from _common import output_dir
+from _common import enough_symbols, output_dir
 
 from src.capacity import paired_ic_difference
 from src.config import load_config
@@ -72,6 +72,8 @@ def main() -> int:
     sectors = dict(zip(universe["symbol"], universe["sector"]))
     t0 = time.time()
     bars = load_universe(cfg.data.cache_dir, resolve_universe(cfg.data.universe), cfg.data.timeframe)
+    if bars and not enough_symbols(bars, resolve_universe(cfg.data.universe), cfg.data.cache_dir):
+        return 1
     if not bars:
         print(f"no cached bars under {cfg.data.cache_dir} — fetch the SIP bars first (Colab section 21)")
         return 1

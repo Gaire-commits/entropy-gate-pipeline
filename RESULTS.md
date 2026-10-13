@@ -325,6 +325,11 @@ The rule, in order:
 On synthetic markets the rule finds a planted sector lead, finds nothing in noise or in sectors that move
 at the same time, and classifies a stock's own price reversal as reversal.
 
+**A void run, disclosed.** On 2026-10-13 the script ran while the SIP fetch was unfinished: 56 of 503
+stocks were cached, and 21 had enough sector peers. Its shuffled-sector control could not be computed and its
+verdict means nothing. It is discarded; the scripts now refuse to run when under 90% of the universe is cached.
+The test stands as registered and will be judged on the full universe.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08; results pending)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
