@@ -21,8 +21,7 @@ from src.capacity import paired_ic_difference
 from src.config import load_config
 from src.crosssection import cross_sectional_ic, quantile_book, score_book
 from src.data import load_universe, resolve_universe
-from src.horizons import collect_overnight, growth_verdict
-from src.leadlag import collect
+from src.horizons import growth_verdict, hold_frames
 
 NAME = {6: "30 minutes", 12: "1 hour", 24: "2 hours", 48: "4 hours", "day": "a full day"}
 
@@ -49,14 +48,8 @@ def main() -> int:
         return 1
     print(f"{len(bars)} symbols loaded ({time.time() - t0:.0f}s)")
 
-    frames = {}
-    for h in e.holds:
-        f = collect(bars, sectors, lookback=e.lookback, hold=h, embargo=e.embargo, stride=e.lookback, min_sector=1)
-        frames[h] = f[f["bar_index"].isin(list(e.offsets))].assign(prob=lambda x: x["own"]).reset_index(drop=True)
-        print(f"  hold {NAME[h]}: {len(frames[h]):,} stock-moments ({time.time() - t0:.0f}s)")
-    frames["day"] = collect_overnight(bars, e.lookback, e.embargo, tuple(e.offsets), e.min_peers).assign(
-        prob=lambda x: x["own"]).reset_index(drop=True)
-    print(f"  hold {NAME['day']}: {len(frames['day']):,} stock-moments ({time.time() - t0:.0f}s)")
+    frames = hold_frames(bars, sectors, e.lookback, e.embargo, tuple(e.offsets), tuple(e.holds), e.min_peers,
+                         log=lambda m: print(f"  {m} ({time.time() - t0:.0f}s)"))
     del bars
 
     rows, short = {}, min(e.holds)

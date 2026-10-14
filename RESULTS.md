@@ -663,6 +663,29 @@ square-root-of-time scaling would give. Costs decide nothing.
   first hour. The largest, +0.41 bps with an interval that includes zero, is about 20% of a 2 bps cost.
 - **Same data as E5–E9.** Each registered test here reuses one dataset, so these are not independent samples.
 
+## E11: the reversal in a second sample of stocks, the S&P MidCap 400 (protocol fixed 2026-10-14; not run)
+
+E5 to E10 used the same 503 stocks over the same years, so they are one sample. E11
+(`configs/sip_e11_midcap.yaml`, Colab section 29) takes E10's signal, moments and holds to companies the
+project has never touched. It is a second sample of stocks over the same period, not a second period (the free
+SIP history starts in 2016 and every year of it is already in E5 to E10).
+
+The rule, in order:
+1. **Replication, three claims taken from the S&P 500, each judged on mid caps alone.** (a) The 30-minute hold
+   has an IC with t ≥ 3. (b) The 1-hour IC minus the 30-minute IC, paired on the same moments, is above zero at
+   99%. (c) The full-day IC minus the 4-hour IC, paired, is below zero at 99%. If (a) fails, **does not
+   replicate** and nothing else is read; all three is **replicates in full**; (a) plus one other is
+   **replicates in part**, naming what is missing.
+2. **Size, a separate question.** The mid-cap 30-minute IC minus the S&P 500's, from each day's average IC on
+   the same days, at 99%: above zero is **stronger in mid caps** (the literature's prediction that less liquid
+   stocks reverse more), below is **weaker**, includes zero is **the same**.
+
+Reported: every hold's IC and gross book bps in both samples, mid caps minus S&P 500 at each hold, and the
+halves. The S&P 500 is recomputed in the same run. Costs decide nothing; mid caps cost more to trade, which is
+not tested. Today's mid-cap list is applied back to 2016, so survivorship bias applies as before.
+The mid-cap list (400 stocks, 11 GICS sectors, fetched 2026-10-14) shares one stock with the S&P 500 list (CTVA),
+which stays in the S&P 500 sample only.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -1245,11 +1268,12 @@ The response so far:
 | 2026-10-14 | E9 result: the same strength at every horizon by the 99% rule (+0.0047 [−0.0004, +0.0102]); IC rises with the hold in every row of the grid; best cell (30-minute lookback, 2-hour hold) IC +0.0151, +0.77 bps gross |
 | 2026-10-14 | E10 (the same signal held 30 minutes to a full day, on the same moments) built and pre-registered |
 | 2026-10-14 | E10 result: 4 hours keeps growing vs 30 minutes by a hair (+0.0038 [+0.0001, +0.0076]), all of it in the first hour; a full day does not. IC about 0.0100 from 1 to 4 hours; E9's best cell was flattered |
+| 2026-10-14 | E11 (the reversal in a second sample of stocks, the S&P MidCap 400) built and pre-registered; not run |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. The reversal completes within about an hour and holds to 4 hours, and is weakest at 10:00 on a day's later signals. Remaining honest tests would use a second sample (another universe or period); E5–E10 share one dataset.
+2. Run E11 (Colab section 29): the reversal in a second sample of stocks, the S&P MidCap 400. Fetch the mid-cap bars first (hours).
 3. Decide whether to keep building on the reversal: it is real as an ordering (t 7.5) and under a tenth of a basis point as an amount. A second sample (another universe or period) would be the next honest test; E6–E8 all use the same data.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and

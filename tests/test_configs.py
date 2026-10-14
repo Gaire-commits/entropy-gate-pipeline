@@ -191,3 +191,13 @@ def test_holds_config_keeps_e5s_signal_and_leaves_room_for_the_longest_hold():
     assert max(h.offsets) + h.embargo + max(h.holds) < 78, "the longest intraday hold must end inside the session"
     assert min(h.offsets) >= h.lookback and h.holds[0] in (h.lookback,)
     assert h.level == 0.99 and set(map(str, h.decisive)) == {"48", "day"} and h.t_bar == 3.0
+
+
+def test_midcap_config_uses_e10s_holds_on_a_different_universe_and_the_same_cache():
+    e11 = load_config(ROOT / "configs" / "sip_e11_midcap.yaml")
+    e10 = load_config(ROOT / "configs" / "sip_e10_holds.yaml")
+    a, b = vars(e11.data), vars(e10.data)
+    assert {k for k in a if a[k] != b[k]} == {"universe"}
+    assert a["universe"] == "universe/sp400.csv" and a["feed"] == "sip" and a["cache_dir"] == b["cache_dir"]
+    assert vars(e11.holds) == vars(e10.holds)
+    assert e11.second.compare_universe == e10.data.universe and e11.second.min_symbols_share == 0.9

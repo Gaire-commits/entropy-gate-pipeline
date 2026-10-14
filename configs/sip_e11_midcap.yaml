@@ -1,0 +1,70 @@
+# E11: does the reversal appear in a second sample of stocks, the S&P MidCap 400? (scripts/second_sample.py)
+#
+# E5-E10 all used the same 503 S&P 500 stocks over the same years, so they are one sample, not six. This
+# takes the reversal to stocks the project has never touched: the S&P MidCap 400, a different set of
+# companies, smaller and less traded. Same period, so it is a second sample of stocks, not of time.
+# Consolidated (SIP) bars, 2016 onward, the same cache folder as the S&P 500 (a different set of symbols,
+# the same feed, so nothing is overwritten). Fetch first:
+#   python scripts/build_universe.py --index sp400
+#   python scripts/fetch_data.py --config configs/sip_e11_midcap.yaml --workers 3
+#
+# Everything is E10's: the signal (a stock's move relative to the market over the last 6 bars, reversed),
+# the moments (bars 6, 12, 18, 24), the holds (30 minutes, 1, 2 and 4 hours, a full trading day) and the
+# IC as the quantity compared. Costs decide nothing; mid caps cost more to trade, which is not tested.
+# Survivorship bias: today's list applied back to 2016, so the stocks that fell out of it are missing.
+# A stock on both lists (CTVA when the lists were fetched on 2026-10-14) stays in the S&P 500 sample only,
+# so the two samples share no stocks.
+#
+# PROTOCOL, fixed before any result (2026-10-14). Applied in this order (src/horizons.replication_verdict):
+#   1. REPLICATION, three claims taken from the S&P 500 (E5, E10), each judged on mid caps alone:
+#        a. the 30-minute hold has an IC with t >= 3;
+#        b. the 1-hour IC minus the 30-minute IC, paired on the same moments, 99% interval above zero;
+#        c. the full-day IC minus the 4-hour IC, paired on the same moments, 99% interval below zero.
+#      If (a) fails the verdict is DOES NOT REPLICATE and nothing else is read. All three: REPLICATES IN
+#      FULL; (a) plus one of the others: REPLICATES IN PART, naming what is missing.
+#   2. SIZE, separate from replication: the mid-cap 30-minute IC minus the S&P 500's, from each day's
+#      average IC on the same days, 99% interval. Above zero: STRONGER IN MID CAPS (the literature's
+#      prediction: less liquid stocks reverse more); below: WEAKER; includes zero: THE SAME.
+# Reported, not decisive: every hold's IC and gross book bps, the halves, each signal time, and the S&P 500
+# recomputed in the same run so that every comparison uses the same days and code.
+experiment: sip_e11_midcap
+
+data: {universe: universe/sp400.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+holds:
+  lookback: 6
+  embargo: 1
+  offsets: [6, 12, 18, 24]
+  holds: [6, 12, 24, 48]
+  decisive: [48, "day"]
+  min_peers: 20
+  q: 0.2
+  cost_bps: 2.0
+  t_bar: 3.0
+  level: 0.99
+  half_level: 0.95
+  split: "2020-07-28"
+
+second:
+  compare_universe: "universe/sp500.csv"
+  min_symbols_share: 0.9
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

@@ -107,6 +107,47 @@ def collect_overnight(bars: dict[str, pd.DataFrame], lookback: int = 6, embargo:
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 
+def hold_frames(bars: dict[str, pd.DataFrame], sectors: dict[str, str], lookback: int = 6, embargo: int = 1,
+                offsets: tuple[int, ...] = OFFSETS, holds: tuple[int, ...] = (6, 12, 24, 48), min_peers: int = 20,
+                log=None) -> dict:
+    """E10's frames for one universe: the same signal at the same moments, held for each of `holds` bars
+    (keyed by the number of bars) and for a full trading day (key "day"). Every frame has a `prob` column
+    holding the signal."""
+    from .leadlag import collect
+
+    out = {}
+    for h in holds:
+        f = collect(bars, sectors, lookback=lookback, hold=h, embargo=embargo, stride=lookback, min_sector=1)
+        out[h] = f[f["bar_index"].isin(list(offsets))].assign(prob=lambda x: x["own"]).reset_index(drop=True)
+        if log:
+            log(f"hold {h} bars: {len(out[h]):,} stock-moments")
+    out["day"] = collect_overnight(bars, lookback, embargo, tuple(offsets), min_peers).assign(
+        prob=lambda x: x["own"]).reset_index(drop=True)
+    if log:
+        log(f"hold a full day: {len(out['day']):,} stock-moments")
+    return out
+
+
+def replication_verdict(thirty: dict, hour_vs_30: dict, day_vs_4h: dict, size_vs_large: dict, t_bar: float = 3.0) -> dict:
+    """The rule in configs/sip_e11_midcap.yaml. Claims from the S&P 500 (E5, E10) tried on mid caps, then
+    a question the literature raises: is the reversal stronger in less liquid stocks?"""
+    out = {"size": "stronger in mid caps" if size_vs_large.get("lo", np.nan) > 0 else
+           "weaker in mid caps" if size_vs_large.get("hi", np.nan) < 0 else "the same in mid caps and large caps"}
+    if not thirty.get("t", np.nan) >= t_bar:
+        return {**out, "level": "does not replicate", "reason": f"the 30-minute hold does not reach t >= {t_bar:g} in mid caps",
+                "claims": 0}
+    claims = 1 + int(hour_vs_30.get("lo", np.nan) > 0) + int(day_vs_4h.get("hi", np.nan) < 0)
+    level = {3: "replicates in full", 2: "replicates in part", 1: "replicates in part"}[claims]
+    missing = []
+    if not hour_vs_30.get("lo", np.nan) > 0:
+        missing.append("the 1-hour IC is not above the 30-minute IC")
+    if not day_vs_4h.get("hi", np.nan) < 0:
+        missing.append("the full-day IC is not below the 4-hour IC")
+    reason = ("the reversal exists, builds in the first hour and does not carry overnight" if claims == 3 else
+              "the reversal exists in mid caps, but " + " and ".join(missing))
+    return {**out, "level": level, "reason": reason, "claims": claims}
+
+
 def growth_verdict(base: dict, longest: dict, paired: dict, early: dict, late: dict, t_bar: float = 3.0) -> dict:
     """The rule in configs/sip_e10_holds.yaml for one comparison: the IC at a long hold against the
     shortest, on the same moments (`paired`: 99%; `early`, `late`: 95%)."""

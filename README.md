@@ -350,6 +350,19 @@ Controls in `tests/test_reversal.py`:
 - a reversal set by volatility alone is classified as volatility;
 - the signal is identical to E5's.
 
+## E11: a second sample of stocks (the S&P MidCap 400)
+
+```bash
+python scripts/build_universe.py --index sp400
+python scripts/fetch_data.py --config configs/sip_e11_midcap.yaml --workers 3
+python scripts/second_sample.py --config configs/sip_e11_midcap.yaml
+```
+E5 to E10 used one set of 503 stocks over one period, so they are one sample. `scripts/second_sample.py` tries
+E10's holds on companies the project has never touched. Three claims from the S&P 500 are judged on mid caps
+alone (the reversal exists at 30 minutes; the IC builds over the first hour; a full day carries less than 4
+hours), then a separate question: is it stronger in mid caps than in large caps? Both universes are recomputed
+in one run so every comparison uses the same days and code. It is a second sample of stocks, not of time.
+
 ## E10: the reversal as the hold gets longer
 
 ```bash

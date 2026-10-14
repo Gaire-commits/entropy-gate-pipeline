@@ -1,0 +1,401 @@
+symbol,name,sector,fetched_at
+AA,Alcoa,Materials,2026-10-14T04:43:49+00:00
+AAL,American Airlines Group,Industrials,2026-10-14T04:43:49+00:00
+AAON,AAON,Industrials,2026-10-14T04:43:49+00:00
+ACI,Albertsons,Consumer Staples,2026-10-14T04:43:49+00:00
+ACM,AECOM,Industrials,2026-10-14T04:43:49+00:00
+ADC,Agree Realty,Real Estate,2026-10-14T04:43:49+00:00
+AEIS,Advanced Energy,Information Technology,2026-10-14T04:43:49+00:00
+AFG,American Financial Group,Financials,2026-10-14T04:43:49+00:00
+AGCO,AGCO,Industrials,2026-10-14T04:43:49+00:00
+AGNC,AGNC Investment,Financials,2026-10-14T04:43:49+00:00
+AHR,American Healthcare REIT,Real Estate,2026-10-14T04:43:49+00:00
+AIT,Applied Industrial Technologies,Industrials,2026-10-14T04:43:49+00:00
+ALGM,Allegro MicroSystems,Information Technology,2026-10-14T04:43:49+00:00
+ALK,Alaska Air Group,Industrials,2026-10-14T04:43:49+00:00
+ALLY,Ally Financial,Financials,2026-10-14T04:43:49+00:00
+ALSN,Allison Transmission,Industrials,2026-10-14T04:43:49+00:00
+ALV,Autoliv,Consumer Discretionary,2026-10-14T04:43:49+00:00
+AM,Antero Midstream,Energy,2026-10-14T04:43:49+00:00
+AMG,Affiliated Managers Group,Financials,2026-10-14T04:43:49+00:00
+AMH,American Homes 4 Rent,Real Estate,2026-10-14T04:43:49+00:00
+AMKR,Amkor Technology,Information Technology,2026-10-14T04:43:49+00:00
+AN,AutoNation,Consumer Discretionary,2026-10-14T04:43:49+00:00
+ANF,Abercrombie & Fitch,Consumer Discretionary,2026-10-14T04:43:49+00:00
+APG,APi Group,Industrials,2026-10-14T04:43:49+00:00
+APPF,AppFolio,Information Technology,2026-10-14T04:43:49+00:00
+AR,Antero Resources,Energy,2026-10-14T04:43:49+00:00
+ARMK,Aramark,Consumer Discretionary,2026-10-14T04:43:49+00:00
+ARW,Arrow Electronics,Information Technology,2026-10-14T04:43:49+00:00
+ARWR,Arrowhead Pharmaceuticals,Health Care,2026-10-14T04:43:49+00:00
+ASB,Associated Bank,Financials,2026-10-14T04:43:49+00:00
+ASH,Ashland Global,Materials,2026-10-14T04:43:49+00:00
+ATI,ATI Inc.,Industrials,2026-10-14T04:43:49+00:00
+ATR,AptarGroup,Materials,2026-10-14T04:43:49+00:00
+AVAV,AeroVironment,Industrials,2026-10-14T04:43:49+00:00
+AVNT,Avient,Materials,2026-10-14T04:43:49+00:00
+AVT,Avnet,Information Technology,2026-10-14T04:43:49+00:00
+AVTR,Avantor,Health Care,2026-10-14T04:43:49+00:00
+AXTA,Axalta,Materials,2026-10-14T04:43:49+00:00
+AYI,Acuity Brands,Industrials,2026-10-14T04:43:49+00:00
+BAH,Booz Allen Hamilton,Industrials,2026-10-14T04:43:49+00:00
+BBWI,"Bath & Body Works, Inc.",Consumer Discretionary,2026-10-14T04:43:49+00:00
+BC,Brunswick,Consumer Discretionary,2026-10-14T04:43:49+00:00
+BCO,Brink's,Industrials,2026-10-14T04:43:49+00:00
+BDC,Belden Inc.,Information Technology,2026-10-14T04:43:49+00:00
+BHF,Brighthouse Financial,Financials,2026-10-14T04:43:49+00:00
+BILL,Bill Holdings,Information Technology,2026-10-14T04:43:49+00:00
+BIO,Bio-Rad Laboratories,Health Care,2026-10-14T04:43:49+00:00
+BJ,BJ's Wholesale Club,Consumer Staples,2026-10-14T04:43:49+00:00
+BKH,Black Hills Corporation,Utilities,2026-10-14T04:43:49+00:00
+BMRN,BioMarin Pharmaceutical,Health Care,2026-10-14T04:43:49+00:00
+BRKR,Bruker,Health Care,2026-10-14T04:43:49+00:00
+BROS,Dutch Bros Inc.,Consumer Discretionary,2026-10-14T04:43:49+00:00
+BRX,Brixmor Property Group,Real Estate,2026-10-14T04:43:49+00:00
+BSY,Bentley Systems,Information Technology,2026-10-14T04:43:49+00:00
+BTSG,BrightSpring Health Services,Health Care,2026-10-14T04:43:49+00:00
+BURL,Burlington Stores,Consumer Discretionary,2026-10-14T04:43:49+00:00
+BWA,BorgWarner,Consumer Discretionary,2026-10-14T04:43:49+00:00
+BWXT,BWX Technologies,Industrials,2026-10-14T04:43:49+00:00
+BYD,Boyd Gaming,Consumer Discretionary,2026-10-14T04:43:49+00:00
+CACI,CACI International,Industrials,2026-10-14T04:43:49+00:00
+CAR,Avis Budget Group,Industrials,2026-10-14T04:43:49+00:00
+CART,Maplebear Inc.,Consumer Staples,2026-10-14T04:43:49+00:00
+CAVA,Cava Group,Consumer Discretionary,2026-10-14T04:43:49+00:00
+CBSH,Commerce Bancshares,Financials,2026-10-14T04:43:49+00:00
+CBT,Cabot Corp,Materials,2026-10-14T04:43:49+00:00
+CCK,Crown Holdings,Materials,2026-10-14T04:43:49+00:00
+CDE,Coeur Mining,Materials,2026-10-14T04:43:49+00:00
+CDP,COPT Defense Properties,Real Estate,2026-10-14T04:43:49+00:00
+CELH,Celsius Holdings,Consumer Staples,2026-10-14T04:43:49+00:00
+CFR,Frost Bank,Financials,2026-10-14T04:43:49+00:00
+CG,Carlyle Group (The),Financials,2026-10-14T04:43:49+00:00
+CGNX,Cognex,Information Technology,2026-10-14T04:43:49+00:00
+CHDN,Churchill Downs Inc.,Consumer Discretionary,2026-10-14T04:43:49+00:00
+CHE,Chemed Corp.,Health Care,2026-10-14T04:43:49+00:00
+CHH,Choice Hotels,Consumer Discretionary,2026-10-14T04:43:49+00:00
+CHRD,Chord Energy,Energy,2026-10-14T04:43:49+00:00
+CHWY,Chewy,Consumer Discretionary,2026-10-14T04:43:49+00:00
+CLF,Cleveland-Cliffs,Materials,2026-10-14T04:43:49+00:00
+CLH,Clean Harbors,Industrials,2026-10-14T04:43:49+00:00
+CMC,Commercial Metals,Materials,2026-10-14T04:43:49+00:00
+CNH,CNH Industrial,Industrials,2026-10-14T04:43:49+00:00
+CNM,Core & Main,Industrials,2026-10-14T04:43:49+00:00
+CNO,CNO Financial Group,Financials,2026-10-14T04:43:49+00:00
+CNX,CNX Resources,Energy,2026-10-14T04:43:49+00:00
+COKE,Coca-Cola Consolidated,Consumer Staples,2026-10-14T04:43:49+00:00
+COLB,Columbia Banking System,Financials,2026-10-14T04:43:49+00:00
+COLM,Columbia Sportswear,Consumer Discretionary,2026-10-14T04:43:49+00:00
+CORT,Corcept Therapeutics,Health Care,2026-10-14T04:43:49+00:00
+CR,Crane,Industrials,2026-10-14T04:43:49+00:00
+CRBG,Corebridge Financial,Financials,2026-10-14T04:43:49+00:00
+CROX,Crocs,Consumer Discretionary,2026-10-14T04:43:49+00:00
+CRS,Carpenter Technology,Industrials,2026-10-14T04:43:49+00:00
+CRUS,Cirrus Logic,Information Technology,2026-10-14T04:43:49+00:00
+CSL,Carlisle Companies,Industrials,2026-10-14T04:43:49+00:00
+CTRE,CareTrust REIT,Real Estate,2026-10-14T04:43:49+00:00
+CTVA,Corteva,Materials,2026-10-14T04:43:49+00:00
+CUBE,CubeSmart,Real Estate,2026-10-14T04:43:49+00:00
+CUZ,Cousins Properties,Real Estate,2026-10-14T04:43:49+00:00
+CVLT,CommVault Systems,Information Technology,2026-10-14T04:43:49+00:00
+CW,Curtiss-Wright,Industrials,2026-10-14T04:43:49+00:00
+CXT,Crane NXT,Information Technology,2026-10-14T04:43:49+00:00
+CYTK,Cytokinetics,Health Care,2026-10-14T04:43:49+00:00
+DAR,Darling Ingredients,Consumer Staples,2026-10-14T04:43:49+00:00
+DBX,Dropbox,Information Technology,2026-10-14T04:43:49+00:00
+DCI,Donaldson Company,Industrials,2026-10-14T04:43:49+00:00
+DINO,HF Sinclair,Energy,2026-10-14T04:43:49+00:00
+DKS,Dick's Sporting Goods,Consumer Discretionary,2026-10-14T04:43:49+00:00
+DLB,Dolby,Information Technology,2026-10-14T04:43:49+00:00
+DOCN,DigitalOcean,Information Technology,2026-10-14T04:43:49+00:00
+DOCS,Doximity,Health Care,2026-10-14T04:43:49+00:00
+DOCU,Docusign,Information Technology,2026-10-14T04:43:49+00:00
+DT,Dynatrace,Information Technology,2026-10-14T04:43:49+00:00
+DTM,DT Midstream,Energy,2026-10-14T04:43:49+00:00
+DUOL,Duolingo,Consumer Discretionary,2026-10-14T04:43:49+00:00
+DY,Dycom Industries,Industrials,2026-10-14T04:43:49+00:00
+EAT,Brinker International,Consumer Discretionary,2026-10-14T04:43:49+00:00
+EEFT,Euronet Worldwide,Financials,2026-10-14T04:43:49+00:00
+EGP,EastGroup Properties,Real Estate,2026-10-14T04:43:49+00:00
+EHC,Encompass Health,Health Care,2026-10-14T04:43:49+00:00
+ELAN,Elanco,Health Care,2026-10-14T04:43:49+00:00
+ELF,e.l.f. Beauty,Consumer Staples,2026-10-14T04:43:49+00:00
+ELS,Equity Lifestyle Properties,Real Estate,2026-10-14T04:43:49+00:00
+ENS,EnerSys,Industrials,2026-10-14T04:43:49+00:00
+ENSG,Ensign Group,Health Care,2026-10-14T04:43:49+00:00
+ENTG,Entegris,Information Technology,2026-10-14T04:43:49+00:00
+EPR,EPR Properties,Real Estate,2026-10-14T04:43:49+00:00
+EQH,Equitable Holdings,Financials,2026-10-14T04:43:49+00:00
+ESAB,ESAB,Industrials,2026-10-14T04:43:49+00:00
+ESNT,Essent Group Ltd.,Financials,2026-10-14T04:43:49+00:00
+EVR,Evercore,Financials,2026-10-14T04:43:49+00:00
+EWBC,East West Bancorp,Financials,2026-10-14T04:43:49+00:00
+EXEL,Exelixis,Health Care,2026-10-14T04:43:49+00:00
+EXLS,EXL Service,Industrials,2026-10-14T04:43:49+00:00
+EXP,Eagle Materials,Materials,2026-10-14T04:43:49+00:00
+EXPO,"Exponent, Inc.",Industrials,2026-10-14T04:43:49+00:00
+FAF,First American Financial Corporation,Financials,2026-10-14T04:43:49+00:00
+FBIN,Fortune Brands Innovations,Industrials,2026-10-14T04:43:49+00:00
+FCFS,FirstCash,Financials,2026-10-14T04:43:49+00:00
+FCN,FTI Consulting,Industrials,2026-10-14T04:43:49+00:00
+FFIN,First Financial Bankshares,Financials,2026-10-14T04:43:49+00:00
+FHI,Federated Hermes,Financials,2026-10-14T04:43:49+00:00
+FHN,First Horizon,Financials,2026-10-14T04:43:49+00:00
+FIVE,Five Below,Consumer Discretionary,2026-10-14T04:43:49+00:00
+FLG,Flagstar Bank,Financials,2026-10-14T04:43:49+00:00
+FLR,Fluor,Industrials,2026-10-14T04:43:49+00:00
+FLS,Flowserve,Industrials,2026-10-14T04:43:49+00:00
+FN,Fabrinet,Information Technology,2026-10-14T04:43:49+00:00
+FNB,FNB Corporation,Financials,2026-10-14T04:43:49+00:00
+FND,Floor & Decor,Consumer Discretionary,2026-10-14T04:43:49+00:00
+FNF,Fidelity National Financial,Financials,2026-10-14T04:43:49+00:00
+FORM,"FormFactor, Inc.",Information Technology,2026-10-14T04:43:49+00:00
+FOUR,Shift4,Financials,2026-10-14T04:43:49+00:00
+FR,First Industrial Realty Trust,Real Estate,2026-10-14T04:43:49+00:00
+FTI,TechnipFMC,Energy,2026-10-14T04:43:49+00:00
+G,Genpact,Industrials,2026-10-14T04:43:49+00:00
+GAP,Gap Inc.,Consumer Discretionary,2026-10-14T04:43:49+00:00
+GATX,GATX,Industrials,2026-10-14T04:43:49+00:00
+GBCI,Glacier Bancorp,Financials,2026-10-14T04:43:49+00:00
+GEF,"Greif, Inc.",Materials,2026-10-14T04:43:49+00:00
+GGG,Graco Inc.,Industrials,2026-10-14T04:43:49+00:00
+GHC,Graham Holdings,Consumer Discretionary,2026-10-14T04:43:49+00:00
+GLPI,Gaming and Leisure Properties,Real Estate,2026-10-14T04:43:49+00:00
+GME,GameStop,Consumer Discretionary,2026-10-14T04:43:49+00:00
+GMED,Globus Medical,Health Care,2026-10-14T04:43:49+00:00
+GNTX,Gentex,Consumer Discretionary,2026-10-14T04:43:49+00:00
+GPK,Graphic Packaging,Materials,2026-10-14T04:43:49+00:00
+GWRE,Guidewire Software,Information Technology,2026-10-14T04:43:49+00:00
+GXO,GXO Logistics,Industrials,2026-10-14T04:43:49+00:00
+H,Hyatt,Consumer Discretionary,2026-10-14T04:43:49+00:00
+HAE,Haemonetics,Health Care,2026-10-14T04:43:49+00:00
+HALO,Halozyme,Health Care,2026-10-14T04:43:49+00:00
+HGV,Hilton Grand Vacations,Consumer Discretionary,2026-10-14T04:43:49+00:00
+HIMS,Hims & Hers Health,Health Care,2026-10-14T04:43:49+00:00
+HL,Hecla Mining,Materials,2026-10-14T04:43:49+00:00
+HLI,Houlihan Lokey,Financials,2026-10-14T04:43:49+00:00
+HLNE,Hamilton Lane,Financials,2026-10-14T04:43:49+00:00
+HOG,Harley-Davidson,Consumer Discretionary,2026-10-14T04:43:49+00:00
+HOMB,Home BancShares,Financials,2026-10-14T04:43:49+00:00
+HQY,HealthEquity,Health Care,2026-10-14T04:43:49+00:00
+HR,Healthcare Realty Trust,Real Estate,2026-10-14T04:43:49+00:00
+HRB,H&R Block,Consumer Discretionary,2026-10-14T04:43:49+00:00
+HUBS,HubSpot,Information Technology,2026-10-14T04:43:49+00:00
+HWC,Hancock Whitney,Financials,2026-10-14T04:43:49+00:00
+HXL,Hexcel,Industrials,2026-10-14T04:43:49+00:00
+IBOC,Intl Bancshares Corp,Financials,2026-10-14T04:43:49+00:00
+IDA,Idacorp,Utilities,2026-10-14T04:43:49+00:00
+IDCC,InterDigital,Information Technology,2026-10-14T04:43:49+00:00
+IESC,IES Holdings,Industrials,2026-10-14T04:43:49+00:00
+INGR,Ingredion,Consumer Staples,2026-10-14T04:43:49+00:00
+IPGP,IPG Photonics,Information Technology,2026-10-14T04:43:49+00:00
+IRT,Independence Realty Trust,Real Estate,2026-10-14T04:43:49+00:00
+ITT,ITT Inc.,Industrials,2026-10-14T04:43:49+00:00
+JAZZ,Jazz Pharmaceuticals,Health Care,2026-10-14T04:43:49+00:00
+JEF,Jefferies,Financials,2026-10-14T04:43:49+00:00
+JLL,Jones Lang LaSalle,Real Estate,2026-10-14T04:43:49+00:00
+KBH,KB Home,Consumer Discretionary,2026-10-14T04:43:49+00:00
+KBR,"KBR, Inc.",Industrials,2026-10-14T04:43:49+00:00
+KD,Kyndryl,Information Technology,2026-10-14T04:43:49+00:00
+KEX,Kirby Corporation,Industrials,2026-10-14T04:43:49+00:00
+KNF,Knife River Corporation,Materials,2026-10-14T04:43:49+00:00
+KNSL,Kinsale Capital Group,Financials,2026-10-14T04:43:49+00:00
+KNX,Knight-Swift,Industrials,2026-10-14T04:43:49+00:00
+KRC,Kilroy Realty Corp,Real Estate,2026-10-14T04:43:49+00:00
+KRG,Kite Realty Group Trust,Real Estate,2026-10-14T04:43:49+00:00
+KRYS,Krystal Biotech,Health Care,2026-10-14T04:43:49+00:00
+KTOS,Kratos Defense & Security Solutions,Industrials,2026-10-14T04:43:49+00:00
+LAD,Lithia Motors,Consumer Discretionary,2026-10-14T04:43:49+00:00
+LAMR,Lamar Advertising Company,Real Estate,2026-10-14T04:43:49+00:00
+LEA,Lear,Consumer Discretionary,2026-10-14T04:43:49+00:00
+LECO,Lincoln Electric,Industrials,2026-10-14T04:43:49+00:00
+LFUS,Littelfuse,Information Technology,2026-10-14T04:43:49+00:00
+LIVN,LivaNova,Health Care,2026-10-14T04:43:49+00:00
+LNTH,Lantheus Holdings,Health Care,2026-10-14T04:43:49+00:00
+LOPE,Grand Canyon Education,Consumer Discretionary,2026-10-14T04:43:49+00:00
+LPX,Louisiana-Pacific,Industrials,2026-10-14T04:43:49+00:00
+LSCC,Lattice Semiconductor,Information Technology,2026-10-14T04:43:49+00:00
+LSTR,Landstar System,Industrials,2026-10-14T04:43:49+00:00
+M,Macy's,Consumer Discretionary,2026-10-14T04:43:49+00:00
+MANH,Manhattan Associates,Information Technology,2026-10-14T04:43:49+00:00
+MAT,Mattel,Consumer Discretionary,2026-10-14T04:43:49+00:00
+MEDP,Medpace,Health Care,2026-10-14T04:43:49+00:00
+MIDD,Middleby,Industrials,2026-10-14T04:43:49+00:00
+MKSI,MKS Instruments,Information Technology,2026-10-14T04:43:49+00:00
+MLI,Mueller Industries,Industrials,2026-10-14T04:43:49+00:00
+MMS,Maximus Inc.,Industrials,2026-10-14T04:43:49+00:00
+MOG.A,Moog Inc.,Industrials,2026-10-14T04:43:49+00:00
+MOH,Molina Healthcare,Health Care,2026-10-14T04:43:49+00:00
+MORN,"Morningstar, Inc.",Financials,2026-10-14T04:43:49+00:00
+MP,MP Materials,Materials,2026-10-14T04:43:49+00:00
+MSA,MSA Safety,Industrials,2026-10-14T04:43:49+00:00
+MSM,MSC Industrial Direct,Industrials,2026-10-14T04:43:49+00:00
+MTDR,Matador Resources,Energy,2026-10-14T04:43:49+00:00
+MTG,MGIC Investment Corporation,Financials,2026-10-14T04:43:49+00:00
+MTN,Vail Resorts,Consumer Discretionary,2026-10-14T04:43:49+00:00
+MTSI,MACOM Technology Solutions,Information Technology,2026-10-14T04:43:49+00:00
+MTZ,MasTec,Industrials,2026-10-14T04:43:49+00:00
+MUR,Murphy Oil,Energy,2026-10-14T04:43:49+00:00
+MUSA,Murphy USA,Consumer Discretionary,2026-10-14T04:43:49+00:00
+MZTI,The Marzetti Company,Consumer Staples,2026-10-14T04:43:49+00:00
+NBIX,Neurocrine Biosciences,Health Care,2026-10-14T04:43:49+00:00
+NEU,NewMarket Corporation,Materials,2026-10-14T04:43:49+00:00
+NFG,National Fuel Gas,Utilities,2026-10-14T04:43:49+00:00
+NJR,New Jersey Resources,Utilities,2026-10-14T04:43:49+00:00
+NLY,Annaly Capital Management,Financials,2026-10-14T04:43:49+00:00
+NNN,NNN Reit,Real Estate,2026-10-14T04:43:49+00:00
+NOV,NOV Inc.,Energy,2026-10-14T04:43:49+00:00
+NOVT,Novanta,Information Technology,2026-10-14T04:43:49+00:00
+NTNX,Nutanix,Information Technology,2026-10-14T04:43:49+00:00
+NVST,Envista Holdings,Health Care,2026-10-14T04:43:49+00:00
+NVT,nVent Electric plc,Industrials,2026-10-14T04:43:49+00:00
+NWE,NorthWestern Energy,Utilities,2026-10-14T04:43:49+00:00
+NXST,Nexstar Media Group,Communication Services,2026-10-14T04:43:49+00:00
+NXT,Nextpower,Industrials,2026-10-14T04:43:49+00:00
+NYT,New York Times Company,Communication Services,2026-10-14T04:43:49+00:00
+OC,Owens Corning,Industrials,2026-10-14T04:43:49+00:00
+OGE,OGE Energy,Utilities,2026-10-14T04:43:49+00:00
+OGS,One Gas,Utilities,2026-10-14T04:43:49+00:00
+OHI,Omega Healthcare Investors,Real Estate,2026-10-14T04:43:49+00:00
+OKTA,"Okta, Inc.",Information Technology,2026-10-14T04:43:49+00:00
+OLED,Universal Display,Information Technology,2026-10-14T04:43:49+00:00
+OLLI,Ollie's Bargain Outlet,Consumer Discretionary,2026-10-14T04:43:49+00:00
+ONB,Old National Bank,Financials,2026-10-14T04:43:49+00:00
+ONTO,Onto Innovation,Information Technology,2026-10-14T04:43:49+00:00
+OPCH,Option Care Health,Health Care,2026-10-14T04:43:49+00:00
+ORA,Ormat Technologies,Utilities,2026-10-14T04:43:49+00:00
+ORI,Old Republic International,Financials,2026-10-14T04:43:49+00:00
+OSK,Oshkosh,Industrials,2026-10-14T04:43:49+00:00
+OVV,Ovintiv,Energy,2026-10-14T04:43:49+00:00
+OZK,Bank OZK,Financials,2026-10-14T04:43:49+00:00
+PAG,Penske Automotive Group,Consumer Discretionary,2026-10-14T04:43:49+00:00
+PATH,UiPath,Information Technology,2026-10-14T04:43:49+00:00
+PB,Prosperity Bancshares,Financials,2026-10-14T04:43:49+00:00
+PBF,PBF Energy,Energy,2026-10-14T04:43:49+00:00
+PCTY,Paylocity,Industrials,2026-10-14T04:43:49+00:00
+PEGA,Pegasystems,Information Technology,2026-10-14T04:43:49+00:00
+PEN,"Penumbra, Inc.",Health Care,2026-10-14T04:43:49+00:00
+PFGC,Performance Food Group,Consumer Staples,2026-10-14T04:43:49+00:00
+PII,Polaris,Consumer Discretionary,2026-10-14T04:43:49+00:00
+PINS,Pinterest,Communication Services,2026-10-14T04:43:49+00:00
+PK,Park Hotels & Resorts,Real Estate,2026-10-14T04:43:49+00:00
+PLNT,Planet Fitness,Consumer Discretionary,2026-10-14T04:43:49+00:00
+PNFP,Pinnacle Financial Partners,Financials,2026-10-14T04:43:49+00:00
+POR,Portland General Electric,Utilities,2026-10-14T04:43:49+00:00
+POST,Post Holdings,Consumer Staples,2026-10-14T04:43:49+00:00
+PPC,Pilgrim's Pride,Consumer Staples,2026-10-14T04:43:49+00:00
+PR,Permian Resources,Energy,2026-10-14T04:43:49+00:00
+PRI,Primerica,Financials,2026-10-14T04:43:49+00:00
+PSN,Parsons Corporation,Industrials,2026-10-14T04:43:49+00:00
+PVH,PVH Corp.,Consumer Discretionary,2026-10-14T04:43:49+00:00
+QLYS,Qualys,Information Technology,2026-10-14T04:43:49+00:00
+R,Ryder,Industrials,2026-10-14T04:43:49+00:00
+RBA,RB Global,Industrials,2026-10-14T04:43:49+00:00
+RBC,RBC Bearings,Industrials,2026-10-14T04:43:49+00:00
+REXR,Rexford Industrial Realty,Real Estate,2026-10-14T04:43:49+00:00
+RGA,Reinsurance Group of America,Financials,2026-10-14T04:43:49+00:00
+RGEN,Repligen,Health Care,2026-10-14T04:43:49+00:00
+RGLD,Royal Gold,Materials,2026-10-14T04:43:49+00:00
+RH,RH,Consumer Discretionary,2026-10-14T04:43:49+00:00
+RLI,RLI Corp.,Financials,2026-10-14T04:43:49+00:00
+RMBS,Rambus,Information Technology,2026-10-14T04:43:49+00:00
+RNR,RenaissanceRe,Financials,2026-10-14T04:43:49+00:00
+ROIV,Roivant Sciences,Health Care,2026-10-14T04:43:49+00:00
+ROKU,"Roku, Inc.",Communication Services,2026-10-14T04:43:49+00:00
+RPM,RPM International,Materials,2026-10-14T04:43:49+00:00
+RRC,Range Resources,Energy,2026-10-14T04:43:49+00:00
+RRX,Regal Rexnord,Industrials,2026-10-14T04:43:49+00:00
+RS,"Reliance, Inc.",Materials,2026-10-14T04:43:49+00:00
+RYAN,Ryan Specialty,Financials,2026-10-14T04:43:49+00:00
+RYN,Rayonier,Real Estate,2026-10-14T04:43:49+00:00
+SAIA,Saia,Industrials,2026-10-14T04:43:49+00:00
+SAIC,Science Applications Intl Corp,Industrials,2026-10-14T04:43:49+00:00
+SANM,Sanmina Corporation,Information Technology,2026-10-14T04:43:49+00:00
+SARO,StandardAero,Industrials,2026-10-14T04:43:49+00:00
+SBRA,Sabra Health Care REIT,Real Estate,2026-10-14T04:43:49+00:00
+SCI,Service Corp Intl,Consumer Discretionary,2026-10-14T04:43:49+00:00
+SEIC,SEI Investments Company,Financials,2026-10-14T04:43:49+00:00
+SF,Stifel,Financials,2026-10-14T04:43:49+00:00
+SFM,Sprouts Farmers Market,Consumer Staples,2026-10-14T04:43:49+00:00
+SGI,Somnigroup International,Consumer Discretionary,2026-10-14T04:43:49+00:00
+SHC,Sotera Health,Health Care,2026-10-14T04:43:49+00:00
+SIGI,Selective Insurance Group,Financials,2026-10-14T04:43:49+00:00
+SIRI,SiriusXM,Communication Services,2026-10-14T04:43:49+00:00
+SITM,SiTime,Information Technology,2026-10-14T04:43:49+00:00
+SLAB,Silicon Labs,Information Technology,2026-10-14T04:43:49+00:00
+SLGN,Silgan Holdings,Materials,2026-10-14T04:43:49+00:00
+SLM,SLM Corp,Financials,2026-10-14T04:43:49+00:00
+SMG,Scotts Miracle-Gro Company,Materials,2026-10-14T04:43:49+00:00
+SMTC,Semtech,Information Technology,2026-10-14T04:43:49+00:00
+SN,SharkNinja,Consumer Discretionary,2026-10-14T04:43:49+00:00
+SNX,TD Synnex,Information Technology,2026-10-14T04:43:49+00:00
+SOLS,Solstice Advanced Materials,Materials,2026-10-14T04:43:49+00:00
+SON,Sonoco,Materials,2026-10-14T04:43:49+00:00
+SPXC,SPX Technologies,Industrials,2026-10-14T04:43:49+00:00
+SR,Spire,Utilities,2026-10-14T04:43:49+00:00
+SSB,South State Bank,Financials,2026-10-14T04:43:49+00:00
+SSD,Simpson Manufacturing,Industrials,2026-10-14T04:43:49+00:00
+ST,Sensata Technologies,Industrials,2026-10-14T04:43:49+00:00
+STAG,STAG Industrial,Real Estate,2026-10-14T04:43:49+00:00
+STRL,Sterling Infrastructure,Industrials,2026-10-14T04:43:49+00:00
+STWD,Starwood Property Trust,Financials,2026-10-14T04:43:49+00:00
+SUI,Sun Communities,Real Estate,2026-10-14T04:43:49+00:00
+SWX,Southwest Gas Corp,Utilities,2026-10-14T04:43:49+00:00
+SYNA,Synaptics,Information Technology,2026-10-14T04:43:49+00:00
+TCBI,Texas Capital Bancshares,Financials,2026-10-14T04:43:49+00:00
+TEX,Terex,Industrials,2026-10-14T04:43:49+00:00
+THC,Tenet Health,Health Care,2026-10-14T04:43:49+00:00
+THG,Hanover Insurance,Financials,2026-10-14T04:43:49+00:00
+THO,Thor Industries,Consumer Discretionary,2026-10-14T04:43:49+00:00
+TKR,Timken,Industrials,2026-10-14T04:43:49+00:00
+TLN,Talen Energy,Utilities,2026-10-14T04:43:49+00:00
+TNL,Travel + Leisure Co.,Consumer Discretionary,2026-10-14T04:43:49+00:00
+TOL,Toll Brothers,Consumer Discretionary,2026-10-14T04:43:49+00:00
+TOST,"Toast, Inc.",Financials,2026-10-14T04:43:49+00:00
+TREX,Trex,Industrials,2026-10-14T04:43:49+00:00
+TRU,TransUnion,Industrials,2026-10-14T04:43:49+00:00
+TTC,Toro,Industrials,2026-10-14T04:43:49+00:00
+TTEK,Tetra Tech,Industrials,2026-10-14T04:43:49+00:00
+TTMI,TTM Technologies,Information Technology,2026-10-14T04:43:49+00:00
+TXNM,TXNM Energy,Utilities,2026-10-14T04:43:49+00:00
+TXRH,Texas Roadhouse,Consumer Discretionary,2026-10-14T04:43:49+00:00
+UBSI,United Bankshares,Financials,2026-10-14T04:43:49+00:00
+UFPI,UFP Industries,Industrials,2026-10-14T04:43:49+00:00
+UGI,UGI Corp,Utilities,2026-10-14T04:43:49+00:00
+ULS,UL Solutions,Industrials,2026-10-14T04:43:49+00:00
+UMBF,UMB Financial Corp.,Financials,2026-10-14T04:43:49+00:00
+UNM,Unum,Financials,2026-10-14T04:43:49+00:00
+USFD,US Foods,Consumer Staples,2026-10-14T04:43:49+00:00
+UTHR,United Therapeutics,Health Care,2026-10-14T04:43:49+00:00
+VAL,Valaris,Energy,2026-10-14T04:43:49+00:00
+VC,Visteon,Consumer Discretionary,2026-10-14T04:43:49+00:00
+VFC,VF Corporation,Consumer Discretionary,2026-10-14T04:43:49+00:00
+VIAV,Viavi Solutions,Information Technology,2026-10-14T04:43:49+00:00
+VICR,Vicor Corporation,Industrials,2026-10-14T04:43:49+00:00
+VLY,Valley Bank,Financials,2026-10-14T04:43:49+00:00
+VMI,Valmont Industries,Industrials,2026-10-14T04:43:49+00:00
+VNO,Vornado Realty Trust,Real Estate,2026-10-14T04:43:49+00:00
+VNOM,Viper Energy,Energy,2026-10-14T04:43:49+00:00
+VNT,Vontier,Information Technology,2026-10-14T04:43:49+00:00
+VOYA,Voya Financial,Financials,2026-10-14T04:43:49+00:00
+VVV,Valvoline,Consumer Discretionary,2026-10-14T04:43:49+00:00
+WAL,Western Alliance Bancorporation,Financials,2026-10-14T04:43:49+00:00
+WCC,WESCO International,Industrials,2026-10-14T04:43:49+00:00
+WEX,WEX Inc.,Financials,2026-10-14T04:43:49+00:00
+WFRD,Weatherford International,Energy,2026-10-14T04:43:49+00:00
+WH,Wyndham Hotels & Resorts,Consumer Discretionary,2026-10-14T04:43:49+00:00
+WHR,Whirlpool Corporation,Consumer Discretionary,2026-10-14T04:43:49+00:00
+WING,Wingstop,Consumer Discretionary,2026-10-14T04:43:49+00:00
+WLK,Westlake Corporation,Materials,2026-10-14T04:43:49+00:00
+WMG,Warner Music Group,Communication Services,2026-10-14T04:43:49+00:00
+WMS,Advanced Drainage Systems,Industrials,2026-10-14T04:43:49+00:00
+WPC,W. P. Carey,Real Estate,2026-10-14T04:43:49+00:00
+WSO,Watsco,Industrials,2026-10-14T04:43:49+00:00
+WTFC,Wintrust Financial,Financials,2026-10-14T04:43:49+00:00
+WTRG,Essential Utilities,Utilities,2026-10-14T04:43:49+00:00
+WTS,Watts Water Technologies,Industrials,2026-10-14T04:43:49+00:00
+WWD,"Woodward, Inc.",Industrials,2026-10-14T04:43:49+00:00
+XPO,"XPO, Inc.",Industrials,2026-10-14T04:43:49+00:00
+XRAY,Dentsply Sirona,Health Care,2026-10-14T04:43:49+00:00
+YETI,Yeti Holdings,Consumer Discretionary,2026-10-14T04:43:49+00:00
+ZION,Zions Bancorporation,Financials,2026-10-14T04:43:49+00:00

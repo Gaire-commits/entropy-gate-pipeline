@@ -28,6 +28,7 @@ FROZEN = {
     "sip_e8_scaled_slope.yaml": "d8dd543f53e34235ea03521104aaddaec4bde888ff3b1a9c1747568e9e159433",   # 2026-10-14
     "sip_e9_horizons.yaml": "d677a329be13e31c92095369474cfbff64492b8460ab3e6b211cb7f637ae39ae",       # 2026-10-14
     "sip_e10_holds.yaml": "dbe879df1638da7bb51d0d9e220ebedffda527cfd6b4020198448e22897dcc0a",         # 2026-10-14
+    "sip_e11_midcap.yaml": "232401ca0a48826a29216213686170962594ff487902b306ab8a9af79b175576",        # 2026-10-14
 }
 
 

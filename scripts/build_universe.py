@@ -3,6 +3,7 @@
 
     python scripts/build_universe.py --index sp500
     python scripts/build_universe.py --index nasdaq100
+    python scripts/build_universe.py --index sp400          # mid caps: a second sample of stocks (configs/sip_e11_midcap.yaml)
     python scripts/build_universe.py --holdout nasdaq100     # needs both lists; see below
 
 Writes universe/<index>.csv (symbol, name, sector, fetched_at) and is meant to be
@@ -38,6 +39,7 @@ import _common  # noqa: F401  (puts the repo root on the path for src.holdout)
 SOURCES = {
     "sp500": "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
     "nasdaq100": "https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies",
+    "sp400": "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies",
 }
 
 
@@ -78,7 +80,18 @@ def parse_nasdaq100(tables: list[pd.DataFrame]) -> pd.DataFrame:
                          "sector": raw[_column(raw, "icb industry", "gics sector", "industry", "sector")]})
 
 
-PARSERS = {"sp500": parse_sp500, "nasdaq100": parse_nasdaq100}
+def parse_sp400(tables: list[pd.DataFrame]) -> pd.DataFrame:
+    """The constituents table is the first one with a symbol (or ticker) column and a GICS sector column."""
+    def labels(t):
+        return {str(c).split("[")[0].strip().lower() for c in t.columns}
+
+    raw = next(t for t in tables if labels(t) & {"symbol", "ticker"} and labels(t) & {"gics sector", "sector"})
+    return pd.DataFrame({"symbol": raw[_column(raw, "symbol", "ticker")].astype(str).str.strip(),
+                         "name": raw[_column(raw, "security", "company")],
+                         "sector": raw[_column(raw, "gics sector", "sector")]})
+
+
+PARSERS = {"sp500": parse_sp500, "nasdaq100": parse_nasdaq100, "sp400": parse_sp400}
 
 
 def write_holdout(other: str, out_dir: Path) -> int:
