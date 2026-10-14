@@ -495,6 +495,32 @@ reversal is reported as none.
   52.1 bps, below the largest fifth's 81.5, gave it away). The row was reported, not decisive, and the verdict
   does not use it. It is fixed and tested; that row needs a rerun before it is quoted.
 
+## E8: does a sharper slope confirm E7? (protocol fixed 2026-10-14; not run)
+
+E7's pooled slope weights each stock-moment by the square of its move, so the most volatile ones carry most
+of the weight and most of the noise. E8 (`configs/sip_e8_scaled_slope.yaml`, Colab section 26) asks E7's
+question with a sharper instrument. Each move and its later return are divided by the stock's own
+volatility (its last 60 five-minute returns, known at the signal bar), and the later return is limited to
+its 1%–99% range within each moment. Groups are still cut on the size of the move, as in E7.
+
+**How it was chosen.** On synthetic data only, before any such number was computed on real bars:
+- **Dropped:** the first idea, the laggards' return minus the leaders' over the average gap. It was no
+  sharper than E7's slope for this comparison.
+- **Kept:** the volatility-scaled slope. With volatility differing across stocks it halved the standard
+  error of the difference (0.48% against 0.97%) and stayed unbiased over 24 uniform-reversal seeds (mean
+  −0.08%; its 99% interval covered zero every time).
+
+**The rule, in order:**
+1. The scaled slope over all stock-moments must be above zero at 99%.
+2. Largest minus smallest third at 99%:
+   - above zero: go on to step 3;
+   - below zero: **contradicted**;
+   - includes zero: **not confirmed**.
+3. The difference must be positive in both halves. It is **confirmed in both halves** if each half's own
+   95% interval is above zero, and **confirmed** otherwise.
+
+It is the same data as E7: a sharper instrument, not a second sample.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -1071,11 +1097,12 @@ The response so far:
 | 2026-10-14 | E6 result: permutation entropy does not condition the reversal (+0.0001 [−0.0018, +0.0020]); volatility leans stronger (t 3.1, reported only) |
 | 2026-10-14 | E7 (the reversal as a slope, by size of move) built and pre-registered |
 | 2026-10-14 | E7 result: not uniform, a larger share recovered after large moves (+1.12% [+0.05%, +2.49%]); passes its rule by a thin margin. A bug in a reported row found and fixed |
+| 2026-10-14 | E8 (E7's question with a volatility-scaled, winsorized slope) built and pre-registered; not run |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Firm up E7 with a slope that limits extreme values (registered before running), and rerun E7's script for the corrected largest-tenth row.
+2. Run E8 (Colab section 26), and rerun E7's script for its corrected largest-tenth row.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.

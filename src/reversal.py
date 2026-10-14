@@ -157,7 +157,8 @@ def verdict(single: dict, matched: dict, early: dict, late: dict) -> dict:
 # ------------------------------------------------------------------ E7: the reversal as a slope
 
 def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3, min_peers: int = 20,
-                   n_boot: int = 2000, seed: int = 0, level: float = 0.99, precut: bool = False) -> dict:
+                   n_boot: int = 2000, seed: int = 0, level: float = 0.99, precut: bool = False,
+                   scale: str | None = None, winsor: float | None = None) -> dict:
     """The share of a stock's lag that it recovers, in each group of `by` (thirds by default).
 
     E6 measured the reversal as a correlation, and a correlation is larger wherever the signal
@@ -167,20 +168,35 @@ def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3
     lagged. Sums are pooled over a day and days are resampled together for every group, so the
     difference between the top and the bottom group is paired.
 
-    Returns the slope per group with its interval, and `diff` (top minus bottom) with its interval,
-    standard error and `detectable` (the difference this data would see at this level, 80% of the time).
+    `scale` (E8) names a column, the stock's own volatility known at the signal bar, by which both the
+    move and the later return are divided first. For a uniform reversal the slope is unchanged, but
+    every stock-moment then carries the same amount of noise, so volatile stocks no longer drown the
+    rest (weighted least squares with weights 1 / volatility^2). `winsor` then limits the (scaled)
+    forward return to its [winsor, 1 - winsor] quantiles within each moment, against fat tails.
+    Groups are always cut on the unscaled `by`.
 
     With `precut`, `by` already holds the group number (0 .. groups - 1) and is used as it is. Without
     it the groups are equal-sized cuts of `by` within each moment, which is wrong for a column that
     is itself a label: cutting a 0/1 flag into two halves does not separate the 1s from the 0s.
+
+    Returns the slope per group with its interval, and `diff` (top minus bottom) with its interval,
+    standard error and `detectable` (the difference this data would see at this level, 80% of the time).
     """
-    cols = MOMENT + ["signal", "ret"] + ([by] if by else [])
+    cols = list(dict.fromkeys(MOMENT + ["signal", "ret"] + ([by] if by else []) + ([scale] if scale else [])))
     f = frame.dropna(subset=cols)[cols].copy()
-    g = f.groupby(MOMENT)["ret"]
-    f = f[g.transform("size") >= min_peers]
+    if scale:
+        f = f[f[scale] > 0]
+    f = f[f.groupby(MOMENT)["ret"].transform("size") >= min_peers]
     if f.empty:
         return {"days": 0}
-    f["rel"] = f["ret"] - f.groupby(MOMENT)["ret"].transform("mean")
+    x = f["signal"].astype(float)
+    y = f["ret"].astype(float) - f.groupby(MOMENT)["ret"].transform("mean")
+    f["_abs"], f["_sq"] = x.abs(), x ** 2                                     # the move itself, before any scaling
+    if scale:
+        x, y = x / f[scale].astype(float), y / f[scale].astype(float)
+    if winsor:
+        g = y.groupby([f[k] for k in MOMENT])
+        y = y.clip(g.transform("quantile", winsor), g.transform("quantile", 1 - winsor))
     if by and precut:
         f["_g"] = f[by].astype(int)
     elif by:
@@ -188,7 +204,7 @@ def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3
         f["_g"] = np.minimum((groups * (f.groupby(MOMENT)[by].rank(method="first") - 0.5) / n).astype(int), groups - 1)
     else:
         groups, f["_g"] = 1, 0
-    f["sxy"], f["sxx"] = f["signal"].astype(float) * f["rel"], f["signal"].astype(float) ** 2
+    f["sxy"], f["sxx"] = x * y, x ** 2
     day = f.groupby(["date", "_g"])[["sxy", "sxx"]].sum().unstack("_g").fillna(0.0)
     sxy, sxx = day["sxy"].to_numpy(), day["sxx"].to_numpy()                   # (days, groups)
     rng = np.random.default_rng(seed)
@@ -196,10 +212,12 @@ def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3
     boot = sxy[idx].sum(axis=1) / sxx[idx].sum(axis=1)                        # (n_boot, groups)
     tail = 100 * (1 - level) / 2
     slopes = sxy.sum(axis=0) / sxx.sum(axis=0)
+    by_group = f.groupby("_g")
     out = {"slope": slopes.tolist(), "lo": np.percentile(boot, tail, axis=0).tolist(),
            "hi": np.percentile(boot, 100 - tail, axis=0).tolist(), "days": int(len(day)), "rows": int(len(f)),
-           "n": f.groupby("_g").size().to_numpy().tolist(),
-           "typical_move_bps": (1e4 * np.sqrt(sxx.sum(axis=0) / f.groupby("_g").size().to_numpy())).tolist()}
+           "n": by_group.size().to_numpy().tolist(),
+           "mean_move_bps": (1e4 * by_group["_abs"].mean().to_numpy()).tolist(),
+           "typical_move_bps": (1e4 * np.sqrt(by_group["_sq"].mean().to_numpy())).tolist()}
     if groups > 1:
         d = boot[:, -1] - boot[:, 0]
         se = float(d.std())
@@ -221,3 +239,26 @@ def slope_verdict(overall: dict, by_size: dict, early: dict, late: dict) -> dict
     which = "larger" if by_size["diff"] > 0 else "smaller"
     return {"level": f"not uniform: a {which} share is recovered after large moves",
             "reason": "the share recovered differs between the largest and smallest moves at 99%, with the same sign in both halves"}
+
+
+def confirm_verdict(overall: dict, by_size: dict, early: dict, late: dict) -> dict:
+    """The rule in configs/sip_e8_scaled_slope.yaml: does a sharper slope confirm E7's narrow pass?
+
+    `early` and `late` carry 95% intervals."""
+    if not overall.get("lo", [np.nan])[0] > 0:
+        return {"level": "no reversal with the sharper slope", "reason": "the share recovered is not above zero at 99%"}
+    if by_size.get("diff_hi", np.nan) < 0:
+        return {"level": "contradicted: a smaller share is recovered after large moves",
+                "reason": "the sharper slope finds the opposite of E7 at 99%"}
+    if not by_size.get("diff_lo", np.nan) > 0:
+        return {"level": "not confirmed",
+                "reason": "with the sharper slope the share recovered after large moves is not distinguishable from "
+                          "the share after small ones; E7's narrow pass does not hold up"}
+    if not (early.get("diff", np.nan) > 0 and late.get("diff", np.nan) > 0):
+        return {"level": "not stable", "reason": "the difference is not positive in both halves of the history"}
+    if early.get("diff_lo", np.nan) > 0 and late.get("diff_lo", np.nan) > 0:
+        return {"level": "confirmed in both halves",
+                "reason": "a larger share is recovered after large moves at 99% overall and at 95% in each half"}
+    return {"level": "confirmed",
+            "reason": "a larger share is recovered after large moves at 99% overall, positive in both halves "
+                      "though not separately clear in each"}

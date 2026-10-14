@@ -361,6 +361,12 @@ a correlation is larger wherever the signal varies more against the same noise.
 pooled by day) and compares it between the largest and smallest third of moves. A test shows the trap
 directly: on a uniform reversal the IC comparison finds a difference and the slope does not.
 
+E7 passed narrowly, and its pooled slope is a blunt instrument: it weights each stock-moment by the square
+of its move. E8 (`configs/sip_e8_scaled_slope.yaml`, same script) asks the same question with a sharper
+one. Each move and its later return are divided by the stock's own volatility, and the later return is
+winsorized within each moment. On synthetic data with volatility differing across stocks this halves the
+uncertainty and stays unbiased. It uses the same data as E7, so it is not a second sample.
+
 ## Data feeds: SIP is the headline from 2026-10-09
 
 The pipeline started on Alpaca's IEX feed. IEX prints a bar only when a trade happened on IEX, so about

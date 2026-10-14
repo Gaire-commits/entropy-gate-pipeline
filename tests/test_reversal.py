@@ -217,3 +217,101 @@ def test_a_flag_is_used_as_the_group_it_names_not_cut_into_equal_halves():
     assert right["typical_move_bps"][1] > fifths["typical_move_bps"][-1]      # a tenth is more extreme than a fifth
     wrong = slope_by_group(frame.assign(decile=flag), "decile", 2, n_boot=100)
     assert wrong["n"][1] > 0.45 * len(frame)                                  # what the report did
+
+
+# ---------------------------------------------------------------- E8: the sharper, volatility-scaled slope
+
+from src.reversal import confirm_verdict  # noqa: E402
+
+
+def _uneven(kind="uniform", days=100, per_day=6, n=200, seed=0):
+    """Like _moves, but stocks differ in volatility, and both the move and the later return scale with
+    it (as in real data). `vol` is a noisy reading of that volatility, known beforehand."""
+    rng = np.random.default_rng(seed)
+    m = days * per_day
+    d, s = np.repeat(np.arange(m), n), np.tile(np.arange(n), m)
+    sigma = np.exp(0.6 * rng.normal(size=m * n))
+    signal = 1e-3 * sigma * rng.standard_t(5, m * n)
+    big = np.abs(signal) > np.quantile(np.abs(signal), 0.6)
+    b = {"uniform": 0.02, "large": np.where(big, 0.05, 0.0), "small": np.where(big, 0.0, 0.3), "none": 0.0}[kind]
+    ret = b * signal + 3e-4 * sigma * rng.standard_t(3, m * n) + 5e-4 * rng.normal(size=m)[d]
+    return pd.DataFrame({"date": pd.Timestamp("2022-01-03") + pd.to_timedelta(d // per_day, unit="D"),
+                         "bar_index": 6 * (d % per_day + 1), "symbol": s.astype(str), "signal": signal, "ret": ret,
+                         "size": np.abs(signal), "vol": sigma * np.exp(0.2 * rng.normal(size=m * n))})
+
+
+SHARP = dict(scale="vol", winsor=0.01)
+
+
+def _confirm(frame):
+    overall = slope_by_group(frame, by=None, n_boot=400, **SHARP)
+    by_size = slope_by_group(frame, n_boot=400, **SHARP)
+    half = frame["date"] < frame["date"].unique()[len(frame["date"].unique()) // 2]
+    early = slope_by_group(frame[half], n_boot=200, level=0.95, **SHARP)
+    late = slope_by_group(frame[~half], n_boot=200, level=0.95, **SHARP)
+    return overall, by_size, confirm_verdict(overall, by_size, early, late)
+
+
+def test_scaling_by_volatility_keeps_the_slope_and_cuts_the_noise():
+    frame = _uneven("uniform")
+    plain, sharp = slope_by_group(frame, n_boot=400), slope_by_group(frame, n_boot=400, **SHARP)
+    assert slope_by_group(frame, by=None, n_boot=100, **SHARP)["slope"][0] == pytest.approx(0.02, abs=0.003)
+    assert sharp["diff_se"] < 0.7 * plain["diff_se"]
+    assert sharp["diff_lo"] < 0 < sharp["diff_hi"]
+    assert sharp["mean_move_bps"] == pytest.approx(plain["mean_move_bps"])       # groups are cut on the raw move
+
+
+def test_the_sharper_slope_confirms_contradicts_or_declines_as_the_data_say():
+    assert _confirm(_uneven("large"))[2]["level"].startswith("confirmed")
+    assert _confirm(_uneven("small"))[2]["level"].startswith("contradicted")
+    assert _confirm(_uneven("uniform"))[2]["level"] == "not confirmed"
+    assert _confirm(_uneven("none"))[2]["level"] == "no reversal with the sharper slope"
+
+
+def test_winsorizing_keeps_one_absurd_return_from_deciding_the_slope():
+    frame = _uneven("uniform", days=40)
+    wild = frame.copy()
+    i = wild["size"].idxmax()
+    wild.loc[i, "ret"] = 5.0 * np.sign(wild.loc[i, "signal"])                     # a 500-fold "recovery" in one row
+    plain = [slope_by_group(f, by=None, n_boot=50)["slope"][0] for f in (frame, wild)]
+    sharp = [slope_by_group(f, by=None, n_boot=50, **SHARP)["slope"][0] for f in (frame, wild)]
+    assert abs(plain[1] - plain[0]) > 0.05 and abs(sharp[1] - sharp[0]) < 0.002
+
+
+def test_confirm_verdict_tiers():
+    overall = {"lo": [0.001]}
+    yes, both = {"diff": 0.01, "diff_lo": 0.002, "diff_hi": 0.02}, {"diff": 0.01, "diff_lo": 0.001}
+    weak = {"diff": 0.004, "diff_lo": -0.002}
+    assert confirm_verdict(overall, yes, both, both)["level"] == "confirmed in both halves"
+    assert confirm_verdict(overall, yes, both, weak)["level"] == "confirmed"
+    assert confirm_verdict(overall, yes, both, {"diff": -0.001, "diff_lo": -0.01})["level"] == "not stable"
+    assert confirm_verdict(overall, {"diff": 0.003, "diff_lo": -0.001, "diff_hi": 0.007}, both, both)["level"] == "not confirmed"
+    assert confirm_verdict(overall, {"diff": -0.01, "diff_lo": -0.02, "diff_hi": -0.001}, both, both)["level"].startswith("contradicted")
+    assert confirm_verdict({"lo": [-0.001]}, yes, both, both)["level"] == "no reversal with the sharper slope"
+
+
+def test_scaled_slope_script_runs_end_to_end_and_uses_the_confirmation_rule(tmp_path, monkeypatch):
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "scripts"))
+    import reversal_slope as script
+
+    (tmp_path / "bars" / "5Min").mkdir(parents=True)
+    symbols = [f"S{i:02d}" for i in range(60)]
+    for i, s in enumerate(symbols):
+        grid = bars_from_returns(s, ar_returns(40, 0.0, seed=i), seed=i, start="2024-01-02")
+        grid.drop(columns=["session_id", "bar_index"]).dropna().to_parquet(tmp_path / "bars" / "5Min" / f"{s}.parquet")
+    pd.DataFrame({"symbol": symbols, "sector": "X"}).to_csv(tmp_path / "u.csv", index=False)
+    cfg = yaml.safe_load((root / "configs" / "sip_e8_scaled_slope.yaml").read_text())
+    cfg["data"].update(universe=str(tmp_path / "u.csv"), cache_dir=str(tmp_path / "bars"))
+    cfg["slope"].update(split="2024-02-01")
+    cfg["evaluation"]["bootstrap"] = 100
+    (tmp_path / "c.yaml").write_text(yaml.safe_dump(cfg))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["reversal_slope.py", "--config", "c.yaml"])
+    assert script.main() == 0
+    text = (tmp_path / "outputs" / "sip_e8_scaled_slope" / "slope.md").read_text()
+    assert "**Verdict: NO REVERSAL WITH THE SHARPER SLOPE**" in text
+    assert "divided by the stock's own volatility" in text and "not a second sample" in text
+    assert "largest tenth" in text and "most unusual third" in text

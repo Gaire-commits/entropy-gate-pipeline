@@ -159,3 +159,13 @@ def test_slope_config_measures_the_same_reversal_as_e5_and_e6():
     for key in ("lookback", "hold", "embargo", "stride", "window", "split", "level"):
         assert getattr(e7.slope, key) == getattr(e6.reversal, key), key
     assert e7.slope.by == "size" and e7.slope.groups == 3
+
+
+def test_scaled_slope_config_asks_e7s_question_with_a_sharper_instrument():
+    e8 = load_config(ROOT / "configs" / "sip_e8_scaled_slope.yaml")
+    e7 = load_config(ROOT / "configs" / "sip_e7_slope.yaml")
+    assert vars(e8.data) == vars(e7.data)
+    a, b = vars(e8.slope), vars(e7.slope)
+    assert {k for k in set(a) | set(b) if a.get(k) != b.get(k)} == {"scale", "winsor", "confirm", "half_level", "secondary"} - (
+        set() if a["secondary"] != b["secondary"] else {"secondary"})
+    assert (e8.slope.scale, e8.slope.winsor, e8.slope.confirm, e8.slope.half_level) == ("vol", 0.01, True, 0.95)

@@ -1,0 +1,73 @@
+# E8: does a sharper slope confirm that a bigger share of a large lag is recovered? (src/reversal.slope_by_group)
+#
+# E7 (2026-10-14) passed its rule narrowly: the share recovered in the largest third of moves minus the
+# smallest third was +1.12% [+0.05%, +2.49%] at 99%. Its slope was a blunt instrument. The same reversal has
+# t = 7.5 as a rank correlation and barely clears zero as a pooled slope, because that slope weights each
+# stock-moment by the square of its move and stocks differ widely in volatility, so the most volatile
+# stock-moments carry most of the weight and most of the noise.
+#
+# The sharper slope: divide each move and its later return (relative to the market) by the stock's own
+# volatility, the standard deviation of its last 60 five-minute returns, known at the signal bar. For a
+# uniform reversal the slope is unchanged; every stock-moment then carries the same noise (weighted least
+# squares, weights 1 / volatility^2). The later return is then limited to its 1%-99% range within each
+# moment, against fat tails. Groups are still cut on the size of the move in bps, as in E7.
+#
+# Chosen on synthetic data only, before any such number was computed on real bars. The first idea, the
+# average return of laggards minus leaders over the average gap, was dropped: in simulation it was no
+# sharper than E7's slope for this comparison. With volatility differing across stocks the scaled slope
+# halved the uncertainty of the difference and stayed unbiased (over 24 uniform-reversal seeds the mean
+# difference was -0.08% and its 99% interval covered zero every time).
+#
+# This is the same data as E7: a sharper instrument, not a second sample. Costs play no part.
+#
+# PROTOCOL, fixed before any result (2026-10-14). Applied in this order (src/reversal.confirm_verdict):
+#   1. The scaled slope over all stock-moments must be above zero at 99%. Otherwise NO REVERSAL WITH THE
+#      SHARPER SLOPE.
+#   2. Largest third of moves minus smallest third, 99% day-block interval:
+#        above zero            -> go to step 3;
+#        below zero            -> CONTRADICTED (the opposite of E7);
+#        includes zero         -> NOT CONFIRMED (E7's narrow pass does not hold up).
+#   3. The difference must be positive both before 2020-07-28 and from it. Otherwise NOT STABLE.
+#   4. CONFIRMED IN BOTH HALVES if each half's own 95% interval is above zero; otherwise CONFIRMED.
+# Reported, not decisive: fifths of size, the largest tenth, thirds of how unusual the move is for that
+# stock (size / volatility), thirds of volatility, and the 12-bar lookback / 30-bar hold geometry.
+experiment: sip_e8_scaled_slope
+
+data: {universe: universe/sp500.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+slope:
+  lookback: 6
+  hold: 6
+  embargo: 1
+  stride: 6
+  window: 60
+  by: size
+  groups: 3
+  level: 0.99
+  half_level: 0.95
+  scale: vol
+  winsor: 0.01
+  confirm: true
+  split: "2020-07-28"
+  min_peers: 20
+  secondary: {lookback: 12, hold: 30, stride: 12}
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000
