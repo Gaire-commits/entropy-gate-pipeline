@@ -71,27 +71,31 @@ Do not use "Run all": it reruns every old section.
    minutes difference is +0.0038 [+0.0001, +0.0076] (a hair), all of it in the first hour. A full trading
    day holds less (+0.0053, gross −0.24 bps): an intraday effect. E9's best cell (+0.0151, +0.77 bps) was
    flattered by selection; on comparable moments it is +0.0101, +0.33 bps. The 10:00 signal is strongest.
-6. **No alpha.** Nothing earns a return after costs; the largest amount (+0.41 bps, 4 hours) is about 20% of a
+6. **It replicates on a second sample of stocks (E11).** On 399 S&P MidCap 400 stocks the project had never
+   used, all three registered claims hold: it exists (+0.0051, t 4.0), builds over the first hour (+0.0029
+   [+0.0007, +0.0049]) and does not carry overnight (−0.0054 [−0.0088, −0.0021]). Same strength as in large caps
+   (−0.0012 [−0.0035, +0.0011]): the prediction that less liquid stocks reverse more is not borne out.
+7. **No alpha.** Nothing earns a return after costs; the largest amount (+0.41 bps, 4 hours) is about 20% of a
    2 bps cost.
 
 ### Earlier results (IEX unless noted)
 
-7. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
-8. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
-9. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
-10. **The "confident trades" lead was volatility.**
-11. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
+8. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
+9. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
+10. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
+11. **The "confident trades" lead was volatility.**
+12. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
    stock-level skill.
-12. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
-13. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
-14. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
+13. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
+14. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
+15. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
     Mar–May 2025; volatility-scaled costs would exceed it.
-15. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
+16. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
     conditional edge. Detection limit for a simple edge about IC 0.015.
 
 ## Unfinished
 
-1. **Decide the direction.** E8, E9 and E10 are recorded. The reversal is characterised: real as an ordering,
+1. **Decide the direction.** E8 to E11 are recorded; the reversal replicated on mid caps (E11). The reversal is characterised: real as an ordering,
    completes in about an hour, lasts to 4 hours, gone by the next day, and worth under half a basis point. Options: a
    second sample (another universe or period), the volume-conditioning test, or write up. The reversal is real as an ordering and negligible as an
    amount. Options: a second sample for it (another universe or period; E6–E8 share one dataset), the

@@ -19,6 +19,9 @@ use the IEX feed.
   same question with an instrument twice as sharp and did not confirm it: +0.07% [−0.55%, +0.67%]. Over all
   stock-moments the share recovered is +0.28% [−0.06%, +0.64%]: a reliable ordering (laggards tend to do
   better), worth under a tenth of a basis point.
+- **It replicates on 399 mid caps the project had never touched (E11).** All three registered claims hold: it
+  exists (+0.0051, t 4.0), it builds over the first hour, and it does not carry overnight. It is no stronger in
+  mid caps than in large caps (−0.0012 [−0.0035, +0.0011]).
 - **There is no alpha here.** Nothing in this project earns a return after costs: the one real pattern is
   about +0.12 bps gross per position against a cost of 2 bps or more.
 - **Permutation entropy does not say when that reversal is stronger (E6).** Given a real pattern to condition,
@@ -663,7 +666,7 @@ square-root-of-time scaling would give. Costs decide nothing.
   first hour. The largest, +0.41 bps with an interval that includes zero, is about 20% of a 2 bps cost.
 - **Same data as E5–E9.** Each registered test here reuses one dataset, so these are not independent samples.
 
-## E11: the reversal in a second sample of stocks, the S&P MidCap 400 (protocol fixed 2026-10-14; not run)
+## E11: the reversal in a second sample of stocks, the S&P MidCap 400 (protocol fixed 2026-10-14)
 
 E5 to E10 used the same 503 stocks over the same years, so they are one sample. E11
 (`configs/sip_e11_midcap.yaml`, Colab section 29) takes E10's signal, moments and holds to companies the
@@ -685,6 +688,38 @@ halves. The S&P 500 is recomputed in the same run. Costs decide nothing; mid cap
 not tested. Today's mid-cap list is applied back to 2016, so survivorship bias applies as before.
 The mid-cap list (400 stocks, 11 GICS sectors, fetched 2026-10-14) shares one stock with the S&P 500 list (CTVA),
 which stays in the S&P 500 sample only.
+
+### Result (2026-10-14, SIP, 399 mid caps, 3.5 million stock-moments per hold): replicates in full
+
+| claim | S&P 500 (E10) | mid caps |
+|---|---|---|
+| a. 30-minute IC with t ≥ 3 | +0.0063, t 4.2 | **+0.0051, t 4.0** |
+| b. 1 hour minus 30 minutes, IC [99%] | +0.0035 [+0.0013, +0.0062] | **+0.0029 [+0.0007, +0.0049]** |
+| c. a full day minus 4 hours, IC [99%] | −0.0047 [−0.0087, −0.0005] | **−0.0054 [−0.0088, −0.0021]** |
+
+| hold | mid caps: IC [95%] | t | gross bps | S&P 500, this run: IC | t | gross bps |
+|---|---|---:|---:|---|---:|---:|
+| 30 minutes | +0.0051 [+0.0027, +0.0076] | 4.0 | +0.04 | +0.0063 | 4.2 | +0.07 |
+| 1 hour | +0.0081 [+0.0054, +0.0106] | 6.0 | +0.21 | +0.0098 | 6.4 | +0.30 |
+| 2 hours | +0.0093 [+0.0066, +0.0118] | 7.1 | +0.29 | +0.0101 | 6.7 | +0.33 |
+| 4 hours | +0.0104 [+0.0079, +0.0130] | 8.1 | +0.56 | +0.0099 | 6.5 | +0.41 |
+| a full day | +0.0052 [+0.0024, +0.0078] | 3.7 | −0.21 | +0.0053 | 3.3 | −0.24 |
+
+- **Replication: replicates in full.** All three claims hold on 399 stocks the project had never used: the
+  reversal exists at 30 minutes, it builds over the first hour, and a full day carries less than 4 hours. It is
+  the project's first result confirmed on an independent sample of stocks.
+- **Size: the same in mid caps and large caps.** Mid-cap minus S&P 500 at 30 minutes, −0.0012 [−0.0035,
+  +0.0011] at 99% over 2,709 days. The literature's prediction that less liquid stocks reverse more is not borne
+  out here; if anything mid caps are slightly weaker since 2020-07-28 (−0.0028 [−0.0053, −0.0003] at 95%; before
+  it +0.0010). No hold differs between the two samples at 99%.
+- **The shape is the same in both,** with one difference: in mid caps the IC is still rising at 4 hours
+  (+0.0104, t 8.1), where in the S&P 500 it levels off after 1 hour.
+- **The S&P 500 recomputed in this run matches E10 exactly** at every hold, so the comparison uses the same code
+  and days.
+- **Amounts.** The largest gross is +0.56 bps (mid caps, 4 hours). Mid caps cost more to trade than large caps,
+  so the gap to costs is wider, not narrower.
+- **Limits.** A second sample of stocks over the same years, not a second period. Today's mid-cap list applied
+  back to 2016 (survivorship bias).
 
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
@@ -1268,12 +1303,13 @@ The response so far:
 | 2026-10-14 | E9 result: the same strength at every horizon by the 99% rule (+0.0047 [−0.0004, +0.0102]); IC rises with the hold in every row of the grid; best cell (30-minute lookback, 2-hour hold) IC +0.0151, +0.77 bps gross |
 | 2026-10-14 | E10 (the same signal held 30 minutes to a full day, on the same moments) built and pre-registered |
 | 2026-10-14 | E10 result: 4 hours keeps growing vs 30 minutes by a hair (+0.0038 [+0.0001, +0.0076]), all of it in the first hour; a full day does not. IC about 0.0100 from 1 to 4 hours; E9's best cell was flattered |
-| 2026-10-14 | E11 (the reversal in a second sample of stocks, the S&P MidCap 400) built and pre-registered; not run |
+| 2026-10-14 | E11 (the reversal in a second sample of stocks, the S&P MidCap 400) built and pre-registered |
+| 2026-10-14 | E11 result: replicates in full on 399 mid caps the project never used; the same strength as in large caps (−0.0012 [−0.0035, +0.0011]) |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Run E11 (Colab section 29): the reversal in a second sample of stocks, the S&P MidCap 400. Fetch the mid-cap bars first (hours).
+2. The reversal is characterised and replicated on a second sample of stocks. What is left untested is a second period; the free SIP history is used up, so that needs other data or a forward period.
 3. Decide whether to keep building on the reversal: it is real as an ordering (t 7.5) and under a tenth of a basis point as an amount. A second sample (another universe or period) would be the next honest test; E6–E8 all use the same data.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
