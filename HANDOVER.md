@@ -75,17 +75,17 @@ Do not use "Run all": it reruns every old section.
 
 ### Earlier results (IEX unless noted)
 
-6. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
-7. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
-8. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
-9. **The "confident trades" lead was volatility.**
-10. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
+7. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
+8. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
+9. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
+10. **The "confident trades" lead was volatility.**
+11. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
    stock-level skill.
-11. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
-12. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
-13. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
+12. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
+13. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
+14. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
     Mar–May 2025; volatility-scaled costs would exceed it.
-14. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
+15. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
     conditional edge. Detection limit for a simple edge about IC 0.015.
 
 ## Unfinished
