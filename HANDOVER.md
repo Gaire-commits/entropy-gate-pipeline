@@ -1,215 +1,152 @@
 # Handover
 
-Written 2026-10-08. A snapshot to restart work from, for Kshitiz or for a new Claude session.
+Updated 2026-10-14. A snapshot to restart work from, for Kshitiz or for a new Claude session.
 [RESULTS.md](RESULTS.md) is the full record of results and [README.md](README.md) explains how
 everything works; this file is the short version, plus what is unfinished.
 
 ## The project in one paragraph
 
-A thesis pipeline (Kshitiz Gaire, Fordham). It asks whether permutation entropy can pick out predictable
-periods in 5-minute price bars well enough to trade them after costs. Data: Alpaca's free IEX 5-minute bars
-from July 2020. It tests a model ladder (rules, logistic regression, gradient-boosted trees, CNN1D, ResNet1D,
-InceptionTime, ResNet2D, plus versions with entropy inputs), using walk-forward validation (15 quarterly
-folds, 940+ test days) and day-block bootstrap intervals. On top sit an RL decision engine and an online RL
-agent. Universes: SPY, 12 sector ETFs, the S&P 500, 37 cross-asset ETFs, and a Nasdaq-100 hold-out.
+A thesis pipeline (Kshitiz Gaire, Fordham). It began by asking whether permutation entropy can pick out
+predictable periods in 5-minute price bars well enough to trade them after costs. It tested a model ladder
+(rules, logistic regression, gradient-boosted trees, four deep architectures, versions with entropy
+inputs), an RL decision engine and an online RL agent, on SPY, sector ETFs, the S&P 500, cross-asset ETFs
+and a Nasdaq-100 hold-out. Nothing beat costs and entropy added nothing. On 2026-10-13 a control inside the
+lead-lag test turned up the first real pattern, a short-term reversal. The research now builds on that
+pattern and is judged on whether structure exists and when it is stronger, not on whether it pays.
 
 ## Where everything is
 
 | What | Where |
 |---|---|
 | Code | `~/entropy-gate-pipeline`, GitHub `Gaire-commits/entropy-gate-pipeline` (private), branch `main` |
-| Tests | 287 pass (`python3 -m pytest -q`, about 2 min). `tests/test_frozen.py` fails if a pre-registered config is edited |
-| Bars and outputs | Google Drive: `My Drive/entropy-gate-pipeline-data/{data,outputs}`. Not on this Mac and never committed |
-| Runner | `notebooks/colab.ipynb` on Colab Pro. Cells 1–3 mount Drive, pull the code and link `data/` and `outputs/` to Drive |
-| Reading results | Kshitiz runs a Colab section; Claude reads `outputs/<experiment>/*.md` from Drive through the Google Drive connector (`search_files`, then `read_file_content`) |
+| Tests | 348 pass (`python3 -m pytest -q`, about 3 min). `tests/test_frozen.py` fails if a pre-registered config is edited |
+| Bars | Google Drive, `My Drive/entropy-gate-pipeline-data/data`. `bars/` is IEX (from July 2020); `bars_sip/` is SIP (503 stocks, 2016-01-04 to 2026-10-12, 98–99.7% of slots filled). Never committed |
+| Outputs | Drive, `.../outputs/<experiment>/`. Claude reads the `.md` reports through the Google Drive connector |
+| Runner | `notebooks/colab.ipynb` on Colab Pro. Sections 1–3 mount Drive, pull the code and link `data/` and `outputs/` |
 
-**Colab runtime:** use CPU with High-RAM for anything on the S&P 500 (trees, engine, breadth, online agent).
-Use a GPU only for the deep models.
+**Colab runtime:** CPU with High-RAM for everything on the S&P 500. A GPU only for the deep models.
+
+**Data feed:** SIP is the headline dataset since 2026-10-09; IEX results are the robustness appendix. The two
+feeds must never share a cache folder, and the fetch refuses to overwrite one with the other.
 
 **Notebook sections:**
 
 | Section | What it runs |
 |---|---|
-| 4 | Checks |
-| 5 | Download bars |
-| 6–8 | SPY and ETFs |
-| 10 | S&P 500 |
-| 11 | Decision engine |
-| 12 | Entropy as features |
-| 13 | Selective trading |
-| 14 | Breadth |
-| 15 | Cross-asset |
-| 16 | Nasdaq-100 hold-out |
-| 17 | Skill checks and replication |
-| 18 | Online agent |
-| 19 | E1: the volatile-moment lead |
-| 20 | E2: model or signal |
-| 21 | SIP feed check and fetch |
-| 22 | SIP reruns with the existing rules |
-| 9 | All results |
+| 4–8 | Checks, download, SPY and ETFs (IEX) |
+| 10–15 | S&P 500, engine, entropy features, selective, breadth, cross-asset (IEX) |
+| 16–17 | Nasdaq-100 hold-out, skill checks, replication (IEX) |
+| 18 | Online agent (IEX) |
+| 19–20 | E1 volatile-moment lead, E2 model or signal (IEX) |
+| 21 | SIP feed check and fetch (done) |
+| 22 | SIP reruns of the sweep, E1, E2, hold-out, replication (**not validly done**, see below) |
+| 23 | E5 lead-lag |
+| 24 | E6 entropy and the reversal |
+| 25 | E7 the reversal as a slope |
+| 26 | E8 the sharper slope |
+| 9 | All results (old summaries only) |
 
-## Where things stand
+Do not use "Run all": it reruns every old section.
 
-**The latest run is not recorded yet.** Section 18 (the online agent) finished on 2026-10-07. Its result is
-below and on Drive, but **not yet in RESULTS.md**. Everything before it is recorded and pushed.
+## Findings
 
-### Findings so far
+### The main positive result (SIP, 2016–2026, 503 stocks, 13.9 million stock-moments)
 
-1. **Nothing beats trading costs.** This holds on SPY, the 12 sector ETFs at two horizons, the S&P 500 and
-   37 cross-asset ETFs, for every model and rule at a 1–2 bps round trip. The best gross return is about
-   +1 bps per trade.
-2. **Model complexity buys nothing.** No deep model is the best row anywhere. Trees are not clearly better
-   than logistic regression.
-3. **Entropy adds nothing in any of three roles:**
-   - As a gate: 7 of 93 comparisons are "significant", about the 5 chance would give, and 4 of the 7 point the
-     wrong way.
-   - As model inputs: −0.45 to +0.27 bps, with no consistent sign.
-   - As engine inputs: more trading and bigger losses.
+1. **A real short-term reversal (E5).** A stock that lagged the market over the last 30 minutes recovers a
+   little over the next 30: cross-sectional IC +0.0064 [+0.0047, +0.0080], t = 7.5, positive in both halves
+   and in 8 of 11 years. Tiny in money terms: +0.12 bps gross per position.
+2. **A stock's sector adds nothing to it (E5).** The registered lead-lag signal worked no better with real
+   sectors than with shuffled ones (difference −0.0008 [−0.0016, −0.0000]). Verdict: own reversal, not
+   lead-lag.
+3. **Permutation entropy does not say when it is stronger (E6).** The reversal's IC is the same in every third
+   of entropy: +0.0001 [−0.0018, +0.0020] at 99%, and zero among stocks of similar volatility. The cleanest
+   test the gate idea has had, and a null. Volatility leans stronger (t 3.1), reported only.
+4. **It follows large moves (E7, passed narrowly).** As a slope (share of the lag recovered): +0.75% in the
+   largest fifth of moves, about zero in the other four; largest minus smallest third +1.12% [+0.05%, +2.49%]
+   at 99%. The first registered rule to pass in full. Thin: neither half clears zero alone, and the 1-hour /
+   2.5-hour geometry does not show it.
 
-   A likely reason: ordinal patterns of 5-minute returns are nearly blind to slow drift.
-4. **The "trade only confident signals" lead was volatility.** Picking the most volatile moments, with no
-   model at all, does as well. A side finding remains unchecked: +15.21 bps gross on the S&P 500's most
-   volatile 2% of moments, mostly long.
-5. **Diversification was an illusion.** 768 S&P 500 trades a day were 7–14 independent bets. With the market
-   removed, direction-trained models have a cross-sectional IC of about 0. The data could have detected an IC
-   of 0.0075, and a profitable book needs 0.0154.
-6. **The Nasdaq-100 hold-out was a null by its pre-registered rule.** A tree model trained to beat peers on
-   418 S&P 500 stocks ranked the 85 unseen Nasdaq-100 stocks above chance (IC +0.0141, t 3.37). Its book made
-   +1.47 bps gross and −0.53 net.
-7. **That skill did not replicate.** On the 416 training stocks, scored out of time, the IC was +0.0005
-   (t 0.2) and the timing IC −0.0055. On the 85, the IC is mostly a fixed preference for certain stocks;
-   timing is +0.0019 (t 0.4). Survivorship in today's index lists can produce exactly that.
-8. **The RL decision engine finds nothing.** It stays flat on the ETFs. On the raw S&P 500 it first collapsed
-   into always-long; that was fixed with market-neutral rewards, after which it also stays flat.
-9. **The online agent (section 18) is a null.** Details below; this result is unrecorded.
+### Earlier results (IEX unless noted)
 
-### Online agent result (Drive: `outputs/online_sp500/online.md` and `online_nasdaq100_in_sp500.md`)
+5. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
+6. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
+7. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
+8. **The "confident trades" lead was volatility.**
+9. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
+   stock-level skill.
+10. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
+11. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
+12. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
+    Mar–May 2025; volatility-scaled costs would exceed it.
+13. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
+    conditional edge. Detection limit for a simple edge about IC 0.015.
 
-4,631 signal moments from 2020-07-28 to 2026-10-06. The replay check on 40 real stocks passed: all 106,210
-batch samples were reproduced exactly (window difference 5.1e-08, return difference 0).
+## Unfinished
 
-Net bps per opportunity, flat counted as zero, market-neutral, 2 bps per position:
-
-| Run | Greedy net [95% CI] | Trades | Explore | Frozen | Placebo mean (runs) | p |
-|---|---|---:|---:|---:|---|---:|
-| **full + entropy (main)** | **−0.73** [−1.14, −0.35] | 42% | −0.84 | −0.69 | −0.31 (19) | 1.00 |
-| bandit + entropy | −0.58 [−0.92, −0.25] | 44% | −0.74 | −0.99 | −0.78 (4) | 0.20 |
-| bandit, no entropy | −0.32 [−0.59, −0.06] | 24% | −0.34 | −0.99 | −0.54 (4) | 0.20 |
-
-- **Exploration and drift.** Mean entropy was 0.50 / 0.50 / 0.15 nats (target 0.5). The drift detector
-  never fired in any run.
-- **The 85 Nasdaq-100 stocks** (scored only; the agent learned from all stocks):
-  - Main run: −0.51 [−1.10, +0.07].
-  - Bandit without entropy: +0.08 [−0.47, +0.64]. That is not a finding: 4 placebos and many looks.
-  - The main run's greedy book was negative every year, worst in 2023 (−1.17).
-- **Reading.** A null by the protocol in `configs/online_sp500.yaml`. Gross is about +0.1 bps per
-  opportunity, against about 0.8 bps of cost at a 42% trade rate.
-- **Real lost more than all 19 placebos.** A guess at why: a tiny real edge keeps the agent trading, while in
-  the placebo it may learn to trade less. **Not checked**: the report does not show the placebos' trade rate.
-- **Exploration only pays when there is a signal to rediscover.** In the synthetic test where a signal flips
-  sign, entropy control recovers it (+1.6 to +3.0 bps) and no entropy fails (−3.4 to −0.03). On real data,
-  where there is no signal, the agent with no entropy bonus lost least because it traded least.
-
-## Unfinished: do these next
-
-0. **Switch to the SIP feed, then rerun.** Decided 2026-10-09, before any SIP result: SIP (consolidated)
-   is the headline dataset, and IEX results become the appendix. See RESULTS.md, "Data: SIP becomes the
-   headline feed".
-   - **Section 21:** `feed_check.py` first. Read `outputs/feed_check.md` to confirm the account serves SIP
-     from 2016. Then the fetch into `data/bars_sip`, about 1–2 hours.
-   - **Section 22:** screen and sweep, E1 (untouched period now 2016 to July 2020), E2, hold-out and
-     replication. All use `configs/sip_*.yaml` with the existing rules.
-   - **Never point a SIP config at `data/bars`.** The fetch refuses it (`FeedMismatch`), because it would
-     overwrite the IEX bars behind every earlier result.
-   - **E1 and E2 on IEX ran on 2026-10-08 but aren't recorded in RESULTS.md yet:**
-     - E1: not replicated. The rule without a model: +7.70 [−3.03, +18.17] in the test quarters; 57% of the
-       gain came from Mar–May 2025; the stress cost averaged about 8 bps.
-     - E2a: signal-limited. No cell reached t ≥ 3; the default reproduced the replication exactly.
-     - E2b: momentum adequate, interaction not adequate. The detection limit for simple edges is about
-       IC 0.015.
-   - **The agreed plan:**
-     1. SIP reruns.
-     2. A better formulation: longer horizons, residual or market-neutral targets.
-     3. A few economically motivated features, built as explicit interactions, each checked with planted
-        edges.
-     4. Serious tuning only after a signal reproduces.
-
-1. **Record section 18 in RESULTS.md and push.**
-   - Add an "In short" bullet.
-   - Replace "results pending" in the "Online agent on streaming bars" section with the table above.
-   - Add a progress-log row.
-   - Update next step 2.
-2. **Add the placebo runs' trade rate to `scripts/online_replay.py`'s report.** This checks the explanation for
-   "lost more than the placebo".
-3. **Find the 2 missing stocks.** The replication scored 416 of the 418 training stocks; which two are missing
-   is unknown.
-4. **Leave one date label as it is.** `configs/ndx_holdout.yaml` was right; `configs/ndx_replication.yaml` says
-   its rule was fixed 2026-10-08, but the commit (`079f520`) shows 2026-10-07 17:55, before the results.
-   RESULTS.md already notes this. Don't edit the pre-registered configs.
-5. **Then the open list in RESULTS.md "Next steps":**
-   - Check the volatile-moment side finding.
-   - Run `etf_multihour`.
-   - Optionally measure real costs with the IBKR recorder.
-   - Fix the "ETF" wording in the S&P 500 gate table.
-   - Count gate approvals as episodes, not days.
-   - Use point-in-time S&P 500 membership.
-   - Write up.
-
-   The direction agreed so far is to stop adding complexity soon and write up a careful null, together with its
-   methodological findings.
-6. **A live paper feed was discussed but not built.** It would feed Alpaca websocket bars into the same
-   `StreamFeaturizer` and `OnlineAgent`. Only worth it if something survives.
+1. **E8 is running or just finished** (Colab section 26, `outputs/sip_e8_scaled_slope/slope.md`). It asks E7's
+   question with a volatility-scaled, winsorized slope: confirmed, not confirmed, or contradicted. Read it,
+   judge it by `configs/sip_e8_scaled_slope.yaml`, record it. Same data as E7, so it is not a second sample.
+2. **E7's "largest tenth" row was wrong in its first report** (a script bug, fixed and tested). Rerun
+   `scripts/reversal_slope.py --config configs/sip_e7_slope.yaml` before quoting that row. The verdict never
+   used it.
+3. **Section 22 (SIP reruns of the sweep, E2, hold-out, replication) has no valid result.** It first ran on an
+   unfinished fetch (56 of 503 stocks), and a later rerun reused those files. To redo it: run the set-aside
+   cell at the top of section 22 (moves the old files, deletes nothing), then the cells. The screen needs
+   `--workers 0`. Hours. E1 on SIP is valid and recorded.
+4. **Possible next tests on the reversal,** each to be registered before running:
+   - Which large moves reverse: trading volume (heavy-volume moves tend to continue, thin-volume moves to
+     reverse; Campbell, Grossman and Wang 1993; Llorente and co-authors 2002).
+   - A second sample: a different universe or period, since E6–E8 all use the same data.
+5. **Parked, on disk, not committed:** `src/folding.py` and `tests/test_folding.py`, the time-of-day
+   ("pulsar folding") test. Passing, no config, never run.
+6. **Proposed, not built:** thesis figures (the IC summary chart, a test-registry timeline, the planted-edge
+   curve); a cross-stock correlation-entropy figure; a correlation-weighted lead-lag (pointless now that
+   sectors add nothing).
+7. **Small leftovers:** the placebo runs' trade rate in the online report; which 2 of the 418 training stocks
+   were not scored; the "ETF" wording in the S&P 500 gate table.
 
 ## How work is done here
 
-- **Pre-register.** Every new test writes its success rule into the config, with a date, before running.
-  Results are judged only by that rule: no promoting another model, cost or book size afterwards.
+- **Pre-register.** Every test writes its rule into its config, with a date, before running. Results are
+  judged only by that rule. Configs are frozen by hash; a new rule gets a new config.
 - **Controls first.** Every method gets synthetic positive and negative controls in `tests/` before real data.
-  The test names state the guarantee.
+- **Check the instrument before trusting it.** Twice a first idea failed on synthetic data and was dropped
+  (the "sign" slope; a too-narrow episode definition).
 - **Inference by day.** Intervals are day-block bootstraps. Cross-sectional work is market-neutral.
+- **Yardstick since 2026-10-13:** does structure exist, and when is it stronger. Costs are reported and
+  decide no verdict.
 - **Recording loop:**
   1. Kshitiz runs a Colab section and says "check now".
-  2. Claude reads the reports from Drive and explains them plainly.
-  3. On "record", Claude updates RESULTS.md (and README if needed) and commits.
-  4. Claude pushes to `main`. Never force-push.
-- **Commit attribution:** commits end with the `Co-Authored-By` line the session asks for.
-- **Communication:** Kshitiz prefers short, plain-language summaries with the key numbers. "Build on it"
-  means go ahead and implement.
+  2. Claude reads the report from Drive and explains it plainly.
+  3. Claude records it in RESULTS.md, commits and pushes. Never force-push.
+- **Void runs are disclosed,** not hidden (see RESULTS.md, E5 section).
+- **Communication:** short, plain-language summaries with the key numbers. "Build on it" means implement.
 
 ## Hard rules
 
 - **Never handle credentials in chat.** Alpaca keys and the GitHub token live only in the gitignored `.env`
-  or in Colab Secrets. Never print or echo them.
-- **Nothing places orders.** The IBKR tooling is market-data only, and every position here is a paper
-  position.
-- **Keep data out of git.** Data and outputs stay on Drive.
-- **Report what happened.** Every list is today's constituents, so survivorship bias must be disclosed with
-  results. Nulls are reported as nulls.
+  or in Colab Secrets.
+- **Nothing places orders.** The IBKR tooling is market-data only; every position here is a paper position.
+- **Keep data out of git.**
+- **Never edit a pre-registered config.**
+- **Scripts refuse a cache under 90% complete.** Do not work around it.
+- **Survivorship bias is disclosed:** every list is today's constituents, applied back to 2016 on SIP.
 
 ## Map of the code
 
 | File | Role |
 |---|---|
-| `src/data.py` | Alpaca download, cache, fixed 5-minute session grid |
-| `src/features.py` | Causal windows and channels |
-| `src/dataset.py` | Builds the samples |
-| `src/entropy.py` | Permutation entropy and the shuffle test |
-| `src/screening.py` | Nightly gate |
-| `src/entropy_features.py` | Continuous entropy inputs |
-| `src/models.py` | Neural models |
-| `src/ml.py` | Trees |
-| `src/training.py` | Training loop |
-| `src/experiment.py` | Walk-forward sweep, predictions, report |
-| `src/selective.py` | Confidence filtering and volatility placebo |
-| `src/crosssection.py` | Breadth, IC, long-short books, skill decomposition |
-| `src/holdout.py` | Train/trade universes, relative target |
-| `src/engine.py` | Fold-by-fold RL engine (bandit and full feedback, market-neutral) |
-| `src/online.py` | Streaming featurizer, online agent, entropy control, Page-Hinkley drift detector, placebo replay |
+| `src/data.py` | Alpaca download, cache (one feed per folder), fixed 5-minute session grid |
+| `src/features.py`, `src/dataset.py` | Causal windows, channels, samples |
+| `src/entropy.py`, `src/screening.py`, `src/entropy_features.py` | Permutation entropy, the gate, entropy inputs |
+| `src/models.py`, `src/ml.py`, `src/training.py`, `src/experiment.py` | Models, trees, training, walk-forward sweep |
+| `src/selective.py`, `src/crosssection.py`, `src/holdout.py` | Confidence filtering, breadth and IC, hold-out |
+| `src/engine.py`, `src/online.py` | RL engine; streaming featurizer and online agent |
+| `src/volatility_lead.py`, `src/capacity.py` | E1; E2 (learning curve, capacity, planted edges) |
+| `src/feed_compare.py` | IEX against SIP |
+| `src/leadlag.py` | E5: sector lead-lag with a shuffled-sector control |
+| `src/reversal.py` | E6–E8: the reversal by state, and as a slope |
 | `src/ibkr.py`, `src/ibkr_capture.py` | Local market-data recording |
 
-Scripts: `sweep.py`, `summarize.py`, `engine.py`, `selective.py`, `breadth.py`, `skill_checks.py`,
-`online_replay.py`, `build_universe.py`, `fetch_data.py`, `run_screen.py`, `smoke_test.py`. Each script's
-docstring gives its usage.
-
-Configs: `spy_gao`, `etf_gao`, `etf_intraday`, `etf_multihour` (not yet run), `sp500_multihour`,
-`cross_asset_multihour`, `ndx_holdout`, `ndx_replication`, `online_sp500`.
+Each script's docstring gives its usage. Experiments on the reversal: `scripts/leadlag.py`,
+`scripts/reversal.py`, `scripts/reversal_slope.py`.
