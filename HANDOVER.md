@@ -61,31 +61,33 @@ Do not use "Run all": it reruns every old section.
 3. **Permutation entropy does not say when it is stronger (E6).** The reversal's IC is the same in every third
    of entropy: +0.0001 [−0.0018, +0.0020] at 99%, and zero among stocks of similar volatility. The cleanest
    test the gate idea has had, and a null. Volatility leans stronger (t 3.1), reported only.
-4. **It follows large moves (E7, passed narrowly).** As a slope (share of the lag recovered): +0.75% in the
-   largest fifth of moves, about zero in the other four; largest minus smallest third +1.12% [+0.05%, +2.49%]
-   at 99%. The first registered rule to pass in full. Thin: neither half clears zero alone, and the 1-hour /
-   2.5-hour geometry does not show it.
+4. **As an amount it is tiny, and it is not confined to large moves (E7, E8).** E7 passed narrowly (largest
+   minus smallest third of moves, +1.12% [+0.05%, +2.49%] of the lag recovered). E8, the same question with an
+   instrument twice as sharp, did not confirm it: +0.07% [−0.55%, +0.67%]. Over all stock-moments the share
+   recovered is +0.28% [−0.06%, +0.64%] at 99%. So: a reliable ordering, worth under a tenth of a basis point.
+   The rank correlation is about twice what the slope implies; why is not established.
+5. **No alpha.** Nothing earns a return after costs.
 
 ### Earlier results (IEX unless noted)
 
-5. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
-6. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
-7. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
-8. **The "confident trades" lead was volatility.**
-9. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
+6. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
+7. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
+8. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
+9. **The "confident trades" lead was volatility.**
+10. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
    stock-level skill.
-10. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
-11. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
-12. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
+11. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
+12. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
+13. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
     Mar–May 2025; volatility-scaled costs would exceed it.
-13. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
+14. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
     conditional edge. Detection limit for a simple edge about IC 0.015.
 
 ## Unfinished
 
-1. **E8 is running or just finished** (Colab section 26, `outputs/sip_e8_scaled_slope/slope.md`). It asks E7's
-   question with a volatility-scaled, winsorized slope: confirmed, not confirmed, or contradicted. Read it,
-   judge it by `configs/sip_e8_scaled_slope.yaml`, record it. Same data as E7, so it is not a second sample.
+1. **Decide the direction.** E8 is recorded. The reversal is real as an ordering and negligible as an
+   amount. Options: a second sample for it (another universe or period; E6–E8 share one dataset), the
+   volume-conditioning test, or stop adding tests and write up.
 2. **E7's "largest tenth" row was wrong in its first report** (a script bug, fixed and tested). Rerun
    `scripts/reversal_slope.py --config configs/sip_e7_slope.yaml` before quoting that row. The verdict never
    used it.

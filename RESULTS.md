@@ -14,9 +14,13 @@ use the IEX feed.
   a stock's sector adds nothing to it. It is small: +0.12 bps gross per position.
   From 2026-10-13 the research builds on this pattern, and tests are judged on whether structure exists and
   when it is stronger, not on whether it pays. Costs are still reported.
-- **The reversal follows large moves (E7, passed narrowly).** Measured as the share of a lag that is recovered,
-  it is +0.75% in the largest fifth of moves and about zero in the rest; largest minus smallest third is
-  +1.12% [+0.05%, +2.49%] at 99%. The first registered rule to pass in full, by a thin margin.
+- **As an amount the reversal is tiny, and it is not confined to large moves (E7, E8).** E7 passed its rule
+  narrowly (largest minus smallest third of moves, +1.12% [+0.05%, +2.49%] of the lag recovered). E8 asked the
+  same question with an instrument twice as sharp and did not confirm it: +0.07% [−0.55%, +0.67%]. Over all
+  stock-moments the share recovered is +0.28% [−0.06%, +0.64%]: a reliable ordering (laggards tend to do
+  better), worth under a tenth of a basis point.
+- **There is no alpha here.** Nothing in this project earns a return after costs: the one real pattern is
+  about +0.12 bps gross per position against a cost of 2 bps or more.
 - **Permutation entropy does not say when that reversal is stronger (E6).** Given a real pattern to condition,
   the reversal is the same in every third of entropy: difference +0.0001 [−0.0018, +0.0020] at 99%, and zero
   among stocks of similar volatility. It is the cleanest test of the gate idea, and it is a null.
@@ -495,7 +499,7 @@ reversal is reported as none.
   52.1 bps, below the largest fifth's 81.5, gave it away). The row was reported, not decisive, and the verdict
   does not use it. It is fixed and tested; that row needs a rerun before it is quoted.
 
-## E8: does a sharper slope confirm E7? (protocol fixed 2026-10-14; not run)
+## E8: does a sharper slope confirm E7? (protocol fixed 2026-10-14)
 
 E7's pooled slope weights each stock-moment by the square of its move, so the most volatile ones carry most
 of the weight and most of the noise. E8 (`configs/sip_e8_scaled_slope.yaml`, Colab section 26) asks E7's
@@ -520,6 +524,38 @@ its 1%–99% range within each moment. Groups are still cut on the size of the m
    95% interval is above zero, and **confirmed** otherwise.
 
 It is the same data as E7: a sharper instrument, not a second sample.
+
+### Result (2026-10-14, SIP, 503 stocks, 13.8 million stock-moments): E7 is not confirmed
+
+| moves | average move | share recovered [99%] |
+|---|---:|---|
+| every stock-moment | 25.8 bps | +0.28% [−0.06%, +0.64%] |
+| smallest third | 6.0 bps | +0.26% [−0.42%, +0.99%] |
+| middle third | 19.8 bps | +0.07% [−0.45%, +0.57%] |
+| largest third | 51.7 bps | +0.34% [+0.01%, +0.67%] |
+| **largest minus smallest third** | | **+0.07% [−0.55%, +0.67%]** |
+
+- **Verdict by the rule: no reversal with the sharper slope.** The rule stops at step 1: over all stock-moments
+  the share recovered is +0.28% and its 99% interval includes zero. At 95% it would clear zero (about two
+  standard errors).
+- **E7's finding does not hold up.** The instrument is twice as sharp, as the synthetic check predicted: it
+  could detect a difference of 0.83%, against E7's 1.64%. The difference it finds is +0.07% [−0.55%, +0.67%],
+  against E7's +1.12%. Both halves agree (+0.03% and +0.11%). E7's narrow pass is best read as noise in a blunt
+  instrument, and "the reversal follows large moves" is withdrawn as a finding.
+- **What is left of the size pattern (reported).** The largest fifth (+0.40% [+0.10%, +0.71%]) and the largest
+  tenth (+0.48% [+0.17%, +0.78%]) are each above zero while the smaller groups are not, but no registered
+  comparison between groups separates them.
+- **The reversal is real as an ordering and tiny as an amount.** The rank correlation says laggards
+  reliably tend to do better afterwards (IC +0.0064, t = 7.5, three runs on this data). The slope says how much
+  of the gap they make back: about 0.3%, or under a tenth of a basis point on an average 26 bps lag, too little
+  to tell from zero at 99% even with 13.8 million stock-moments.
+- **The two measures do not fully agree, and the reason is not established.** For a straight-line relation
+  the slope and the rank correlation should be of similar size, in simulation too with fat tails; here the
+  rank correlation is about twice the slope. Possible reasons, untested: the relation is not a straight line,
+  or the two weight stocks and moments differently (the scaled slope gives calm stocks, where the reversal
+  looks weaker, as much weight as volatile ones).
+- **Other reported rows:** by how unusual the move is for the stock, +0.12% [−0.41%, +0.66%]; most volatile
+  minus calmest third, +0.13% [−0.28%, +0.55%]; the 1-hour / 2.5-hour geometry, overall +0.24% [−0.52%, +0.91%].
 
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
@@ -1097,12 +1133,13 @@ The response so far:
 | 2026-10-14 | E6 result: permutation entropy does not condition the reversal (+0.0001 [−0.0018, +0.0020]); volatility leans stronger (t 3.1, reported only) |
 | 2026-10-14 | E7 (the reversal as a slope, by size of move) built and pre-registered |
 | 2026-10-14 | E7 result: not uniform, a larger share recovered after large moves (+1.12% [+0.05%, +2.49%]); passes its rule by a thin margin. A bug in a reported row found and fixed |
-| 2026-10-14 | E8 (E7's question with a volatility-scaled, winsorized slope) built and pre-registered; not run |
+| 2026-10-14 | E8 (E7's question with a volatility-scaled, winsorized slope) built and pre-registered |
+| 2026-10-14 | E8 result: E7 not confirmed (+0.07% [−0.55%, +0.67%] with twice the precision); the reversal as an amount is +0.28% [−0.06%, +0.64%] of the lag |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Run E8 (Colab section 26), and rerun E7's script for its corrected largest-tenth row.
+2. Decide whether to keep building on the reversal: it is real as an ordering (t 7.5) and under a tenth of a basis point as an amount. A second sample (another universe or period) would be the next honest test; E6–E8 all use the same data.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.
