@@ -612,7 +612,7 @@ from the size of moves alone. Costs decide nothing.
   the position is held. That is consistent with a slow return of price to value after a liquidity-driven move,
   and it is a reason to test longer holds, not evidence yet.
 
-## E10: does the reversal keep growing the longer it is held? (protocol fixed 2026-10-14; not run)
+## E10: does the reversal keep growing the longer it is held? (protocol fixed 2026-10-14)
 
 E9's grid, reported and not decisive, had the reversal's IC rising with the hold in every row, strongest for
 a 30-minute lookback held 2 hours (+0.0151, t 7.4, +0.77 bps gross), the best of nine cells. E10
@@ -630,6 +630,38 @@ a 30-minute lookback held 2 hours (+0.0151, t 7.4, +0.77 bps gross), the best of
 
 Reported: every hold, each step to the next hold, each signal time, gross and net book bps, and the amount
 square-root-of-time scaling would give. Costs decide nothing.
+
+### Result (2026-10-14, SIP, 503 stocks, about 5.1 million stock-moments per hold)
+
+| hold | IC [95%] | t | book gross bps [95%] | expected from the 30-minute book by size of moves alone |
+|---|---|---:|---|---:|
+| 30 minutes | +0.0063 [+0.0034, +0.0092] | 4.2 | +0.07 [−0.14, +0.28] | +0.07 |
+| 1 hour | +0.0098 [+0.0068, +0.0129] | 6.4 | +0.30 [+0.02, +0.60] | +0.10 |
+| 2 hours | +0.0101 [+0.0071, +0.0129] | 6.7 | +0.33 [−0.03, +0.68] | +0.14 |
+| 4 hours | +0.0099 [+0.0069, +0.0129] | 6.5 | +0.41 [−0.04, +0.86] | +0.20 |
+| a full day | +0.0053 [+0.0022, +0.0084] | 3.3 | −0.24 [−1.15, +0.69] | +0.26 |
+
+- **Verdicts by the rule.** 4 hours against 30 minutes: **keeps growing with the hold**, +0.0038 [+0.0001,
+  +0.0076] at 99%, same sign in both halves (before 2020-07-28 +0.0021 [−0.0022, +0.0065]; from it +0.0050
+  [+0.0008, +0.0091]). A full day against 30 minutes: **does not keep growing**, −0.0010 [−0.0056, +0.0034].
+- **The label overstates what the table shows.** The 4-hour pass is by a hair (the interval starts at
+  +0.0001) and all of it comes from the first step. Step by step (reported, 99%): 1 hour minus 30 minutes
+  +0.0035 [+0.0013, +0.0062]; 2 hours minus 1 hour +0.0003 [−0.0022, +0.0029]; 4 hours minus 2 hours +0.0001
+  [−0.0023, +0.0026]. The IC rises over the first hour and then sits at about 0.0100 through 4 hours.
+- **The reversal is an intraday effect.** The full-day hold has the weakest IC (+0.0053, t 3.3) and a negative
+  gross book (−0.24 bps); a full day minus 4 hours is −0.0047 [−0.0087, −0.0005]. This does not show the
+  reversal reverses overnight: the overnight gap adds noise that dilutes any IC. It shows that holding past
+  the close adds nothing and that the overnight cell does not extend the pattern.
+- **E9's best cell was flattered.** E9 reported +0.0151 and +0.77 bps for a 30-minute lookback held 2 hours,
+  the best of nine. On these four signal times the same lookback and hold gives +0.0101 and +0.33 bps, less
+  than half the amount. The selection caution was warranted.
+- **Signal time (reported).** The 10:00 signal, the first full half-hour after the open, is strongest at every
+  hold (+0.0113 at 30 minutes, +0.0165 at 2 hours, t 5.5). Later signals are weaker (+0.0031 to +0.0065 at 30
+  minutes; +0.0053 to +0.0099 at 2 hours).
+- **The amounts.** The book's gross is 2 to 3 times what square-root scaling of the 30-minute book predicts at
+  1, 2 and 4 hours (+0.30, +0.33, +0.41 against +0.10, +0.14, +0.20), which fits a reversal that grows in the
+  first hour. The largest, +0.41 bps with an interval that includes zero, is about 20% of a 2 bps cost.
+- **Same data as E5–E9.** Each registered test here reuses one dataset, so these are not independent samples.
 
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
@@ -1211,12 +1243,13 @@ The response so far:
 | 2026-10-14 | E8 result: E7 not confirmed (+0.07% [−0.55%, +0.67%] with twice the precision); the reversal as an amount is +0.28% [−0.06%, +0.64%] of the lag |
 | 2026-10-14 | E9 (the reversal at 30 minutes to 2 hours, judged on IC not bps) built and pre-registered |
 | 2026-10-14 | E9 result: the same strength at every horizon by the 99% rule (+0.0047 [−0.0004, +0.0102]); IC rises with the hold in every row of the grid; best cell (30-minute lookback, 2-hour hold) IC +0.0151, +0.77 bps gross |
-| 2026-10-14 | E10 (the same signal held 30 minutes to a full day, on the same moments) built and pre-registered; not run |
+| 2026-10-14 | E10 (the same signal held 30 minutes to a full day, on the same moments) built and pre-registered |
+| 2026-10-14 | E10 result: 4 hours keeps growing vs 30 minutes by a hair (+0.0038 [+0.0001, +0.0076]), all of it in the first hour; a full day does not. IC about 0.0100 from 1 to 4 hours; E9's best cell was flattered |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Run E10 (Colab section 28): longer holds with the lookback kept short, the direction E9's grid pointed in.
+2. The reversal completes within about an hour and holds to 4 hours, and is weakest at 10:00 on a day's later signals. Remaining honest tests would use a second sample (another universe or period); E5–E10 share one dataset.
 3. Decide whether to keep building on the reversal: it is real as an ordering (t 7.5) and under a tenth of a basis point as an amount. A second sample (another universe or period) would be the next honest test; E6–E8 all use the same data.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
