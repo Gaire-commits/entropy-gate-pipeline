@@ -91,9 +91,11 @@ also copies the report to Drive.
 
 - **Start date and fixed length.** No stopping early because it looks good or bad. Weekly looks are reported,
   and the verdict is given once, at the end.
-- **Length from a power calculation, not a guess.** Rough estimate from E5 (t 7.5 over about 2,700 days):
-  about 130–190 trading days (6–9 months) to see the reversal at the strength we measured. Step 1 below
-  computes it properly from the saved per-day ICs.
+- **Length from a power calculation, not a guess.** A first estimate from the saved E10/E11 summaries (1-hour
+  hold, 4 moments a day, 80% power, one-sided 5%): about 410 trading days on the S&P 500 alone, 470 on mid caps,
+  and **about 220 (10–11 months) averaging both**. If the forward IC is only half the historical one, about
+  880 days (3.5 years). An earlier guess of 6–9 months was too optimistic. Section 30 checks whether more
+  moments a day shorten this, and how often any stretch of the history would have passed.
 - **Verdict (Arm A):**
   - **Holds forward:** mean daily IC > 0 at 95%, one-sided, and the point estimate at least half the
     historical one.
