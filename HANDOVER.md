@@ -1,6 +1,6 @@
 # Handover
 
-Updated 2026-10-14. A snapshot to restart work from, for Kshitiz or for a new Claude session.
+Updated 2026-10-14 (after E12). A snapshot to restart work from, for Kshitiz or for a new Claude session.
 [RESULTS.md](RESULTS.md) is the full record of results and [README.md](README.md) explains how
 everything works; this file is the short version, plus what is unfinished.
 
@@ -44,6 +44,11 @@ feeds must never share a cache folder, and the fetch refuses to overwrite one wi
 | 24 | E6 entropy and the reversal |
 | 25 | E7 the reversal as a slope |
 | 26 | E8 the sharper slope |
+| 27 | E9 horizons from 30 minutes to 2 hours |
+| 28 | E10 how long the reversal lasts |
+| 29 | E11 the reversal in mid caps |
+| 30 | Forward-test length (a design calculation, not a test) |
+| 31 | E12 correlated peers |
 | 9 | All results (old summaries only) |
 
 Do not use "Run all": it reruns every old section.
@@ -75,31 +80,34 @@ Do not use "Run all": it reruns every old section.
    used, all three registered claims hold: it exists (+0.0051, t 4.0), builds over the first hour (+0.0029
    [+0.0007, +0.0049]) and does not carry overnight (−0.0054 [−0.0088, −0.0021]). Same strength as in large caps
    (−0.0012 [−0.0035, +0.0011]): the prediction that less liquid stocks reverse more is not borne out.
-7. **No alpha.** Nothing earns a return after costs; the largest amount (+0.41 bps, 4 hours) is about 20% of a
+7. **Correlated stocks do not lead (E12).** Each stock's 5 most correlated stocks (previous 60 days, monthly), with
+   the stock's own move removed, predict no better than random peers: +0.0012 [−0.0009, +0.0034] at 99%. 83% of
+   the chosen peers are in the stock's own sector. The correlated-peers arm is dropped from the forward test.
+8. **No alpha.** Nothing earns a return after costs; the largest amount (+0.41 bps, 4 hours) is about 20% of a
    2 bps cost.
 
 ### Earlier results (IEX unless noted)
 
-8. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
-9. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
-10. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
-11. **The "confident trades" lead was volatility.**
-12. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
+9. **Nothing beats trading costs** on SPY, the ETFs, the S&P 500 or cross-asset, for any model or rule.
+10. **Model complexity buys nothing.** Deep models are no better than logistic regression or trees.
+11. **Entropy adds nothing** as a gate, as model inputs or as engine inputs.
+12. **The "confident trades" lead was volatility.**
+13. **768 trades a day were 7–14 independent bets;** with the market removed, direction-trained models have no
    stock-level skill.
-13. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
-14. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
-15. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
+14. **The Nasdaq-100 hold-out skill did not replicate** (IC +0.0141 on 85 stocks; +0.0005 on 416 others).
+15. **The RL engine and the online agent find nothing.** The online agent lost more than all 19 placebos.
+16. **The volatile-moment lead is not replicated (E1), on IEX and on SIP.** 57–61% of it came from
     Mar–May 2025; volatility-scaled costs would exceed it.
-16. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
+17. **Model or signal (E2):** signal-limited for simple edges; the trees recover only a third of a
     conditional edge. Detection limit for a simple edge about IC 0.015.
 
 ## Unfinished
 
-1. **Decide the direction.** E8 to E11 are recorded; the reversal replicated on mid caps (E11). The reversal is characterised: real as an ordering,
-   completes in about an hour, lasts to 4 hours, gone by the next day, and worth under half a basis point. Options: a
-   second sample (another universe or period), the volume-conditioning test, or write up. The reversal is real as an ordering and negligible as an
-   amount. Options: a second sample for it (another universe or period; E6–E8 share one dataset), the
-   volume-conditioning test, or stop adding tests and write up.
+1. **The forward test ([LIVE_PLAN.md](LIVE_PLAN.md)).** Freeze the rules, then score every new trading day by
+   a daily AWS job (no orders). Done: the plan, E12 (the correlated-peers arm is dropped). Next: section 30's
+   length calculation (its first Colab run wrote nothing; the script passes its end-to-end test), then the
+   forward job, then the AWS setup (Kshitiz's account and keys), then registering E13 and deploying.
+   Write-up can start in parallel.
 2. **E7's "largest tenth" row was wrong in its first report** (a script bug, fixed and tested). Rerun
    `scripts/reversal_slope.py --config configs/sip_e7_slope.yaml` before quoting that row. The verdict never
    used it.

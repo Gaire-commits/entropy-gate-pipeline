@@ -752,6 +752,33 @@ is detected on 1 of 3 seeds at this small size (30 stocks, 70 days); the real da
 wider and 37 times longer. If the residual leaks any of the own reversal, it pushes real peers *down*. That
 errs toward "not following", so it cannot open the forward arm by mistake.
 
+### Result (2026-10-14, SIP, 503 stocks, 13.5 million stock-moments): correlated peers add nothing
+
+| | rank IC of the residual move [95%] |
+|---|---|
+| real peers (5 most correlated) | +0.0009 [−0.0006, +0.0026], t 1.2 |
+| random peers | −0.0002 [−0.0008, +0.0003], t −0.9 |
+
+- **Verdict by the rule: correlated peers add nothing.** Real minus random is +0.0012 [−0.0009, +0.0034] at 99%
+  over 2,647 days, so the rule stops at step 1. **The correlated-peers arm does not go into the forward test.**
+- **Halves** (95%, reported): before 2020-07-28 +0.0031 [+0.0004, +0.0057], from it −0.0001 [−0.0023, +0.0021].
+  Whatever there was is gone in the second half.
+- **Every reported variant is null at 99%.** 10 peers: +0.0017 [−0.0006, +0.0042]. A 1-hour hold: +0.0001
+  [−0.0022, +0.0023]. The sector average against random peers: +0.0004 [−0.0016, +0.0026], which repeats E5 with
+  the cleaner residual. Correlated peers against the sector average: +0.0008 [−0.0008, +0.0025].
+- **The peers are real but mostly the sector.** 477 stocks eligible per refresh, the chosen peers' average
+  correlation 0.37, and 83% of them in the stock's own GICS sector. So the data mostly rediscovered the sectors,
+  and they add nothing, as in E5.
+- **The own reversal is there on the same moments:** +0.0061 [+0.0044, +0.0078], t 7.0. The raw (not
+  residualized) peers' move is slightly *negative*, −0.0020 (t −1.9): it carries the stock's own move, which
+  reverses. That is why the residual was needed.
+- **The book on the real residual** is +0.19 bps gross [+0.12, +0.27], −1.81 net. It is not interpretable on its
+  own. The residual is unrelated to the own move linearly but not at the extremes, where the own reversal is
+  strongest, and no random-peer book was computed to compare. The IC, which carries the rule, is null.
+- **Conclusion for the correlated-stocks idea:** tried with sectors (E5), with sector leaders (E5) and with peers
+  chosen from the data (E12). A stock does not follow the stocks it moves with, beyond its own reversal, on 30-
+  or 60-minute horizons.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -1338,6 +1365,7 @@ The response so far:
 | 2026-10-14 | E11 result: replicates in full on 399 mid caps the project never used; the same strength as in large caps (−0.0012 [−0.0035, +0.0011]) |
 | 2026-10-14 | LIVE_PLAN.md drafted: a forward test of the whole process on live companies, run daily on AWS, no orders |
 | 2026-10-14 | E12 (correlated peers from the data, residualized, against random peers) built and pre-registered; the forward-test length calculation built (section 30) |
+| 2026-10-14 | E12 result: correlated peers add nothing (+0.0012 [−0.0009, +0.0034]); 83% of the peers are in the stock's own sector; the correlated-peers arm is dropped from the forward test |
 
 ## Next steps
 

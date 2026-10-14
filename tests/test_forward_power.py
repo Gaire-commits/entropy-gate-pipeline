@@ -43,3 +43,31 @@ def test_combine_averages_over_shared_days_only():
     b = pd.Series([0.3, 0.0], index=pd.to_datetime(["2024-01-03", "2024-01-05"]))
     c = combine(a, b)
     assert list(c.index) == [pd.Timestamp("2024-01-03")] and c.iloc[0] == pytest.approx(0.25)
+
+
+def test_script_runs_on_two_universes(tmp_path, monkeypatch):
+    import yaml
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import forward_power as script
+    from src.synthetic import ar_returns, bars_from_returns
+
+    root = Path(__file__).resolve().parents[1]
+    (tmp_path / "bars" / "5Min").mkdir(parents=True)
+    for k, prefix in enumerate(("M", "B")):
+        group = [f"{prefix}{i:02d}" for i in range(30)]
+        for i, s in enumerate(group):
+            grid = bars_from_returns(s, ar_returns(30, -0.1, seed=100 * k + i), seed=100 * k + i, start="2024-01-02")
+            grid.drop(columns=["session_id", "bar_index"]).dropna().to_parquet(tmp_path / "bars" / "5Min" / f"{s}.parquet")
+        pd.DataFrame({"symbol": group, "sector": [f"G{j % 3}" for j in range(30)]}).to_csv(tmp_path / f"{prefix}.csv", index=False)
+    cfg = yaml.safe_load((root / "configs" / "sip_e11_midcap.yaml").read_text())
+    cfg["data"].update(universe=str(tmp_path / "M.csv"), cache_dir=str(tmp_path / "bars"))
+    cfg["second"].update(compare_universe=str(tmp_path / "B.csv"))
+    (tmp_path / "c.yaml").write_text(yaml.safe_dump(cfg))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["forward_power.py", "--config", "c.yaml", "--min-peers", "10"])
+    assert script.main() == 0
+    text = (tmp_path / "outputs" / "forward_power" / "power.md").read_text()
+    assert "How long must the forward test run?" in text and "both, averaged" in text
+    days = pd.read_csv(tmp_path / "outputs" / "forward_power" / "days.csv")
+    assert set(days["universe"]) == {"S&P 500", "mid caps", "both, averaged"} and days["geometry"].nunique() == 3

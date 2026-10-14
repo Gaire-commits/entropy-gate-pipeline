@@ -22,7 +22,7 @@ built.
 | Arm | Question | Status before going live |
 |---|---|---|
 | **A. Own reversal** (primary) | A stock that lagged the market over the last 30 minutes recovers some of it over the next hour. | Established: E5, E10, E11. Frozen geometry, no new tuning. |
-| **B. Correlated stocks** | When a stock's most-correlated peers move, does it follow within the next hour? | E5 found **sectors add nothing**. Data-driven peers have never been tested, so test them on 2016–2026 first (E12). It goes live only if it passes. |
+| ~~B. Correlated stocks~~ | When a stock's most-correlated peers move, does it follow within the next hour? | **Dropped (E12, 2026-10-14):** correlated peers add nothing (+0.0012 [−0.0009, +0.0034] at 99%), and 83% of them are sector mates. Neither sectors (E5) nor data-driven peers lead. |
 | **C. Entropy and the reversal** | Is the reversal stronger when permutation entropy is low? | E6 null. Reported only, never judged. |
 | **D. The original question** | Does the entropy gate plus a model trade profitably after costs? | Null on IEX. The SIP sweep (section 22) must be validly redone first. The model is trained once on 2016–2026 and frozen. Reported, with its own registered rule. |
 
