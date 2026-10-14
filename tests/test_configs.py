@@ -141,3 +141,12 @@ def test_leadlag_config_reads_the_sip_bars_and_fixes_one_geometry():
     ll = e5.leadlag
     assert ll.lookback + ll.embargo + ll.hold < 78 and ll.secondary.lookback + ll.embargo + ll.secondary.hold < 78
     assert {"symbol", "sector"} <= set(pd.read_csv(ROOT / e5.data.universe).columns)
+
+
+def test_reversal_config_uses_e5s_signal_and_registers_one_state():
+    e6 = load_config(ROOT / "configs" / "sip_e6_reversal.yaml")
+    e5 = load_config(ROOT / "configs" / "sip_e5_leadlag.yaml")
+    assert vars(e6.data) == vars(e5.data)
+    for key in ("lookback", "hold", "embargo", "stride", "split"):
+        assert getattr(e6.reversal, key) == getattr(e5.leadlag, key), key
+    assert e6.reversal.state == "pe3" and e6.reversal.control == "vol" and e6.reversal.level == 0.99

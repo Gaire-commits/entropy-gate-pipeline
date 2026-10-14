@@ -1,0 +1,65 @@
+# E6: does permutation entropy tell when the short-term reversal is stronger? (src/reversal.py)
+#
+# E5 (2026-10-13) found a real pattern on SIP bars: a stock that lagged the market over the last 30 minutes
+# recovers a little over the next 30 (IC +0.0064, t 7.5, both halves of ten years). The entropy gate of this
+# thesis was built to say when a pattern can be trusted and never had a pattern to test on. Now it does.
+# From 2026-10-13 tests are judged on whether structure exists, not on whether it pays: costs play no
+# part in this rule.
+#
+# Signal: the stock's own move over the last 6 bars relative to the market, reversed; entry one bar later,
+# 6-bar hold; a moment every 6 bars. Exactly E5's "own move reversed" (a test checks it is identical).
+# State (the registered one): permutation entropy at m = 3 of the stock's last 60 five-minute returns,
+# known at the signal bar (the pipeline's ent_pe3_day). At each moment stocks are split into thirds by the
+# state; the reversal's rank IC is measured in the bottom and the top third (at least 30 stocks each).
+#
+# PROTOCOL, fixed before any result (2026-10-13). Applied in this order (src/reversal.verdict):
+#   1. The IC difference, top third minus bottom third of permutation entropy, must have a 99% day-block
+#      interval that excludes zero (two-sided: no direction is assumed). Otherwise ENTROPY DOES NOT
+#      CONDITION THE REVERSAL.
+#   2. The same difference measured inside each third of volatility (the standard deviation of the same 60
+#      returns) must also exclude zero at 99%, with the same sign. Otherwise VOLATILITY, NOT ENTROPY.
+#   3. The difference must have the same sign before 2020-07-28 and from it. Otherwise NOT STABLE.
+#   4. Otherwise ENTROPY CONDITIONS THE REVERSAL, stronger when entropy is low or high as the sign says.
+# Reported, not decisive: the same comparison for the share of monotone patterns, the lag-1
+# autocorrelation, volatility and the size of the move (is entropy a better conditioner than plain
+# statistics of the same returns?), and the pipeline's usual geometry (12-bar lookback, 30-bar hold).
+# One state, one geometry and one comparison carry the verdict.
+experiment: sip_e6_reversal
+
+data: {universe: universe/sp500.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+reversal:
+  lookback: 6
+  hold: 6
+  embargo: 1
+  stride: 6
+  window: 60
+  state: pe3
+  control: vol
+  groups: 3
+  min_group: 30
+  min_group_matched: 15
+  level: 0.99
+  split: "2020-07-28"
+  min_peers: 20
+  secondary: {lookback: 12, hold: 30, stride: 12}
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

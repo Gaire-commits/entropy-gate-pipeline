@@ -329,6 +329,27 @@ and it has not. It is the first test to use other stocks' information.
 Controls in `tests/test_leadlag.py`: a planted sector lead is found, noise and same-time sector moves give
 nothing, and a stock's own reversal is classified as reversal, not lead-lag.
 
+## E6: does entropy tell when the reversal is stronger?
+
+```bash
+python scripts/reversal.py --config configs/sip_e6_reversal.yaml
+```
+E5's control turned up the project's main positive result, a real short-term reversal. `src/reversal.py`
+takes the thesis question back to it. At each moment stocks are split into thirds by the permutation
+entropy of their last 60 five-minute returns, and the reversal's IC is compared between the top and bottom
+third.
+- **The control is volatility:** the comparison is repeated among stocks of similar volatility, because
+  entropy moves with it.
+- **Costs play no part in the verdict.**
+- **Baselines are reported beside entropy:** plain statistics of the same returns (lag-1 autocorrelation,
+  volatility, size of the move).
+
+Controls in `tests/test_reversal.py`:
+- a reversal that depends on entropy is found and survives the volatility match;
+- a uniform reversal is not credited to entropy;
+- a reversal set by volatility alone is classified as volatility;
+- the signal is identical to E5's.
+
 ## Data feeds: SIP is the headline from 2026-10-09
 
 The pipeline started on Alpaca's IEX feed. IEX prints a bar only when a trade happened on IEX, so about
@@ -468,6 +489,7 @@ stored levels in a dict although IB positions shift on every insert and delete.
 | `src/selective.py` | Selective trading: past-only cutoffs, frequency, risk-scaled return, volatility placebo |
 | `src/crosssection.py` | Breadth: effective independent bets, cross-sectional IC, long-short books, model similarity |
 | `src/holdout.py` | Training and trading universes, the relative target, and the hold-out split |
+| `src/reversal.py` | E6: the reversal's strength by entropy state, with a volatility-matched control |
 | `src/leadlag.py` | E5: sector lead-lag, with a shuffled-sector control |
 | `src/feed_compare.py` | IEX against consolidated (SIP) bars: grid completeness, volume, price agreement |
 | `src/volatility_lead.py` | E1: the volatile-moment lead without a model, on untouched years, with block intervals and stress costs |

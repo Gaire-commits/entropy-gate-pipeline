@@ -386,6 +386,26 @@ cached. Every test stands as registered and will be judged on the full universe.
 - **Reading.** A steady, small reversal is what payment for supplying liquidity looks like. It is a
   well-documented effect; this confirms it on this data at this horizon and measures its size.
 
+## E6: does permutation entropy tell when the reversal is stronger? (protocol fixed 2026-10-13; not run)
+
+The entropy gate was built to say when a pattern can be trusted and had no pattern to test on. E5 supplied
+one. E6 (`configs/sip_e6_reversal.yaml`, Colab section 24) takes E5's signal, the stock's own 30-minute
+move reversed. At each moment it splits the stocks into thirds by the permutation entropy (m = 3) of their
+last 60 five-minute returns, then compares the reversal's IC in the top third with the bottom third.
+
+The rule, in order:
+1. The top-minus-bottom difference must have a 99% day-block interval that excludes zero (two-sided).
+2. The same must hold among stocks of similar volatility, with the same sign. Otherwise the result is
+   **volatility, not entropy**.
+3. The sign must be the same before and after 2020-07-28.
+
+Costs play no part. Reported beside it: the same comparison for the share of monotone patterns, lag-1
+autocorrelation, volatility and the size of the move, so entropy is measured against plain statistics.
+
+On synthetic data the rule finds a reversal that depends on entropy, does not credit entropy with a uniform
+reversal, and classifies a reversal set by volatility alone as volatility. On 60 days of pure noise it
+reports nothing; 12 days are too few for its 99% interval.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -958,13 +978,13 @@ The response so far:
 | 2026-10-09 | SIP (consolidated) feed adopted as the headline dataset before any SIP result; feed check, a guard against one feed overwriting another's cache, and data-only SIP copies of the sweep, E1, E2, hold-out and replication configs, frozen |
 | 2026-10-13 | E5 (sector lead-lag with a shuffled-sector control) built and pre-registered on SIP |
 | 2026-10-13 | SIP fetched (503 stocks, 2016–2026, 98–99.7% of slots filled). E5: no lead-lag, but a real own reversal (IC +0.0064, t 7.5). E1 on SIP: not replicated. From here the research builds on the reversal, judged on structure, not on cost |
+| 2026-10-13 | E6 (the reversal's strength by entropy state, volatility-matched) built and pre-registered; not run |
 
 ## Next steps
 
-1. Record the online agent's result (Colab section 18 ran on 2026-10-07: a null, greedy net −0.73 bps
-   [−1.14, −0.35], worse than all 19 placebos; see HANDOVER.md), and add the placebo runs' trade rate to its report.
-2. Record E1 and E2 (run 2026-10-08 on IEX: E1 not replicated; E2a signal-limited; E2b adequate for the simple edge, not the conditional one).
-3. Run the SIP feed check and fetch (Colab section 21), then the SIP reruns (section 22), judged by the existing rules.
+1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
+2. Run E6 (Colab section 24): does entropy tell when the reversal is stronger?
+3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.
 5. Run `etf_multihour`, the horizon the advisor pointed toward.
