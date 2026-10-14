@@ -16,7 +16,7 @@ import time
 
 import pandas as pd
 
-from _common import DEFAULT_CONFIG, output_dir
+from _common import DEFAULT_CONFIG, enough_symbols, output_dir
 
 from src.config import load_config
 from src.data import load_universe, resolve_universe
@@ -37,6 +37,8 @@ def main() -> int:
     bars = load_universe(cfg.data.cache_dir, universe, cfg.data.timeframe)
     if not bars:
         print(f"no cached bars in {cfg.data.cache_dir} — run scripts/fetch_data.py first")
+        return 1
+    if not enough_symbols(bars, universe, cfg.data.cache_dir):
         return 1
     if len(bars) < len(universe):
         print(f"note: {len(universe) - len(bars)} of {len(universe)} symbols have no cached data, skipping them")

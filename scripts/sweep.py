@@ -18,7 +18,7 @@ import time
 
 import pandas as pd
 
-from _common import DEFAULT_CONFIG, output_dir
+from _common import DEFAULT_CONFIG, enough_symbols, output_dir
 
 from src.baselines import is_rule
 from src.config import load_config
@@ -45,6 +45,8 @@ def main() -> int:
     bars = load_universe(cfg.data.cache_dir, load, cfg.data.timeframe)
     if not bars:
         print(f"no cached bars in {cfg.data.cache_dir} — run scripts/fetch_data.py first")
+        return 1
+    if not enough_symbols(bars, load, cfg.data.cache_dir):
         return 1
     screen_path = out / "screen.parquet"
     screen = pd.read_parquet(screen_path) if screen_path.exists() else None

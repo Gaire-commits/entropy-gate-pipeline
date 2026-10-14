@@ -327,8 +327,10 @@ at the same time, and classifies a stock's own price reversal as reversal.
 
 **A void run, disclosed.** On 2026-10-13 the script ran while the SIP fetch was unfinished: 56 of 503
 stocks were cached, and 21 had enough sector peers. Its shuffled-sector control could not be computed and its
-verdict means nothing. It is discarded; the scripts now refuse to run when under 90% of the universe is cached.
-The test stands as registered and will be judged on the full universe.
+verdict means nothing. The same happened to every SIP rerun of section 22 that day (screen, sweep, E1, E2,
+hold-out and replication, all on 56 stocks). All of it is void and was moved aside, not used
+(`outputs/void_partial_fetch_2026-10-13`). The scripts now refuse to run when under 90% of the universe is
+cached. Every test stands as registered and will be judged on the full universe.
 
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08; results pending)
 
