@@ -350,6 +350,17 @@ Controls in `tests/test_reversal.py`:
 - a reversal set by volatility alone is classified as volatility;
 - the signal is identical to E5's.
 
+## E9: the reversal from 30 minutes to 2 hours
+
+```bash
+python scripts/horizons.py --config configs/sip_e9_horizons.yaml
+```
+`src/horizons.py` asks whether a longer lookback and hold make the reversal stronger. Moves scale with the
+square root of time, so the same skill per unit of risk pays about twice as much in bps at 2 hours as at
+30 minutes; a bigger number at a longer horizon is not evidence of a stronger reversal. The decisive quantity
+is the rank IC, compared between the 2-hour and 30-minute cells from each day's average IC. The amount in
+bps is reported beside it, with the amount that the size of moves alone would give.
+
 ## E7: the reversal as a slope
 
 ```bash

@@ -1,0 +1,61 @@
+# E9: how does the reversal change with the horizon, from 30 minutes to 2 hours? (src/horizons.py)
+#
+# E5-E8 measured the reversal at 30 minutes: a stock's move relative to the market over the last 6 bars,
+# reversed, held for 6 (entry one bar later). This asks what happens at 1 hour and 2 hours, using the SIP
+# bars already fetched (5-minute bars; nothing new to download).
+#
+# What would mislead. Moves scale with the square root of time, so the same skill per unit of risk pays
+# about twice as much in bps at 2 hours as at 30 minutes. A bigger number at a longer horizon is not
+# evidence of a stronger reversal. The decisive quantity is therefore the rank IC (skill per unit of
+# risk); the amount in bps is reported beside it, with the net after 2 bps. Costs decide no verdict.
+#
+# Cells: lookback and hold of 6, 12 or 24 bars (30 minutes, 1 hour, 2 hours). Moments are spaced by the
+# hold, so a stock's holds never overlap. A session of 78 bars fits lookback + 1 + hold = 49 at most
+# (11, 5 and 2 moments a day at the three horizons). The diagonal (lookback = hold) carries the verdict;
+# the other six cells are reported.
+#
+# PROTOCOL, fixed before any result (2026-10-14). Applied in this order (src/horizons.verdict):
+#   1. At least one diagonal horizon must have an IC with t >= 3 (three looks). Otherwise NO REVERSAL AT
+#      THESE HORIZONS.
+#   2. The 2-hour IC minus the 30-minute IC, from each day's average IC, with a 99% day-block interval:
+#        includes zero -> THE SAME STRENGTH AT EVERY HORIZON (the bps grow only with the size of moves);
+#        above or below zero -> go to step 3.
+#   3. The difference must have the same sign before 2020-07-28 and from it. Otherwise NOT STABLE.
+#   4. Otherwise STRONGER (or WEAKER) AT LONGER HORIZONS, as the sign says.
+# Reported, not decisive: every cell's IC, gross and net book bps (top and bottom fifth), the 1-hour
+# against the 30-minute cell, and the amount expected from square-root-of-time scaling alone.
+experiment: sip_e9_horizons
+
+data: {universe: universe/sp500.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+horizons:
+  diagonal: [6, 12, 24]
+  grid: [6, 12, 24]
+  embargo: 1
+  min_sector: 5
+  min_peers: 20
+  q: 0.2
+  cost_bps: 2.0
+  t_bar: 3.0
+  level: 0.99
+  split: "2020-07-28"
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

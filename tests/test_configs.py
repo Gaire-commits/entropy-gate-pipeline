@@ -169,3 +169,14 @@ def test_scaled_slope_config_asks_e7s_question_with_a_sharper_instrument():
     assert {k for k in set(a) | set(b) if a.get(k) != b.get(k)} == {"scale", "winsor", "confirm", "half_level", "secondary"} - (
         set() if a["secondary"] != b["secondary"] else {"secondary"})
     assert (e8.slope.scale, e8.slope.winsor, e8.slope.confirm, e8.slope.half_level) == ("vol", 0.01, True, 0.95)
+
+
+def test_horizon_config_reads_the_sip_bars_and_keeps_e5s_baseline_cell():
+    e9 = load_config(ROOT / "configs" / "sip_e9_horizons.yaml")
+    e5 = load_config(ROOT / "configs" / "sip_e5_leadlag.yaml")
+    assert vars(e9.data) == vars(e5.data)
+    h = e9.horizons
+    assert e5.leadlag.lookback in h.diagonal and e5.leadlag.hold in h.diagonal       # the 30-minute cell is E5's
+    assert h.embargo == e5.leadlag.embargo and h.split == e5.leadlag.split
+    assert max(h.grid) * 2 + h.embargo < 78, "the longest cell must fit in one session"
+    assert h.level == 0.99 and h.t_bar == 3.0

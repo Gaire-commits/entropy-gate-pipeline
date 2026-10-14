@@ -557,6 +557,26 @@ It is the same data as E7: a sharper instrument, not a second sample.
 - **Other reported rows:** by how unusual the move is for the stock, +0.12% [−0.41%, +0.66%]; most volatile
   minus calmest third, +0.13% [−0.28%, +0.55%]; the 1-hour / 2.5-hour geometry, overall +0.24% [−0.52%, +0.91%].
 
+## E9: how does the reversal change from 30 minutes to 2 hours? (protocol fixed 2026-10-14; not run)
+
+The reversal was measured at 30 minutes (a 6-bar lookback and hold). E9 (`configs/sip_e9_horizons.yaml`,
+Colab section 27) uses the SIP bars already fetched and asks what a 1-hour and a 2-hour lookback and hold do.
+
+**The trap it is built around:** moves scale with the square root of time, so a fixed skill per unit of risk
+pays about twice as many bps at 2 hours as at 30 minutes (an IC of 0.0065 is worth roughly 0.29, 0.41 and
+0.58 bps at 30 minutes, 1 hour and 2 hours). A bigger number at a longer horizon is therefore no evidence of a
+stronger reversal. The rank IC, skill per unit of risk, carries the verdict.
+
+The rule, in order:
+1. At least one diagonal horizon (lookback = hold) must have an IC with t ≥ 3 (three looks).
+2. The 2-hour IC minus the 30-minute IC, from each day's average IC, at 99%: includes zero means **the same
+   strength at every horizon**.
+3. Otherwise the difference must have the same sign before and after 2020-07-28, or **not stable**.
+4. Otherwise **stronger** or **weaker at longer horizons**, as the sign says.
+
+Reported, not decisive: all nine lookback-and-hold cells, gross and net book bps, and the amount expected
+from the size of moves alone. Costs decide nothing.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -1135,6 +1155,7 @@ The response so far:
 | 2026-10-14 | E7 result: not uniform, a larger share recovered after large moves (+1.12% [+0.05%, +2.49%]); passes its rule by a thin margin. A bug in a reported row found and fixed |
 | 2026-10-14 | E8 (E7's question with a volatility-scaled, winsorized slope) built and pre-registered |
 | 2026-10-14 | E8 result: E7 not confirmed (+0.07% [−0.55%, +0.67%] with twice the precision); the reversal as an amount is +0.28% [−0.06%, +0.64%] of the lag |
+| 2026-10-14 | E9 (the reversal at 30 minutes to 2 hours, judged on IC not bps) built and pre-registered; not run |
 
 ## Next steps
 
