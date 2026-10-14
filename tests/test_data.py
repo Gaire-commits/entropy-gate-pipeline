@@ -186,3 +186,18 @@ def test_a_missing_universe_file_says_how_to_build_it(tmp_path):
     import pytest
     with pytest.raises(FileNotFoundError, match="build_universe"):
         resolve_universe(str(tmp_path / "nope.csv"))
+
+
+def test_an_interrupted_save_keeps_the_old_file(tmp_path, monkeypatch):
+    save_symbol(_raw(["2024-03-04"]), tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split")
+    before = pd.read_parquet(tmp_path / "5Min" / "SPY.parquet")
+
+    def killed(self, path, *a, **k):
+        Path(path).write_bytes(b"half a file")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", killed)
+    with pytest.raises(KeyboardInterrupt):
+        save_symbol(_raw(["2024-03-04", "2024-03-05"]), tmp_path, "SPY", "5Min", "2016-01-01", "2026-06-30", "sip", "split")
+    monkeypatch.undo()
+    pd.testing.assert_frame_equal(pd.read_parquet(tmp_path / "5Min" / "SPY.parquet"), before)

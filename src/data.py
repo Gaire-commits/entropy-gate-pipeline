@@ -308,7 +308,9 @@ def save_symbol(df, cache_dir, symbol, timeframe, start, end, feed, adjustment,
         start = min(pd.Timestamp(prior["start"]), pd.Timestamp(start))
     path = cache_path(cache_dir, symbol, timeframe)
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(path)
+    tmp = path.with_suffix(".parquet.tmp")       # written whole, then swapped in: a run killed mid-write
+    df.to_parquet(tmp)                           # leaves the old file, never a missing or truncated one
+    os.replace(tmp, path)
     _meta_path(cache_dir, symbol, timeframe).write_text(
         json.dumps({"start": str(pd.Timestamp(start)), "end": str(resolve_end(end)), "feed": feed, "adjustment": adjustment})
     )
