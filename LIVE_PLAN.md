@@ -1,7 +1,9 @@
 # Live plan (draft outline, 2026-10-14)
 
-A plan to watch the reversal and the correlated-stocks idea on **live companies, on days that have not
-happened yet**. This is a draft. Nothing here is registered or built.
+A plan to forward-test **the whole process** on **live companies, on days that have not happened yet**,
+running by itself on AWS. Every trading day it fetches the bars, scores every arm, updates the paper books
+and the report, and at the end date it writes the verdict. This is a draft. Nothing here is registered or
+built.
 
 ## 0. What this is and is not
 
@@ -21,7 +23,8 @@ happened yet**. This is a draft. Nothing here is registered or built.
 |---|---|---|
 | **A. Own reversal** (primary) | A stock that lagged the market over the last 30 minutes recovers some of it over the next hour. | Established: E5, E10, E11. Frozen geometry, no new tuning. |
 | **B. Correlated stocks** | When a stock's most-correlated peers move, does it follow within the next hour? | E5 found **sectors add nothing**. Data-driven peers have never been tested, so test them on 2016–2026 first (E12). It goes live only if it passes. |
-| **C. Entropy** | Is the reversal stronger when permutation entropy is low? | E6 null. Reported only, never judged. |
+| **C. Entropy and the reversal** | Is the reversal stronger when permutation entropy is low? | E6 null. Reported only, never judged. |
+| **D. The original question** | Does the entropy gate plus a model trade profitably after costs? | Null on IEX. The SIP sweep (section 22) must be validly redone first. The model is trained once on 2016–2026 and frozen. Reported, with its own registered rule. |
 
 **Arm A, fixed from the history (nothing chosen after seeing new data):**
 - **Universe:** the S&P 500 and the S&P MidCap 400 as of the start date, about 900 stocks.
@@ -41,19 +44,40 @@ happened yet**. This is a draft. Nothing here is registered or built.
 - **Rule:** real peers minus random peers > 0 at 99%. Low prior: E5's sector version found nothing.
 - **Reported:** whether the stocks that move first (the "leaders") have any pull on the rest.
 
-## 2. Data: no real-time feed needed
+## 2. Running it: one daily job on AWS
 
 The rule is frozen before the data exists. That is what makes a forward test honest, not watching it in real
-time. So:
+time. A job after each close is enough, and a missed day is filled in on the next run (Alpaca keeps the
+SIP bars).
 
-- **Weekly, in Colab:** fetch the past week's SIP 5-minute bars (free on Alpaca once they are 15 minutes old)
-  into a **separate cache folder**, `data/bars_sip_forward/`. History and forward days never mix.
-- **Score the new days** and append one row per day to a ledger, `outputs/forward/ledger.csv`: date, stocks
-  covered, IC at 30 minutes and 1 hour, peer arm, paper book gross and net.
-- **Same guards as now:** refuse under 90% coverage, keep feeds from mixing, and log rather than silently skip
-  half-days and missing days.
-- **Optional, reported only:** an IBKR or IEX real-time capture for a live view of the signal during the day
-  (`src/ibkr_capture.py` exists, market data only). It never feeds the verdict.
+| Piece | AWS service | Job |
+|---|---|---|
+| Timer | EventBridge Scheduler | Runs at 16:30 ET each weekday (the job skips market holidays itself) |
+| Job | Lambda from a container image (Fargate if it outgrows 15 minutes) | Fetch, score every arm, paper books, ledger, report |
+| Storage | S3 bucket | `bars_sip_forward/` (its own folder, never mixed with history), `ledger.csv`, `report.md`, frozen models |
+| Keys | Secrets Manager | Alpaca keys. Never in code, logs or chat |
+| Alerts | SNS email | On a failed run, a coverage-guard refusal or 3 missed days; a weekly summary |
+| Spend | AWS Budgets | Alarm at $10 a month. Expected about $1–5 |
+
+**Each run, in order:**
+1. **Catch up:** find every trading day since the last stored one, and fetch those days' 5-minute SIP bars.
+2. **Guard:** refuse a day under 90% coverage (alert, retry next run), and never mix feeds.
+3. **Score:** arms A–D on the new days, with the frozen code version and config hash written into every
+   ledger row.
+4. **Paper books:** append each day's gross and net.
+5. **Report:** rewrite `report.md` (cumulative IC against the historical band, coverage, paper books).
+6. **Verdict:** on the registered end date, apply the rules and write `verdict.md`. Nobody chooses when to
+   stop.
+
+**Reproducible:** the job, its tests and the deploy template (AWS SAM) live in the repo under `deploy/`. The
+image is tagged with the commit it was built from. The same code can rescore the whole ledger from the
+stored bars, so the AWS run can be checked against a Colab rerun.
+
+**Reading the results:** a read-only AWS user, so Claude can read `report.md` and the ledger. Or the job
+also copies the report to Drive.
+
+**Optional, reported only:** an IBKR or IEX real-time capture for a live view of the signal during the day
+(`src/ibkr_capture.py` exists, market data only). It needs an always-on machine and never feeds the verdict.
 
 ## 3. Paper book (reported, never judges)
 
@@ -79,22 +103,25 @@ time. So:
 
 ## 5. Monitoring
 
-A weekly page in the notebook:
+The job rewrites `report.md` daily and emails a weekly summary:
 - Cumulative mean IC against the band the history predicts.
 - Days covered and days missing.
-- The paper book, gross and net.
+- The paper books, gross and net.
 - Peer-arm IC against the random-peer control.
 
 ## 6. Build order
 
-1. **Power calculation** from the existing per-day ICs (E10, E11) → the registered length. Small.
+1. **Power calculation** from the saved E10 and E11 summaries → the registered length. Small.
 2. **E12, correlated peers on 2016–2026:** `src/peers.py`, tests with planted followers and a shuffled control
    first, then a config, then a Colab section. About a day of building and one Colab run.
-3. **Forward pipeline:** a forward fetch into its own folder, the ledger scorer, the paper book, tests.
-   Reuses `src/data.py` and `src/horizons.py`.
-4. **Register E13** (forward) with the start date, and freeze it.
-5. **Weekly Colab section:** fetch, score, and update the monitoring page. About 10 minutes a week.
-6. **Verdict** at the end date, recorded like every other test.
+3. **Redo section 22** (the SIP sweep) validly, if arm D is kept. Hours of Colab.
+4. **The forward job:** catch-up fetch, scorer, paper books, report, verdict, with tests on synthetic days
+   (including missed days and half days). Runs locally first, then in a container.
+5. **AWS (your part):** create the account, install the AWS CLI and Docker, run `aws configure`, and put the
+   Alpaca keys in Secrets Manager. Claude never handles keys.
+6. **Register E13** (forward) with the start date and freeze it. Then deploy, which you approve, since it
+   creates billable resources.
+7. **Verdict** at the end date, written by the job and recorded like every other test.
 
 ## 7. Risks and honest notes
 
@@ -105,5 +132,9 @@ A weekly page in the notebook:
 - **Arm B is a long shot** after E5, which is why it has to earn its place on 10 years of history first.
 - **Alpaca's free plan** gives SIP only after a 15-minute delay, which is fine, since nothing here is real-time.
   Real-time SIP would cost about $99 a month and is not needed.
+- **Silent failure** is the main risk of an unattended job: alerts on every failure and on missed days, and a
+  catch-up step so a gap costs nothing.
+- **The index lists change.** The universe is frozen at the start date. Stocks that leave an index stay in;
+  newcomers are not added. Delistings are logged.
 - **Thesis timing.** Six to nine months of forward data may outrun the writing schedule. The write-up can
   start now, with the forward test as a final section or a dated addendum.
