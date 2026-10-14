@@ -1,10 +1,19 @@
 # Results and progress
 
-Last updated 2026-10-07. Numbers come from each experiment's `outputs/<experiment>/summary.md` and
+Last updated 2026-10-13. Numbers come from each experiment's `outputs/<experiment>/summary.md` and
 `engine.md`, which live on Google Drive rather than in this repo. The runs finished between late September
-and 7 October 2026.
+and 13 October 2026. From 2026-10-09 the consolidated (SIP) feed is the headline dataset; results before that
+use the IEX feed.
 
 ## In short
+
+- **The main positive result: a real short-term reversal (SIP, 2016–2026).** A stock that lagged the market
+  over the last 30 minutes recovers a little over the next 30: cross-sectional IC +0.0064 [+0.0047, +0.0080],
+  t = 7.5, positive in both halves of ten years and in 8 of 11 years. It is the first pattern in this project
+  that is clearly not zero and that repeats. It came out of the lead-lag test, where the control showed that
+  a stock's sector adds nothing to it. It is small: +0.12 bps gross per position.
+  From 2026-10-13 the research builds on this pattern, and tests are judged on whether structure exists and
+  when it is stronger, not on whether it pays. Costs are still reported.
 
 - **Nothing beats trading costs.** Four experiments: SPY, the 12 sector ETFs at two horizons, and 503
   S&P 500 stocks. Every model and rule loses money after a 1–2 bps round-trip cost, and no gross return has
@@ -243,7 +252,7 @@ breadth report below.)
 15 quarters positive), but the effect did not replicate on the other stocks, was not timing skill, and was too small
 to cover costs. Every step, including the replication rule, was fixed before the data was read.
 
-## Online agent on streaming bars (protocol fixed 2026-10-07; results pending)
+## Online agent on streaming bars (protocol fixed 2026-10-07)
 
 An RL agent that learns while the S&P 500 bars stream past, one bar at a time, instead of in quarterly folds
 (`src/online.py`, `configs/online_sp500.yaml`, Colab section 18). It picks short, flat or long for every stock at
@@ -272,6 +281,23 @@ explore and frozen books are reported alongside but cannot carry the headline.
 **What to expect.** The walk-forward models found no stock-level skill on these inputs, and the hold-out's
 ranking skill did not replicate. So the likely result is a null, with the useful part being whether online
 learning manufactures an edge the placebo would expose.
+
+### Result (2026-10-07, IEX): a null by the protocol
+
+4,631 signal moments, 2020-07-28 to 2026-10-06. The replay check passed on real bars: all 106,210 batch samples
+reproduced (largest window difference 5.1e-08, returns identical).
+
+| run | greedy net [95% CI] | trades | explore | frozen | placebo mean (runs) | p |
+|---|---|---:|---:|---:|---|---:|
+| **full feedback + entropy (main)** | **−0.73** [−1.14, −0.35] | 42% | −0.84 | −0.69 | −0.31 (19) | 1.00 |
+| bandit + entropy | −0.58 [−0.92, −0.25] | 44% | −0.74 | −0.99 | −0.78 (4) | 0.20 |
+| bandit, no entropy | −0.32 [−0.59, −0.06] | 24% | −0.34 | −0.99 | −0.54 (4) | 0.20 |
+
+- **No edge:** about +0.1 bps gross per opportunity against about 0.8 bps of cost at a 42% trade rate.
+- **Worse than all 19 placebos.** Not checked why; the placebo runs' trade rate was not saved.
+- **Continuing to learn did not help:** the copy frozen after 60 days did the same (−0.69).
+- **Exploration cost money here.** Entropy held at its target (0.50 nats) and the agent with no entropy bonus
+  lost least because it traded least. The drift detector never fired.
 
 ## Data: SIP becomes the headline feed (decided 2026-10-09, before any SIP result)
 
@@ -306,7 +332,7 @@ now refuses that (`FeedMismatch`), and the SIP configs use their own folder, `da
 2. The SIP fetch.
 3. Then, with the existing rules: the S&P 500 screen and sweep, E1, E2, the hold-out and the replication.
 
-## E5: does a stock catch up with its sector? (protocol fixed 2026-10-13; not run)
+## E5: does a stock catch up with its sector? (protocol fixed 2026-10-13)
 
 The first test that gives a signal information from other stocks (`configs/sip_e5_leadlag.yaml`, Colab
 section 23, SIP data).
@@ -332,7 +358,35 @@ hold-out and replication, all on 56 stocks). All of it is void and was moved asi
 (`outputs/void_partial_fetch_2026-10-13`). The scripts now refuse to run when under 90% of the universe is
 cached. Every test stands as registered and will be judged on the full universe.
 
-## E1 and E2: settling the open questions (protocols fixed 2026-10-08; results pending)
+### Result (2026-10-13, SIP, 503 stocks, 13.9 million stock-moments): own reversal, not lead-lag
+
+| signal | IC [95% CI] | t | days IC > 0 |
+|---|---|---:|---:|
+| gap to sector peers (the registered signal) | +0.0055 [+0.0043, +0.0067] | 9.0 | 58% |
+| the same gap with shuffled sectors (control) | +0.0064 [+0.0048, +0.0080] | 7.6 | 56% |
+| gap to the 3 most traded peers | +0.0036 [+0.0023, +0.0048] | 5.6 | 55% |
+| peers' move only | −0.0013 [−0.0030, +0.0004] | −1.5 | 48% |
+| own move reversed only | **+0.0064 [+0.0047, +0.0080]** | **7.5** | 56% |
+
+- **Verdict by the rule: own reversal, not lead-lag.** Step 1 passes (t = 9.0). Step 2 fails: with real
+  sectors the gap predicts slightly *worse* than with shuffled ones (difference −0.0008 [−0.0016, −0.0000]).
+  What the sector did does not predict what the stock does next; if anything it points the other way.
+- **What is real is the stock's own reversal.** Measured against the market instead of the sector, the
+  reversed own move has the largest IC in the table. It is positive before 2020-07-28 (gap IC +0.0064, t 7.4)
+  and from it (+0.0049, t 5.7).
+- **By year** (gap IC): 2016 +0.0084, 2017 +0.0092, 2018 +0.0100, 2019 +0.0000, 2020 +0.0055, 2021 +0.0009,
+  2022 −0.0000, 2023 +0.0060, 2024 +0.0073, 2025 +0.0082, 2026 +0.0053. Three years near zero, none negative.
+- **Size.** The top-and-bottom-fifth book earns +0.12 bps gross per position [+0.04, +0.19] (−1.88 after
+  2 bps). Stocks differ by about 31 bps over a 30-minute hold, so paying 2 bps would need an IC of 0.0458.
+  The data detects an IC of about 0.0017.
+- **The usual geometry agrees** (1-hour lookback, 2.5-hour hold): gap +0.0109 (t 8.9), own move reversed
+  +0.0128 (t 7.3), peers' move only −0.0039 (t −2.1), book +0.39 bps gross [+0.11, +0.66].
+- **The entry skips a bar,** so a price bouncing between bid and ask at the signal bar cannot produce this:
+  that bounce is in the signal but not in the return that is scored.
+- **Reading.** A steady, small reversal is what payment for supplying liquidity looks like. It is a
+  well-documented effect; this confirms it on this data at this horizon and measures its size.
+
+## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
 earlier pre-registered config, is edited.
@@ -392,6 +446,60 @@ single test quarter:
 | 0.02 | 7.7 |
 
 So E2b can tell.
+
+### Results (IEX, 2026-10-08; E1 again on SIP, 2026-10-13)
+
+**E1: not replicated, on both feeds.** The reproduction of the original cell matched exactly (+15.21
+[+1.57, +29.18], 15,599 trades), so the pipeline is the same one that found the lead.
+
+| feed | period | gross [95% CI] | net, flat 2 bps | net, stress cost | market-neutral gross | detectable |
+|---|---|---|---:|---:|---|---:|
+| IEX | 2020-11 to 2022-10 (untouched) | +6.66 [−11.79, +23.73] | +4.66 | −0.94 | −0.80 [−11.63, +9.54] | 25.5 |
+| IEX | test quarters | +7.70 [−3.03, +18.17] | +5.70 | −0.15 | +5.12 [−1.24, +10.68] | 15.1 |
+| SIP | 2016-04 to 2020-07 (untouched) | −7.24 [−29.65, +18.50] | −9.24 | −15.09 | −0.35 [−3.44, +2.81] | 35.1 |
+| SIP | July 2020 on | +8.68 [−1.72, +19.24] | +6.68 | +0.69 | +3.74 [−1.99, +9.00] | 15.2 |
+
+- **The rule fails at its first step on both feeds:** without the model, the gain's interval is not above zero
+  even where the lead was found.
+- **It rests on one episode.** 31 March to 12 May 2025 carries 57% of the gross on IEX and 61% on SIP; the
+  ten biggest days carry 79% on SIP.
+- **Costs that rise with volatility average about 8 bps** on these trades, more than the gain.
+- **The untouched periods cannot confirm it.** They would detect 25–35 bps, more than the 15.21 claimed; on SIP
+  the point estimate there is negative.
+
+**E2a: signal-limited (IEX).** On the 416 training stocks every cell's IC is between −0.0013 and +0.0035, none
+reaches t ≥ 3, and none beats the default on the same rows (every 99% interval of the difference includes
+zero). The default cell reproduced the replication's 725,396 saved predictions exactly.
+
+| cell | training days | leaves | trees | IC on 416 · t | vs default [99%] |
+|---|---:|---:|---:|---|---|
+| default | 504 | 15 | 10 | +0.0013 · 0.5 | — |
+| less data | 126 | 15 | 3 | +0.0032 · 1.4 | +0.0018 [−0.0053, +0.0083] |
+| less data | 252 | 15 | 18 | +0.0035 · 1.4 | +0.0022 [−0.0042, +0.0082] |
+| smaller trees | 504 | 4 | 21 | +0.0005 · 0.2 | −0.0008 [−0.0040, +0.0025] |
+| bigger trees | 504 | 63 | 5 | −0.0013 · −0.6 | −0.0026 [−0.0062, +0.0011] |
+
+**E2b: adequate for a simple edge, not for a conditional one (IEX).**
+
+| edge | target IC | true IC on test rows | recovered IC | t | share recovered |
+|---|---:|---:|---:|---:|---:|
+| momentum | 0.005 | 0.0136 | +0.0073 | 2.7 | 54% |
+| momentum | 0.0075 | 0.0160 | +0.0090 | 3.3 | 56% |
+| momentum | 0.014 | 0.0227 | +0.0132 | 5.1 | 58% |
+| momentum | 0.02 | 0.0285 | +0.0174 | 6.8 | 61% |
+| interaction | 0.014 | 0.0167 | +0.0064 | 2.4 | 39% |
+| interaction | 0.02 | 0.0228 | +0.0081 | 3.0 | 35% |
+
+- **By the rule:** momentum adequate, interaction not adequate.
+- **A caveat on "adequate".** The planted edges came out stronger on the test rows than their targets, because
+  the edge was sized on all rows and the window's return has its own (reversing) relation to the next return.
+  The row closest to a true break-even IC (0.0136) gives t = 2.7; the next (0.016) gives t = 3.3. The detection
+  limit for a simple edge is about 0.015, right at break-even.
+- **Reading.** For simple edges in these inputs the null is a lack of signal. For conditional edges the trees
+  recover about a third and would miss one of break-even size, so a null says little there.
+
+**SIP reruns of E2, the sweep, the hold-out and the replication are not done.** What ran on 2026-10-13 and
+2026-10-14 reused files from the unfinished fetch and is void.
 
 ## Common setup
 
@@ -846,8 +954,10 @@ The response so far:
 | 2026-10-07 | Replication result: the hold-out skill does not replicate (416 stocks: IC +0.0005, t 0.2; timing −0.0055). On the 85 the IC is mostly a fixed tilt, timing +0.0019 (t 0.4). The reproduced 85 match the hold-out exactly |
 | 2026-10-07 | Online agent built: streaming featurizer identical to the batch pipeline, delayed rewards, entropy-controlled exploration with drift boosts, placebo replay; protocol fixed before running |
 | 2026-10-08 | E1 (volatile-moment lead, no model, untouched 2020–2022) and E2 (learning curve, capacity ladder, planted edges) built and pre-registered; pre-registered configs frozen by a test |
+| 2026-10-08 | E1 and E2 run on IEX: E1 not replicated; E2a signal-limited; E2b adequate for a simple edge only |
 | 2026-10-09 | SIP (consolidated) feed adopted as the headline dataset before any SIP result; feed check, a guard against one feed overwriting another's cache, and data-only SIP copies of the sweep, E1, E2, hold-out and replication configs, frozen |
-| 2026-10-13 | E5 (sector lead-lag with a shuffled-sector control) built and pre-registered on SIP; not run |
+| 2026-10-13 | E5 (sector lead-lag with a shuffled-sector control) built and pre-registered on SIP |
+| 2026-10-13 | SIP fetched (503 stocks, 2016–2026, 98–99.7% of slots filled). E5: no lead-lag, but a real own reversal (IC +0.0064, t 7.5). E1 on SIP: not replicated. From here the research builds on the reversal, judged on structure, not on cost |
 
 ## Next steps
 
