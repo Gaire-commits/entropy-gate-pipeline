@@ -9,3 +9,4 @@ pyyaml>=6.0
 python-dotenv>=1.0
 matplotlib>=3.9
 tqdm>=4.66
+lxml               # pandas.read_html, for scripts/build_universe.py
