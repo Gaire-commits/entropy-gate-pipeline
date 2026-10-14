@@ -14,6 +14,9 @@ use the IEX feed.
   a stock's sector adds nothing to it. It is small: +0.12 bps gross per position.
   From 2026-10-13 the research builds on this pattern, and tests are judged on whether structure exists and
   when it is stronger, not on whether it pays. Costs are still reported.
+- **Permutation entropy does not say when that reversal is stronger (E6).** Given a real pattern to condition,
+  the reversal is the same in every third of entropy: difference +0.0001 [−0.0018, +0.0020] at 99%, and zero
+  among stocks of similar volatility. It is the cleanest test of the gate idea, and it is a null.
 
 - **Nothing beats trading costs.** Four experiments: SPY, the 12 sector ETFs at two horizons, and 503
   S&P 500 stocks. Every model and rule loses money after a 1–2 bps round-trip cost, and no gross return has
@@ -386,7 +389,7 @@ cached. Every test stands as registered and will be judged on the full universe.
 - **Reading.** A steady, small reversal is what payment for supplying liquidity looks like. It is a
   well-documented effect; this confirms it on this data at this horizon and measures its size.
 
-## E6: does permutation entropy tell when the reversal is stronger? (protocol fixed 2026-10-13; not run)
+## E6: does permutation entropy tell when the reversal is stronger? (protocol fixed 2026-10-13)
 
 The entropy gate was built to say when a pattern can be trusted and had no pattern to test on. E5 supplied
 one. E6 (`configs/sip_e6_reversal.yaml`, Colab section 24) takes E5's signal, the stock's own 30-minute
@@ -405,6 +408,36 @@ autocorrelation, volatility and the size of the move, so entropy is measured aga
 On synthetic data the rule finds a reversal that depends on entropy, does not credit entropy with a uniform
 reversal, and classifies a reversal set by volatility alone as volatility. On 60 days of pure noise it
 reports nothing; 12 days are too few for its 99% interval.
+
+### Result (2026-10-14, SIP, 503 stocks, 13.9 million stock-moments): entropy does not condition the reversal
+
+The reversal itself reproduced: IC +0.0065 [+0.0048, +0.0081], t = 7.5 (E5: +0.0064, t 7.5).
+
+| state | reversal IC, bottom third | middle | top third | top − bottom [99%] | t | within thirds of volatility [99%] |
+|---|---:|---:|---:|---|---:|---|
+| **permutation entropy (registered)** | +0.0063 | +0.0070 | +0.0064 | **+0.0001 [−0.0018, +0.0020]** | 0.2 | +0.0000 [−0.0017, +0.0017] |
+| share of monotone patterns | +0.0060 | +0.0062 | +0.0073 | +0.0013 [−0.0007, +0.0034] | 1.6 | +0.0011 [−0.0009, +0.0031] |
+| lag-1 autocorrelation | +0.0056 | +0.0066 | +0.0074 | +0.0018 [−0.0002, +0.0040] | 2.0 | +0.0017 [−0.0004, +0.0038] |
+| volatility | +0.0048 | +0.0074 | +0.0080 | +0.0031 [+0.0004, +0.0057] | 3.1 | — |
+| size of the move | +0.0001 | +0.0032 | +0.0108 | +0.0106 [+0.0078, +0.0133] | 10.0 | +0.0104 [+0.0079, +0.0129] |
+
+- **Verdict by the rule: entropy does not condition the reversal.** The reversal is the same in every third of
+  permutation entropy (+0.0063, +0.0070, +0.0064). The interval is tight: a difference larger than about
+  ±0.002, under a third of the reversal itself, is ruled out. Both halves agree (+0.0009 before 2020-07-28,
+  −0.0005 from it).
+- **This is the cleanest test of the gate idea so far.** Earlier nulls could be blamed on there being nothing
+  to gate. Here there is a real pattern, and permutation entropy still does not say when it is stronger.
+- **Plain statistics do a little better, as reported comparisons only.** The reversal is stronger in more
+  volatile stocks (+0.0031, t 3.1) and leans the same way for lag-1 autocorrelation (t 2.0) and monotone
+  patterns (t 1.6). These were not the registered state; with four reported comparisons, t = 3.1 is
+  suggestive, not a finding.
+- **Size of the move: read with care.** The reversal's IC is about zero among the smallest moves and +0.0108
+  among the largest (t 10.0, unchanged by matching on volatility). But a correlation is mechanically larger
+  where the signal varies more against the same noise, so a perfectly uniform reversal would show this too. It
+  does not show that large moves reverse proportionally more; that needs a slope, not a correlation.
+- **The usual geometry agrees** (1-hour lookback, 2.5-hour hold; reversal IC +0.0126, t 7.2): permutation
+  entropy −0.0023 [−0.0060, +0.0013], and +0.0001 within thirds of volatility; volatility +0.0066 (t 3.3);
+  monotone patterns +0.0040 [+0.0003, +0.0077]; size +0.0152 (t 7.0).
 
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
@@ -978,12 +1011,13 @@ The response so far:
 | 2026-10-09 | SIP (consolidated) feed adopted as the headline dataset before any SIP result; feed check, a guard against one feed overwriting another's cache, and data-only SIP copies of the sweep, E1, E2, hold-out and replication configs, frozen |
 | 2026-10-13 | E5 (sector lead-lag with a shuffled-sector control) built and pre-registered on SIP |
 | 2026-10-13 | SIP fetched (503 stocks, 2016–2026, 98–99.7% of slots filled). E5: no lead-lag, but a real own reversal (IC +0.0064, t 7.5). E1 on SIP: not replicated. From here the research builds on the reversal, judged on structure, not on cost |
-| 2026-10-13 | E6 (the reversal's strength by entropy state, volatility-matched) built and pre-registered; not run |
+| 2026-10-13 | E6 (the reversal's strength by entropy state, volatility-matched) built and pre-registered |
+| 2026-10-14 | E6 result: permutation entropy does not condition the reversal (+0.0001 [−0.0018, +0.0020]); volatility leans stronger (t 3.1, reported only) |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Run E6 (Colab section 24): does entropy tell when the reversal is stronger?
+2. Measure the reversal as a slope by size of move (bps recovered per bps lagged), since the IC-by-size result cannot tell a uniform reversal from one that is stronger after large moves.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.
