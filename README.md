@@ -350,6 +350,17 @@ Controls in `tests/test_reversal.py`:
 - a reversal set by volatility alone is classified as volatility;
 - the signal is identical to E5's.
 
+## E7: the reversal as a slope
+
+```bash
+python scripts/reversal_slope.py --config configs/sip_e7_slope.yaml
+```
+E6's table showed a much higher IC after large moves, which a uniform reversal would also produce:
+a correlation is larger wherever the signal varies more against the same noise.
+`src/reversal.slope_by_group` measures the share of a lag that is recovered (a slope through the origin,
+pooled by day) and compares it between the largest and smallest third of moves. A test shows the trap
+directly: on a uniform reversal the IC comparison finds a difference and the slope does not.
+
 ## Data feeds: SIP is the headline from 2026-10-09
 
 The pipeline started on Alpaca's IEX feed. IEX prints a bar only when a trade happened on IEX, so about

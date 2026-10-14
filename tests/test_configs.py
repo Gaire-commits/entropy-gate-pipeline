@@ -150,3 +150,12 @@ def test_reversal_config_uses_e5s_signal_and_registers_one_state():
     for key in ("lookback", "hold", "embargo", "stride", "split"):
         assert getattr(e6.reversal, key) == getattr(e5.leadlag, key), key
     assert e6.reversal.state == "pe3" and e6.reversal.control == "vol" and e6.reversal.level == 0.99
+
+
+def test_slope_config_measures_the_same_reversal_as_e5_and_e6():
+    e7 = load_config(ROOT / "configs" / "sip_e7_slope.yaml")
+    e6 = load_config(ROOT / "configs" / "sip_e6_reversal.yaml")
+    assert vars(e7.data) == vars(e6.data)
+    for key in ("lookback", "hold", "embargo", "stride", "window", "split", "level"):
+        assert getattr(e7.slope, key) == getattr(e6.reversal, key), key
+    assert e7.slope.by == "size" and e7.slope.groups == 3

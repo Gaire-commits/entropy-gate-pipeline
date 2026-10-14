@@ -152,3 +152,65 @@ def verdict(single: dict, matched: dict, early: dict, late: dict) -> dict:
     where = "high" if single["diff"] > 0 else "low"
     return {"level": f"entropy conditions the reversal (stronger when entropy is {where})",
             "reason": "the difference holds at 99%, survives matching on volatility, and has the same sign in both halves"}
+
+
+# ------------------------------------------------------------------ E7: the reversal as a slope
+
+def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3, min_peers: int = 20,
+                   n_boot: int = 2000, seed: int = 0, level: float = 0.99) -> dict:
+    """The share of a stock's lag that it recovers, in each group of `by` (thirds by default).
+
+    E6 measured the reversal as a correlation, and a correlation is larger wherever the signal
+    varies more against the same noise: a perfectly uniform reversal shows a higher IC among large
+    moves. A slope does not have that problem. Here the slope is through the origin, of the forward
+    return relative to the market on the signal (the reversed relative move): bps recovered per bps
+    lagged. Sums are pooled over a day and days are resampled together for every group, so the
+    difference between the top and the bottom group is paired.
+
+    Returns the slope per group with its interval, and `diff` (top minus bottom) with its interval,
+    standard error and `detectable` (the difference this data would see at this level, 80% of the time).
+    """
+    cols = MOMENT + ["signal", "ret"] + ([by] if by else [])
+    f = frame.dropna(subset=cols)[cols].copy()
+    g = f.groupby(MOMENT)["ret"]
+    f = f[g.transform("size") >= min_peers]
+    if f.empty:
+        return {"days": 0}
+    f["rel"] = f["ret"] - f.groupby(MOMENT)["ret"].transform("mean")
+    if by:
+        n = f.groupby(MOMENT)[by].transform("size")
+        f["_g"] = np.minimum((groups * (f.groupby(MOMENT)[by].rank(method="first") - 0.5) / n).astype(int), groups - 1)
+    else:
+        groups, f["_g"] = 1, 0
+    f["sxy"], f["sxx"] = f["signal"].astype(float) * f["rel"], f["signal"].astype(float) ** 2
+    day = f.groupby(["date", "_g"])[["sxy", "sxx"]].sum().unstack("_g").fillna(0.0)
+    sxy, sxx = day["sxy"].to_numpy(), day["sxx"].to_numpy()                   # (days, groups)
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(day), (n_boot, len(day)))
+    boot = sxy[idx].sum(axis=1) / sxx[idx].sum(axis=1)                        # (n_boot, groups)
+    tail = 100 * (1 - level) / 2
+    slopes = sxy.sum(axis=0) / sxx.sum(axis=0)
+    out = {"slope": slopes.tolist(), "lo": np.percentile(boot, tail, axis=0).tolist(),
+           "hi": np.percentile(boot, 100 - tail, axis=0).tolist(), "days": int(len(day)), "rows": int(len(f)),
+           "typical_move_bps": (1e4 * np.sqrt(sxx.sum(axis=0) / f.groupby("_g").size().to_numpy())).tolist()}
+    if groups > 1:
+        d = boot[:, -1] - boot[:, 0]
+        se = float(d.std())
+        z = {0.99: 2.576, 0.95: 1.96}.get(level, 2.576)
+        out.update(diff=float(slopes[-1] - slopes[0]), diff_lo=float(np.percentile(d, tail)),
+                   diff_hi=float(np.percentile(d, 100 - tail)), diff_se=se, detectable=(z + 0.84) * se)
+    return out
+
+
+def slope_verdict(overall: dict, by_size: dict, early: dict, late: dict) -> dict:
+    """The rule in configs/sip_e7_slope.yaml, in order."""
+    if not overall.get("lo", [np.nan])[0] > 0:
+        return {"level": "no reversal as a slope", "reason": "the share recovered is not above zero at 99%"}
+    if not (by_size.get("diff_lo", np.nan) > 0 or by_size.get("diff_hi", np.nan) < 0):
+        return {"level": "a uniform reversal",
+                "reason": "stocks recover the same share of a large lag as of a small one, as far as this data can tell"}
+    if not (np.sign(early.get("diff", np.nan)) == np.sign(late.get("diff", np.nan)) == np.sign(by_size["diff"])):
+        return {"level": "not stable", "reason": "the difference does not have the same sign in both halves of the history"}
+    which = "larger" if by_size["diff"] > 0 else "smaller"
+    return {"level": f"not uniform: a {which} share is recovered after large moves",
+            "reason": "the share recovered differs between the largest and smallest moves at 99%, with the same sign in both halves"}

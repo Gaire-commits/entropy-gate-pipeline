@@ -1,0 +1,58 @@
+# E7: does a stock recover a bigger share of a large lag than of a small one? (src/reversal.slope_by_group)
+#
+# E6 (2026-10-14) showed the reversal's IC near zero after the smallest moves and +0.0108 after the largest
+# (t 10.0). That cannot be read as "large moves reverse more": a correlation is larger wherever the signal
+# varies more against the same noise, so a uniform reversal produces the same table. E7 measures the
+# reversal as a slope instead: of the amount a stock lagged the market over the last 6 bars, what share
+# does it recover over the next 6 (entry one bar later)? A slope does not grow with the spread of the signal.
+#
+# Slope: through the origin, of the forward return relative to the market on the reversed relative move,
+# sums pooled within a day, days resampled together for every group. Same signal, geometry and SIP bars
+# as E5 and E6 (a test checks). Costs play no part (decided 2026-10-13).
+#
+# PROTOCOL, fixed before any result (2026-10-14). Applied in this order (src/reversal.slope_verdict):
+#   1. The slope over all stock-moments must be above zero at 99%. Otherwise NO REVERSAL AS A SLOPE.
+#   2. Stocks are split at each moment into thirds by the size of their move. The slope in the top third
+#      minus the slope in the bottom third must have a 99% day-block interval that excludes zero
+#      (two-sided). Otherwise A UNIFORM REVERSAL. Small moves give noisy slopes, so the report states the
+#      difference this data could detect; a "uniform" verdict only rules out differences of that size.
+#   3. The difference must have the same sign before 2020-07-28 and from it. Otherwise NOT STABLE.
+#   4. Otherwise NOT UNIFORM: a larger or a smaller share is recovered after large moves, as the sign says.
+# Reported, not decisive: slopes by fifths of size and in the top tenth (the shape), slopes by thirds of
+# volatility (E6's hint), and the pipeline's usual geometry (12-bar lookback, 30-bar hold).
+experiment: sip_e7_slope
+
+data: {universe: universe/sp500.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+slope:
+  lookback: 6
+  hold: 6
+  embargo: 1
+  stride: 6
+  window: 60
+  by: size
+  groups: 3
+  level: 0.99
+  split: "2020-07-28"
+  min_peers: 20
+  secondary: {lookback: 12, hold: 30, stride: 12}
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

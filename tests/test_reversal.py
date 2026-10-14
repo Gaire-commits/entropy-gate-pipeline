@@ -122,3 +122,85 @@ def test_script_runs_end_to_end_and_writes_a_verdict(tmp_path, monkeypatch):
     text = (tmp_path / "outputs" / "sip_e6_reversal" / "reversal.md").read_text()
     assert "**Verdict: ENTROPY DOES NOT CONDITION THE REVERSAL**" in text
     assert "permutation entropy (registered)" in text and "## Reported" in text
+
+
+# ---------------------------------------------------------------- E7: the reversal as a slope
+
+from src.reversal import slope_by_group, slope_verdict  # noqa: E402
+
+
+def _moves(kind="uniform", days=120, per_day=6, n=200, seed=0):
+    """Signals in return units with fat tails. uniform: 2% of any lag is recovered. large: 4% of a large
+    lag and nothing of a small one. small: the opposite. none: nothing is recovered."""
+    rng = np.random.default_rng(seed)
+    m = days * per_day
+    d, s = np.repeat(np.arange(m), n), np.tile(np.arange(n), m)
+    signal = 1e-3 * rng.standard_t(4, m * n)
+    big = np.abs(signal) > np.quantile(np.abs(signal), 0.6)
+    b = {"uniform": 0.02, "large": np.where(big, 0.04, 0.0), "small": np.where(big, 0.0, 0.25), "none": 0.0}[kind]
+    ret = b * signal + 3e-4 * rng.normal(size=m * n) + 5e-4 * rng.normal(size=m)[d]     # plus a market move
+    return pd.DataFrame({"date": pd.Timestamp("2022-01-03") + pd.to_timedelta(d // per_day, unit="D"),
+                         "bar_index": 6 * (d % per_day + 1), "symbol": s.astype(str),
+                         "signal": signal, "ret": ret, "size": np.abs(signal)})
+
+
+def _slopes(frame):
+    overall = slope_by_group(frame, by=None, n_boot=400)
+    by_size = slope_by_group(frame, n_boot=400)
+    half = frame["date"] < frame["date"].unique()[len(frame["date"].unique()) // 2]
+    early, late = slope_by_group(frame[half], n_boot=200), slope_by_group(frame[~half], n_boot=200)
+    return overall, by_size, slope_verdict(overall, by_size, early, late)
+
+
+def test_a_uniform_reversal_has_the_same_slope_whatever_the_size_though_its_ic_does_not():
+    """The trap E7 exists for: the correlation rises with the size of the move, the slope does not."""
+    frame = _moves("uniform")
+    overall, by_size, v = _slopes(frame)
+    assert overall["slope"][0] == pytest.approx(0.02, abs=0.003)
+    assert by_size["diff_lo"] < 0 < by_size["diff_hi"] and v["level"] == "a uniform reversal"
+    ic = conditional_ic(frame, "size", n_boot=300)
+    assert ic["lo"] > 0                                        # the IC comparison "finds" a difference that is not there
+
+
+def test_a_reversal_only_after_large_moves_is_found_and_so_is_its_opposite():
+    _, by_size, v = _slopes(_moves("large"))
+    assert by_size["diff_lo"] > 0 and by_size["slope"][-1] == pytest.approx(0.04, abs=0.006)
+    assert v["level"] == "not uniform: a larger share is recovered after large moves"
+    _, by_size, v = _slopes(_moves("small"))
+    assert by_size["diff_hi"] < 0 and v["level"] == "not uniform: a smaller share is recovered after large moves"
+
+
+def test_no_reversal_is_reported_as_none_and_the_market_move_cancels():
+    overall, _, v = _slopes(_moves("none"))
+    assert overall["lo"][0] < 0 < overall["hi"][0] and v["level"] == "no reversal as a slope"
+
+
+def test_slope_verdict_needs_the_same_sign_in_both_halves():
+    overall, by_size = {"lo": [0.01]}, {"diff": 0.02, "diff_lo": 0.005, "diff_hi": 0.04}
+    assert slope_verdict(overall, by_size, {"diff": 0.03}, {"diff": -0.01})["level"] == "not stable"
+    assert slope_verdict(overall, by_size, {"diff": 0.03}, {"diff": 0.01})["level"].startswith("not uniform: a larger")
+
+
+def test_slope_script_runs_end_to_end_and_writes_a_verdict(tmp_path, monkeypatch):
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "scripts"))
+    import reversal_slope as script
+
+    (tmp_path / "bars" / "5Min").mkdir(parents=True)
+    symbols = [f"S{i:02d}" for i in range(60)]
+    for i, s in enumerate(symbols):
+        grid = bars_from_returns(s, ar_returns(40, 0.0, seed=i), seed=i, start="2024-01-02")
+        grid.drop(columns=["session_id", "bar_index"]).dropna().to_parquet(tmp_path / "bars" / "5Min" / f"{s}.parquet")
+    pd.DataFrame({"symbol": symbols, "sector": "X"}).to_csv(tmp_path / "u.csv", index=False)
+    cfg = yaml.safe_load((root / "configs" / "sip_e7_slope.yaml").read_text())
+    cfg["data"].update(universe=str(tmp_path / "u.csv"), cache_dir=str(tmp_path / "bars"))
+    cfg["slope"].update(split="2024-02-01")
+    cfg["evaluation"]["bootstrap"] = 100
+    (tmp_path / "c.yaml").write_text(yaml.safe_dump(cfg))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["reversal_slope.py", "--config", "c.yaml"])
+    assert script.main() == 0
+    text = (tmp_path / "outputs" / "sip_e7_slope" / "slope.md").read_text()
+    assert "**Verdict: NO REVERSAL AS A SLOPE**" in text and "largest third" in text and "By fifths of size" in text

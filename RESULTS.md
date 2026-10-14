@@ -439,6 +439,26 @@ The reversal itself reproduced: IC +0.0065 [+0.0048, +0.0081], t = 7.5 (E5: +0.0
   entropy −0.0023 [−0.0060, +0.0013], and +0.0001 within thirds of volatility; volatility +0.0066 (t 3.3);
   monotone patterns +0.0040 [+0.0003, +0.0077]; size +0.0152 (t 7.0).
 
+## E7: is a bigger share of a large lag recovered? (protocol fixed 2026-10-14; not run)
+
+E6's size row cannot tell a uniform reversal from one that is stronger after large moves, because it compares
+correlations. E7 (`configs/sip_e7_slope.yaml`, Colab section 25) measures the reversal as a slope: of the
+amount a stock lagged the market over the last 6 bars, the share it makes back over the next 6.
+
+The rule, in order:
+1. The slope over all stock-moments must be above zero at 99%.
+2. The slope in the largest third of moves minus the slope in the smallest third must exclude zero at 99%
+   (two-sided). Otherwise the reversal is **uniform**.
+3. The sign must be the same before and after 2020-07-28.
+
+Small moves give noisy slopes, so the report states the difference the data could detect; a "uniform" verdict
+only rules out differences of that size. Reported beside it: slopes by fifths of size, the largest tenth, and
+thirds of volatility.
+
+On synthetic data: a uniform 2% reversal gives the same slope in every third (while its IC rises with size,
+the trap), a reversal only after large moves or only after small ones is found with the right sign, and no
+reversal is reported as none.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -1013,11 +1033,12 @@ The response so far:
 | 2026-10-13 | SIP fetched (503 stocks, 2016–2026, 98–99.7% of slots filled). E5: no lead-lag, but a real own reversal (IC +0.0064, t 7.5). E1 on SIP: not replicated. From here the research builds on the reversal, judged on structure, not on cost |
 | 2026-10-13 | E6 (the reversal's strength by entropy state, volatility-matched) built and pre-registered |
 | 2026-10-14 | E6 result: permutation entropy does not condition the reversal (+0.0001 [−0.0018, +0.0020]); volatility leans stronger (t 3.1, reported only) |
+| 2026-10-14 | E7 (the reversal as a slope, by size of move) built and pre-registered; not run |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Measure the reversal as a slope by size of move (bps recovered per bps lagged), since the IC-by-size result cannot tell a uniform reversal from one that is stronger after large moves.
+2. Run E7 (Colab section 25): the reversal as a slope, by size of move.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.
