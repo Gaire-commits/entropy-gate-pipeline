@@ -612,6 +612,25 @@ from the size of moves alone. Costs decide nothing.
   the position is held. That is consistent with a slow return of price to value after a liquidity-driven move,
   and it is a reason to test longer holds, not evidence yet.
 
+## E10: does the reversal keep growing the longer it is held? (protocol fixed 2026-10-14; not run)
+
+E9's grid, reported and not decisive, had the reversal's IC rising with the hold in every row, strongest for
+a 30-minute lookback held 2 hours (+0.0151, t 7.4, +0.77 bps gross), the best of nine cells. E10
+(`configs/sip_e10_holds.yaml`, Colab section 28) tests that direction with a rule fixed first.
+
+- **Same signal, same moments.** E5's signal at 10:00, 10:30, 11:00 and 11:30, held for 30 minutes, 1, 2 and 4
+  hours, and a full trading day (exit the next trading day at the same time, across the overnight gap). Only
+  the time held changes between cells, so differences are paired moment by moment.
+- **The IC carries the verdicts,** because the amount in bps grows with the horizon on its own.
+- **Two decisive comparisons,** 4 hours against 30 minutes and a full day against 30 minutes, each at 99%:
+  includes zero is **does not keep growing**; otherwise the sign must agree in both halves of the history, or
+  **not stable**; otherwise **keeps growing** or **fades**.
+- **The day-long hold is judged on its own,** since it carries the overnight gap, where news and earnings
+  land, a different mechanism from an intraday reversal.
+
+Reported: every hold, each step to the next hold, each signal time, gross and net book bps, and the amount
+square-root-of-time scaling would give. Costs decide nothing.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -1192,11 +1211,12 @@ The response so far:
 | 2026-10-14 | E8 result: E7 not confirmed (+0.07% [−0.55%, +0.67%] with twice the precision); the reversal as an amount is +0.28% [−0.06%, +0.64%] of the lag |
 | 2026-10-14 | E9 (the reversal at 30 minutes to 2 hours, judged on IC not bps) built and pre-registered |
 | 2026-10-14 | E9 result: the same strength at every horizon by the 99% rule (+0.0047 [−0.0004, +0.0102]); IC rises with the hold in every row of the grid; best cell (30-minute lookback, 2-hour hold) IC +0.0151, +0.77 bps gross |
+| 2026-10-14 | E10 (the same signal held 30 minutes to a full day, on the same moments) built and pre-registered; not run |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Test longer holds with the lookback kept short (the grid's strongest direction), registered first: 30-minute lookback, hold of 2 hours, 4 hours and a day. The best E9 cell was chosen from nine, so it needs its own test before it is believed.
+2. Run E10 (Colab section 28): longer holds with the lookback kept short, the direction E9's grid pointed in.
 3. Decide whether to keep building on the reversal: it is real as an ordering (t 7.5) and under a tenth of a basis point as an amount. A second sample (another universe or period) would be the next honest test; E6–E8 all use the same data.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and

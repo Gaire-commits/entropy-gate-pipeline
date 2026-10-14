@@ -180,3 +180,14 @@ def test_horizon_config_reads_the_sip_bars_and_keeps_e5s_baseline_cell():
     assert h.embargo == e5.leadlag.embargo and h.split == e5.leadlag.split
     assert max(h.grid) * 2 + h.embargo < 78, "the longest cell must fit in one session"
     assert h.level == 0.99 and h.t_bar == 3.0
+
+
+def test_holds_config_keeps_e5s_signal_and_leaves_room_for_the_longest_hold():
+    e10 = load_config(ROOT / "configs" / "sip_e10_holds.yaml")
+    e5 = load_config(ROOT / "configs" / "sip_e5_leadlag.yaml")
+    assert vars(e10.data) == vars(e5.data)
+    h = e10.holds
+    assert h.lookback == e5.leadlag.lookback and h.embargo == e5.leadlag.embargo and h.split == e5.leadlag.split
+    assert max(h.offsets) + h.embargo + max(h.holds) < 78, "the longest intraday hold must end inside the session"
+    assert min(h.offsets) >= h.lookback and h.holds[0] in (h.lookback,)
+    assert h.level == 0.99 and set(map(str, h.decisive)) == {"48", "day"} and h.t_bar == 3.0

@@ -350,6 +350,17 @@ Controls in `tests/test_reversal.py`:
 - a reversal set by volatility alone is classified as volatility;
 - the signal is identical to E5's.
 
+## E10: the reversal as the hold gets longer
+
+```bash
+python scripts/holds.py --config configs/sip_e10_holds.yaml
+```
+E9's grid hinted that the reversal's IC rises with the hold. `scripts/holds.py` holds the same signal for
+30 minutes, 1, 2 and 4 hours and a full trading day (across the overnight gap), on the **same moments**, so
+the time held is the only thing that changes. The 4-hour and day-long holds are each compared with the
+30-minute hold, paired on those moments, on the rank IC (the amount in bps grows with the horizon on its
+own). A test checks that the overnight exit is the next day's price.
+
 ## E9: the reversal from 30 minutes to 2 hours
 
 ```bash

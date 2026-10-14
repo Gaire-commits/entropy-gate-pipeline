@@ -1,0 +1,67 @@
+# E10: does the reversal keep growing the longer the position is held? (src/horizons.py)
+#
+# E9 (2026-10-14) found, in a grid reported and not decisive, that the reversal's IC rises with the hold in
+# every row, and was largest for a 30-minute lookback held 2 hours (+0.0151, t 7.4, +0.77 bps gross). That
+# cell was the best of nine. This tests the direction it points in, with a rule fixed first.
+#
+# Same signal as E5-E9: a stock's move relative to the market over the last 6 bars, reversed. Entry one bar
+# after the signal bar. SAME MOMENTS for every hold: signals at bars 6, 12, 18 and 24 (10:00, 10:30, 11:00,
+# 11:30), the ones that leave room for a 4-hour hold, so the only thing that changes between cells is how
+# long the position is held. Holds: 6 bars (30 minutes), 12 (1 hour), 24 (2 hours), 48 (4 hours), and a full
+# trading day (exit at the same bar of the next trading day, across the overnight gap). Four moments a
+# day: up to about 2,000 stock-moments a day, 2016 to 2026.
+#
+# What would mislead. The amount in bps grows with the horizon on its own (square root of time), so the
+# verdict rests on the rank IC, skill per unit of risk, as in E9. The day-long hold also carries the
+# overnight gap, where news and earnings land, a different mechanism from the intraday reversal; it is
+# judged on its own.
+#
+# PROTOCOL, fixed before any result (2026-10-14). Applied in this order (src/horizons.growth_verdict),
+# separately for the 4-hour hold and for the day-long hold, each against the 30-minute hold:
+#   1. The 30-minute hold on these moments must have an IC with t >= 3. Otherwise NO REVERSAL AT THESE
+#      SIGNAL TIMES (and nothing else is read).
+#   2. The longer hold's IC minus the 30-minute hold's, paired on the same moments, 99% day-block
+#      interval: includes zero -> DOES NOT KEEP GROWING; otherwise go to step 3.
+#   3. The difference must have the same sign before 2020-07-28 and from it (95% in each half).
+#      Otherwise NOT STABLE.
+#   4. Otherwise KEEPS GROWING WITH THE HOLD (or FADES WITH THE HOLD), as the sign says.
+# Two decisive comparisons, so each is read at 99%. Reported, not decisive: every hold's IC and its
+# neighbours' differences, gross and net book bps (top and bottom fifth), the amount expected from
+# square-root-of-time scaling of the 30-minute book, and each signal time on its own. Costs decide nothing.
+experiment: sip_e10_holds
+
+data: {universe: universe/sp500.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+holds:
+  lookback: 6
+  embargo: 1
+  offsets: [6, 12, 18, 24]
+  holds: [6, 12, 24, 48]
+  decisive: [48, "day"]
+  min_peers: 20
+  q: 0.2
+  cost_bps: 2.0
+  t_bar: 3.0
+  level: 0.99
+  half_level: 0.95
+  split: "2020-07-28"
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000

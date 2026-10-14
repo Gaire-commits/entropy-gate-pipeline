@@ -58,3 +58,66 @@ def verdict(cells: dict[int, dict], longer_minus_shorter: dict, early: dict, lat
         return {"level": "not stable", "reason": "the difference does not have the same sign in both halves of the history"}
     return {"level": "stronger at longer horizons" if sign > 0 else "weaker at longer horizons",
             "reason": "the longest horizon's IC differs from the shortest's at 99%, with the same sign in both halves"}
+
+
+# ------------------------------------------------------------------ E10: the same signals, held for longer
+
+from .online import panel_days  # noqa: E402
+
+OFFSETS = (6, 12, 18, 24)      # signal bars: 10:00, 10:30, 11:00, 11:30; all leave room for a 4-hour hold
+
+
+def collect_overnight(bars: dict[str, pd.DataFrame], lookback: int = 6, embargo: int = 1,
+                      offsets: tuple[int, ...] = OFFSETS, min_peers: int = 20) -> pd.DataFrame:
+    """The same signal as E5 (own move relative to the market over `lookback` bars, reversed), held for a
+    full trading day: entry `embargo` bar after the signal, exit at the same bar of the next trading day.
+
+    Rows: date (of the signal), bar_index (the signal bar), symbol, ret (log, entry to exit), own (the
+    signal). A stock must have a trade at every bar of its lookback window, at the entry bar, and at the
+    exit bar; the next trading day is the next day the stock itself has bars. The signal uses nothing
+    later than its own bar, and the exit is known only on the next day.
+    """
+    symbols = np.array(list(bars))
+    pending: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.datetime64]] = {}
+    parts = []
+    for date, fields, slots in panel_days(bars):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            logc = np.log(fields["close"])
+        for o, (idx, signal, entry, signal_date) in list(pending.items()):
+            exit_ = o + embargo
+            if exit_ >= logc.shape[0]:
+                continue
+            here = np.isfinite(logc[exit_, idx]) & (exit_ < slots[idx])
+            if here.any():
+                parts.append(pd.DataFrame({"date": np.datetime64(signal_date, "ns"), "bar_index": np.int16(o),
+                                           "symbol": symbols[idx[here]], "own": signal[here].astype(np.float32),
+                                           "ret": (logc[exit_, idx[here]] - entry[here]).astype(np.float32)}))
+        pending = {}
+        finite = np.isfinite(logc)
+        for o in offsets:
+            entry_bar = o + embargo
+            if entry_bar >= logc.shape[0]:
+                continue
+            valid = finite[o - lookback: o + 1].all(axis=0) & finite[entry_bar] & (entry_bar < slots)
+            idx = np.flatnonzero(valid)
+            if len(idx) < min_peers:
+                continue
+            move = logc[o, idx] - logc[o - lookback, idx]
+            pending[o] = (idx, -(move - move.mean()), logc[entry_bar, idx], date)
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+
+def growth_verdict(base: dict, longest: dict, paired: dict, early: dict, late: dict, t_bar: float = 3.0) -> dict:
+    """The rule in configs/sip_e10_holds.yaml for one comparison: the IC at a long hold against the
+    shortest, on the same moments (`paired`: 99%; `early`, `late`: 95%)."""
+    if not base.get("t", np.nan) >= t_bar:
+        return {"level": "no reversal at these signal times", "reason": f"the shortest hold does not reach t >= {t_bar:g}"}
+    lo, hi = paired.get("lo", np.nan), paired.get("hi", np.nan)
+    if not (lo > 0 or hi < 0):
+        return {"level": "does not keep growing",
+                "reason": "the longer hold's IC is not distinguishable from the shortest hold's at 99%, on the same moments"}
+    sign = np.sign(paired["diff"])
+    if not (np.sign(early.get("diff", np.nan)) == np.sign(late.get("diff", np.nan)) == sign):
+        return {"level": "not stable", "reason": "the difference does not have the same sign in both halves of the history"}
+    return {"level": "keeps growing with the hold" if sign > 0 else "fades with the hold",
+            "reason": "the longer hold's IC differs from the shortest hold's at 99%, with the same sign in both halves"}
