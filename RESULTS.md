@@ -721,6 +721,37 @@ which stays in the S&P 500 sample only.
 - **Limits.** A second sample of stocks over the same years, not a second period. Today's mid-cap list applied
   back to 2016 (survivorship bias).
 
+## E12: does a stock follow the stocks it actually moves with? (protocol fixed 2026-10-14)
+
+E5 found that a stock's GICS sector adds nothing to the reversal. A sector is a coarse, fixed label, so E12
+(`configs/sip_e12_peers.yaml`, Colab section 31) tries the correlated-stocks idea with peers taken from the data.
+On the first trading day of each month, each stock gets the 5 stocks whose 5-minute returns (relative to the
+market) moved most closely with its own over the previous 60 trading days. The signal is the peers' move over
+the last 30 minutes, scored against the stock's next 30 minutes (E5's geometry). A stock moves with its peers,
+so their move carries part of its own move, which reverses. To keep the reversal out, the peers' move is
+residualized on the stock's own move at each moment (ranks, least squares across stocks), and the same is done
+with 5 random peers per stock on the same moments. It is step 2 of [LIVE_PLAN.md](LIVE_PLAN.md): the
+correlated-peers arm goes into the forward test only if this passes.
+
+The rule, in order:
+1. **Real peers' residual IC minus random peers'**, on the same moments, at 99%. Includes zero: **correlated
+   peers add nothing**.
+2. **The same sign in both halves** (before and from 2020-07-28, point estimates); otherwise **not stable**.
+3. **Above zero: stocks follow their correlated peers** (the arm goes live). **Below zero: stocks move against
+   their correlated peers** (it does not).
+
+Reported: 10 peers, a 1-hour hold, the sector average through the same residual (against random peers and
+against correlated peers), the raw peers' IC, the own reversal, the peers' average correlation and share in the
+stock's own sector, and a book on the residual.
+
+Checked on synthetic data before any real run (`tests/test_peers.py`). The planted groups are recovered as
+peers. Planted followers (half of each group takes the shared move 30 minutes late) beat random peers on
+every seed tried (+0.065 to +0.098). With shared moves but no following, with or without a stock's own
+reversal, the interval includes zero on 15 of 16 seeds; the 16th touches zero from below. A 15-minute lag
+is detected on 1 of 3 seeds at this small size (30 stocks, 70 days); the real data is about 17 times
+wider and 37 times longer. If the residual leaks any of the own reversal, it pushes real peers *down*. That
+errs toward "not following", so it cannot open the forward arm by mistake.
+
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
 Both rules were fixed and committed before running. `tests/test_frozen.py` fails if either config, or any
@@ -1305,6 +1336,8 @@ The response so far:
 | 2026-10-14 | E10 result: 4 hours keeps growing vs 30 minutes by a hair (+0.0038 [+0.0001, +0.0076]), all of it in the first hour; a full day does not. IC about 0.0100 from 1 to 4 hours; E9's best cell was flattered |
 | 2026-10-14 | E11 (the reversal in a second sample of stocks, the S&P MidCap 400) built and pre-registered |
 | 2026-10-14 | E11 result: replicates in full on 399 mid caps the project never used; the same strength as in large caps (−0.0012 [−0.0035, +0.0011]) |
+| 2026-10-14 | LIVE_PLAN.md drafted: a forward test of the whole process on live companies, run daily on AWS, no orders |
+| 2026-10-14 | E12 (correlated peers from the data, residualized, against random peers) built and pre-registered; the forward-test length calculation built (section 30) |
 
 ## Next steps
 

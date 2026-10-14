@@ -1,0 +1,74 @@
+# E12: does a stock follow the stocks it actually moves with? (scripts/peers.py, src/peers.py)
+#
+# E5 found that a stock's GICS sector adds nothing to the reversal: the catch-up signal worked no better
+# with real sectors than with shuffled ones. A sector is a coarse, fixed label. This tries the
+# correlated-stocks idea with peers taken from the data: on the first trading day of each month, each
+# stock's 5 stocks whose 5-minute returns (relative to the market) moved most closely with its own over
+# the previous 60 trading days. Peers use past data only and are kept for the month.
+#
+# Signal: the peers' average move relative to the market over the last 6 bars (30 minutes). Trade: enter
+# one bar after the signal bar, hold 6 bars; a moment every 6 bars (E5's geometry). Every bar from the start
+# of the lookback to the signal bar, and the entry and exit bars, must have a trade. Consolidated (SIP)
+# bars, S&P 500, 2016 onward (moments start once 60 days of history exist).
+#
+# The own reversal is in the way: a stock moves with its peers, so their move carries part of its own move,
+# which reverses (E5). So (1) at each moment the peers' move is residualized on the stock's own move (ranks,
+# least squares across stocks), and (2) the same is done with 5 random peers per stock, redrawn monthly, on
+# the same moments. Only real peers beating random peers is following.
+#
+# This is step 2 of LIVE_PLAN.md: the correlated-peers arm goes into the forward test only if this passes.
+#
+# PROTOCOL, fixed before any result (2026-10-14). Applied in this order (src/peers.verdict):
+#   1. The rank IC of the real peers' residual move minus that of the random peers' residual move, on the
+#      same moments, 99% day-block interval. Includes zero: CORRELATED PEERS ADD NOTHING.
+#   2. The same difference must have the same sign before 2020-07-28 and from it (point estimates; 95%
+#      intervals reported); otherwise NOT STABLE.
+#   3. Above zero: STOCKS FOLLOW THEIR CORRELATED PEERS (the arm goes live); below zero: STOCKS MOVE AGAINST
+#      THEIR CORRELATED PEERS (does not go live).
+# Reported, not decisive: 10 peers instead of 5; a 1-hour hold; the sector average (E5's peers) through the
+# same residual, against random peers and against correlated peers; the raw (not residualized) peers'
+# IC; the own reversal's IC; the average correlation of the chosen peers and how often one is in the
+# stock's own sector; a long-short book on the residual (costs decide nothing).
+experiment: sip_e12_peers
+
+data: {universe: universe/sp500.csv, start: '2016-01-04', end: yesterday, timeframe: 5Min,
+  feed: sip, adjustment: split, cache_dir: data/bars_sip}
+
+features:
+  window: 12
+  embargo: 1
+  horizon: 30
+  stride: 12
+  allow_overnight: false
+  channels: [log_return, session_return, hl_range, volume_z]
+  normalize: fold_standardize
+  label_deadzone: 0.0005
+
+peers:
+  lookback: 6
+  embargo: 1
+  stride: 6
+  k: 5
+  ks: [5, 10]
+  hold: 6
+  holds: [6, 12]
+  peer_days: 60
+  min_share: 0.8
+  min_valid: 3
+  min_sector: 5
+  min_peers: 20
+  seed: 0
+  level: 0.99
+  half_level: 0.95
+  split: "2020-07-28"
+  q: 0.2
+  cost_bps: 2.0
+
+sweep:
+  archs: []
+  seeds: [0]
+
+evaluation:
+  cost_bps: [2]
+  headline_cost_bps: 2
+  bootstrap: 2000
