@@ -29,9 +29,9 @@ def pct(x) -> str:
 def evaluate(frame: pd.DataFrame, e, n_boot: int) -> dict:
     kw = dict(min_peers=e.min_peers, n_boot=n_boot, level=e.level)
     split = pd.Timestamp(e.split)
-    top = frame.assign(decile=(frame.groupby(["date", "bar_index"])["size"].rank(pct=True) > 0.9).astype(float))
+    top = frame.assign(decile=(frame.groupby(["date", "bar_index"])["size"].rank(pct=True) > 0.9).astype(int))
     return {"overall": slope_by_group(frame, by=None, **kw), "size": slope_by_group(frame, e.by, e.groups, **kw),
-            "fifths": slope_by_group(frame, e.by, 5, **kw), "decile": slope_by_group(top, "decile", 2, **kw),
+            "fifths": slope_by_group(frame, e.by, 5, **kw), "decile": slope_by_group(top, "decile", 2, precut=True, **kw),
             "vol": slope_by_group(frame, "vol", e.groups, **kw),
             "early": slope_by_group(frame[frame["date"] < split], e.by, e.groups, **kw),
             "late": slope_by_group(frame[frame["date"] >= split], e.by, e.groups, **kw),
@@ -39,9 +39,10 @@ def evaluate(frame: pd.DataFrame, e, n_boot: int) -> dict:
 
 
 def rows(r: dict, labels: list[str]) -> list[str]:
-    out = ["| group | typical move (bps) | share recovered [99%] |", "|---|---:|---|"]
+    out = ["| group | stock-moments | typical move (bps) | share recovered [99%] |", "|---|---:|---:|---|"]
     for i, label in enumerate(labels):
-        out.append(f"| {label} | {r['typical_move_bps'][i]:.1f} | {pct(r['slope'][i])} [{pct(r['lo'][i])}, {pct(r['hi'][i])}] |")
+        out.append(f"| {label} | {r['n'][i]:,} | {r['typical_move_bps'][i]:.1f} | {pct(r['slope'][i])} "
+                   f"[{pct(r['lo'][i])}, {pct(r['hi'][i])}] |")
     return out
 
 

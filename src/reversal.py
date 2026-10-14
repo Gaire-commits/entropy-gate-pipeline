@@ -157,7 +157,7 @@ def verdict(single: dict, matched: dict, early: dict, late: dict) -> dict:
 # ------------------------------------------------------------------ E7: the reversal as a slope
 
 def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3, min_peers: int = 20,
-                   n_boot: int = 2000, seed: int = 0, level: float = 0.99) -> dict:
+                   n_boot: int = 2000, seed: int = 0, level: float = 0.99, precut: bool = False) -> dict:
     """The share of a stock's lag that it recovers, in each group of `by` (thirds by default).
 
     E6 measured the reversal as a correlation, and a correlation is larger wherever the signal
@@ -169,6 +169,10 @@ def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3
 
     Returns the slope per group with its interval, and `diff` (top minus bottom) with its interval,
     standard error and `detectable` (the difference this data would see at this level, 80% of the time).
+
+    With `precut`, `by` already holds the group number (0 .. groups - 1) and is used as it is. Without
+    it the groups are equal-sized cuts of `by` within each moment, which is wrong for a column that
+    is itself a label: cutting a 0/1 flag into two halves does not separate the 1s from the 0s.
     """
     cols = MOMENT + ["signal", "ret"] + ([by] if by else [])
     f = frame.dropna(subset=cols)[cols].copy()
@@ -177,7 +181,9 @@ def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3
     if f.empty:
         return {"days": 0}
     f["rel"] = f["ret"] - f.groupby(MOMENT)["ret"].transform("mean")
-    if by:
+    if by and precut:
+        f["_g"] = f[by].astype(int)
+    elif by:
         n = f.groupby(MOMENT)[by].transform("size")
         f["_g"] = np.minimum((groups * (f.groupby(MOMENT)[by].rank(method="first") - 0.5) / n).astype(int), groups - 1)
     else:
@@ -192,6 +198,7 @@ def slope_by_group(frame: pd.DataFrame, by: str | None = "size", groups: int = 3
     slopes = sxy.sum(axis=0) / sxx.sum(axis=0)
     out = {"slope": slopes.tolist(), "lo": np.percentile(boot, tail, axis=0).tolist(),
            "hi": np.percentile(boot, 100 - tail, axis=0).tolist(), "days": int(len(day)), "rows": int(len(f)),
+           "n": f.groupby("_g").size().to_numpy().tolist(),
            "typical_move_bps": (1e4 * np.sqrt(sxx.sum(axis=0) / f.groupby("_g").size().to_numpy())).tolist()}
     if groups > 1:
         d = boot[:, -1] - boot[:, 0]

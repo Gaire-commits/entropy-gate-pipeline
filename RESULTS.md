@@ -14,6 +14,9 @@ use the IEX feed.
   a stock's sector adds nothing to it. It is small: +0.12 bps gross per position.
   From 2026-10-13 the research builds on this pattern, and tests are judged on whether structure exists and
   when it is stronger, not on whether it pays. Costs are still reported.
+- **The reversal follows large moves (E7, passed narrowly).** Measured as the share of a lag that is recovered,
+  it is +0.75% in the largest fifth of moves and about zero in the rest; largest minus smallest third is
+  +1.12% [+0.05%, +2.49%] at 99%. The first registered rule to pass in full, by a thin margin.
 - **Permutation entropy does not say when that reversal is stronger (E6).** Given a real pattern to condition,
   the reversal is the same in every third of entropy: difference +0.0001 [−0.0018, +0.0020] at 99%, and zero
   among stocks of similar volatility. It is the cleanest test of the gate idea, and it is a null.
@@ -439,7 +442,7 @@ The reversal itself reproduced: IC +0.0065 [+0.0048, +0.0081], t = 7.5 (E5: +0.0
   entropy −0.0023 [−0.0060, +0.0013], and +0.0001 within thirds of volatility; volatility +0.0066 (t 3.3);
   monotone patterns +0.0040 [+0.0003, +0.0077]; size +0.0152 (t 7.0).
 
-## E7: is a bigger share of a large lag recovered? (protocol fixed 2026-10-14; not run)
+## E7: is a bigger share of a large lag recovered? (protocol fixed 2026-10-14)
 
 E6's size row cannot tell a uniform reversal from one that is stronger after large moves, because it compares
 correlations. E7 (`configs/sip_e7_slope.yaml`, Colab section 25) measures the reversal as a slope: of the
@@ -458,6 +461,39 @@ thirds of volatility.
 On synthetic data: a uniform 2% reversal gives the same slope in every third (while its IC rises with size,
 the trap), a reversal only after large moves or only after small ones is found with the right sign, and no
 reversal is reported as none.
+
+### Result (2026-10-14, SIP, 503 stocks, 13.9 million stock-moments): not uniform, by a thin margin
+
+| moves | typical move | share recovered [99%] |
+|---|---:|---|
+| every stock-moment | 41.7 bps | +0.55% [+0.03%, +1.06%] |
+| smallest third | 8.1 bps | −0.47% [−1.64%, +0.62%] |
+| middle third | 23.5 bps | −0.18% [−0.89%, +0.52%] |
+| largest third | 67.8 bps | +0.65% [+0.11%, +1.19%] |
+| **largest minus smallest third** | | **+1.12% [+0.05%, +2.49%]** |
+
+- **Verdict by the rule: not uniform, a larger share is recovered after large moves.** All three steps pass.
+  It is the first pre-registered test in this project whose whole rule passes on real data.
+- **The margin is thin, and this should be read as a lead that passed narrowly.**
+  - The 99% interval of the difference starts at +0.05%. The data could reliably detect a difference of
+    about 1.64%, more than the 1.12% found.
+  - Step 3 asked only for the same sign in both halves. It is positive in both, but neither half excludes
+    zero on its own: +2.02% [−0.04%, +5.15%] before 2020-07-28 and +0.53% [−0.33%, +1.39%] from it.
+  - The usual geometry (1-hour lookback, 2.5-hour hold) does not show it: +0.60% [−0.94%, +2.32%].
+- **The shape (reported).** By fifths of size, the share recovered is about zero in the four smaller fifths
+  (−0.32%, −0.23%, −0.29%, −0.02%) and +0.75% [+0.22%, +1.31%] in the largest fifth, where the typical move is
+  81.5 bps. As a slope, the reversal is there only after the largest moves: about 0.6 bps recovered of an
+  80 bps lag.
+- **By volatility (reported):** 0.00% in the calmest third, +0.67% and +0.61% in the other two; the difference
+  is +0.61% [−0.02%, +1.35%].
+- **Why the slope is so much less sure than the IC.** The same reversal has t = 7.5 as a rank correlation and
+  an interval that barely clears zero as a pooled slope. A pooled slope weights each stock-moment by the square
+  of its move, so a few extreme moves dominate it, and returns have fat tails. The rank IC ignores sizes. A
+  slope that limits extreme values would be a sharper instrument; it was not the registered one.
+- **A bug in the first report, disclosed.** Its "largest tenth against the rest" row was wrong: the script cut a
+  0/1 flag into two equal halves, so half of all rows were labelled the largest tenth (its "typical move" of
+  52.1 bps, below the largest fifth's 81.5, gave it away). The row was reported, not decisive, and the verdict
+  does not use it. It is fixed and tested; that row needs a rerun before it is quoted.
 
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
@@ -1033,12 +1069,13 @@ The response so far:
 | 2026-10-13 | SIP fetched (503 stocks, 2016–2026, 98–99.7% of slots filled). E5: no lead-lag, but a real own reversal (IC +0.0064, t 7.5). E1 on SIP: not replicated. From here the research builds on the reversal, judged on structure, not on cost |
 | 2026-10-13 | E6 (the reversal's strength by entropy state, volatility-matched) built and pre-registered |
 | 2026-10-14 | E6 result: permutation entropy does not condition the reversal (+0.0001 [−0.0018, +0.0020]); volatility leans stronger (t 3.1, reported only) |
-| 2026-10-14 | E7 (the reversal as a slope, by size of move) built and pre-registered; not run |
+| 2026-10-14 | E7 (the reversal as a slope, by size of move) built and pre-registered |
+| 2026-10-14 | E7 result: not uniform, a larger share recovered after large moves (+1.12% [+0.05%, +2.49%]); passes its rule by a thin margin. A bug in a reported row found and fixed |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Run E7 (Colab section 25): the reversal as a slope, by size of move.
+2. Firm up E7 with a slope that limits extreme values (registered before running), and rerun E7's script for the corrected largest-tenth row.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.

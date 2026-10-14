@@ -204,3 +204,16 @@ def test_slope_script_runs_end_to_end_and_writes_a_verdict(tmp_path, monkeypatch
     assert script.main() == 0
     text = (tmp_path / "outputs" / "sip_e7_slope" / "slope.md").read_text()
     assert "**Verdict: NO REVERSAL AS A SLOPE**" in text and "largest third" in text and "By fifths of size" in text
+
+
+def test_a_flag_is_used_as_the_group_it_names_not_cut_into_equal_halves():
+    """The bug in the first E7 report: the largest tenth was cut as if the flag were a quantity,
+    which put half of all rows in the "largest tenth"."""
+    frame = _moves("large")
+    flag = (frame.groupby(["date", "bar_index"])["size"].rank(pct=True) > 0.9).astype(int)
+    right = slope_by_group(frame.assign(decile=flag), "decile", 2, n_boot=100, precut=True)
+    assert right["n"][1] == int(flag.sum()) and right["n"][1] < 0.11 * len(frame)
+    fifths = slope_by_group(frame, "size", 5, n_boot=100)
+    assert right["typical_move_bps"][1] > fifths["typical_move_bps"][-1]      # a tenth is more extreme than a fifth
+    wrong = slope_by_group(frame.assign(decile=flag), "decile", 2, n_boot=100)
+    assert wrong["n"][1] > 0.45 * len(frame)                                  # what the report did
