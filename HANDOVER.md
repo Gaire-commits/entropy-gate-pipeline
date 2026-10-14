@@ -66,7 +66,12 @@ Do not use "Run all": it reruns every old section.
    instrument twice as sharp, did not confirm it: +0.07% [−0.55%, +0.67%]. Over all stock-moments the share
    recovered is +0.28% [−0.06%, +0.64%] at 99%. So: a reliable ordering, worth under a tenth of a basis point.
    The rank correlation is about twice what the slope implies; why is not established.
-5. **No alpha.** Nothing earns a return after costs.
+5. **The reversal does not fade out to 2 hours (E9).** By the registered 99% rule the IC is the same at 30 min,
+   1 h and 2 h (the 2 h minus 30 min difference +0.0047 [−0.0004, +0.0102] only just includes zero). In the
+   whole grid the IC rises with the hold for every lookback. Best cell, a 30-minute lookback held 2 hours: IC
+   +0.0151 (t 7.4), +0.77 bps gross, the largest amount so far; chosen from nine cells, so it needs its own
+   registered test.
+6. **No alpha.** Nothing earns a return after costs, and the best cell is still under 40% of a 2 bps cost.
 
 ### Earlier results (IEX unless noted)
 
@@ -85,7 +90,7 @@ Do not use "Run all": it reruns every old section.
 
 ## Unfinished
 
-1. **Decide the direction.** E8 is recorded. The reversal is real as an ordering and negligible as an
+1. **Decide the direction.** E8 and E9 are recorded. E9 points at longer holds with a short lookback. The reversal is real as an ordering and negligible as an
    amount. Options: a second sample for it (another universe or period; E6–E8 share one dataset), the
    volume-conditioning test, or stop adding tests and write up.
 2. **E7's "largest tenth" row was wrong in its first report** (a script bug, fixed and tested). Rerun

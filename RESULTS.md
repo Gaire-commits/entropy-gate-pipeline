@@ -557,7 +557,7 @@ It is the same data as E7: a sharper instrument, not a second sample.
 - **Other reported rows:** by how unusual the move is for the stock, +0.12% [−0.41%, +0.66%]; most volatile
   minus calmest third, +0.13% [−0.28%, +0.55%]; the 1-hour / 2.5-hour geometry, overall +0.24% [−0.52%, +0.91%].
 
-## E9: how does the reversal change from 30 minutes to 2 hours? (protocol fixed 2026-10-14; not run)
+## E9: how does the reversal change from 30 minutes to 2 hours? (protocol fixed 2026-10-14)
 
 The reversal was measured at 30 minutes (a 6-bar lookback and hold). E9 (`configs/sip_e9_horizons.yaml`,
 Colab section 27) uses the SIP bars already fetched and asks what a 1-hour and a 2-hour lookback and hold do.
@@ -576,6 +576,41 @@ The rule, in order:
 
 Reported, not decisive: all nine lookback-and-hold cells, gross and net book bps, and the amount expected
 from the size of moves alone. Costs decide nothing.
+
+### Result (2026-10-14, SIP, 503 stocks): the same strength at every horizon, by the rule; the amount grows
+
+| horizon (lookback = hold) | moments a day | IC [95%] | t | book gross bps [95%] | expected from the size of moves alone |
+|---|---:|---|---:|---|---:|
+| 30 minutes | 11.0 | +0.0064 [+0.0047, +0.0080] | 7.5 | +0.10 [+0.00, +0.21] | +0.10 |
+| 1 hour | 5.0 | +0.0090 [+0.0064, +0.0113] | 6.9 | +0.24 [+0.04, +0.43] | +0.15 |
+| 2 hours | 2.0 | +0.0111 [+0.0072, +0.0151] | 5.4 | +0.14 [−0.23, +0.52] | +0.21 |
+
+- **Verdict by the rule: the same strength at every horizon.** 2 hours minus 30 minutes in IC is +0.0047
+  [−0.0004, +0.0102] at 99%, which includes zero by a hair (about t 2.2). Halves: +0.0071 [+0.0015, +0.0129]
+  before 2020-07-28, +0.0030 [−0.0025, +0.0086] from it. The 1-hour minus 30-minute IC is +0.0026
+  [−0.0006, +0.0057].
+- **The point estimates rise with the horizon (0.0064, 0.0090, 0.0111).** That is suggestive, and it is not what
+  the registered rule can call a difference.
+- **The amount in bps does not follow a clean pattern.** At 1 hour the book (+0.24) is above what the size of moves
+  alone gives (+0.15); at 2 hours it is below (+0.14 against +0.21). All are far under a 2 bps cost.
+- **The whole grid (reported, not decisive):**
+
+| lookback \\ hold | 30 min | 1 hour | 2 hours |
+|---|---|---|---|
+| 30 min | IC +0.0064 (t 7.5), +0.10 bps | +0.0083 (t 6.5), +0.14 bps | **+0.0151 (t 7.4), +0.77 bps** |
+| 1 hour | +0.0058 (t 6.3), +0.13 bps | +0.0090 (t 6.9), +0.24 bps | +0.0117 (t 5.7), +0.42 bps |
+| 2 hours | +0.0034 (t 3.3), +0.06 bps | +0.0082 (t 5.6), +0.18 bps | +0.0111 (t 5.4), +0.14 bps |
+
+- **The pattern in the grid is along the hold, not the lookback.** For every lookback the IC rises with the hold;
+  for every hold it falls as the lookback lengthens. The strongest cell, a 30-minute lookback held for 2 hours,
+  has IC +0.0151 and +0.77 bps gross per position, the largest amount in this project and about 6 times the
+  30-minute cell.
+- **Read that cell with care.** It is the best of nine and was not the registered comparison, so its number is
+  flattered by selection. It is also where the data has the fewest moments (2 a day). It is a lead for a
+  registered test, not a finding. Even taken at face value it is under 40% of a 2 bps cost.
+- **Reading.** The reversal does not fade as the horizon grows to 2 hours; it appears to keep unfolding while
+  the position is held. That is consistent with a slow return of price to value after a liquidity-driven move,
+  and it is a reason to test longer holds, not evidence yet.
 
 ## E1 and E2: settling the open questions (protocols fixed 2026-10-08)
 
@@ -1155,12 +1190,14 @@ The response so far:
 | 2026-10-14 | E7 result: not uniform, a larger share recovered after large moves (+1.12% [+0.05%, +2.49%]); passes its rule by a thin margin. A bug in a reported row found and fixed |
 | 2026-10-14 | E8 (E7's question with a volatility-scaled, winsorized slope) built and pre-registered |
 | 2026-10-14 | E8 result: E7 not confirmed (+0.07% [−0.55%, +0.67%] with twice the precision); the reversal as an amount is +0.28% [−0.06%, +0.64%] of the lag |
-| 2026-10-14 | E9 (the reversal at 30 minutes to 2 hours, judged on IC not bps) built and pre-registered; not run |
+| 2026-10-14 | E9 (the reversal at 30 minutes to 2 hours, judged on IC not bps) built and pre-registered |
+| 2026-10-14 | E9 result: the same strength at every horizon by the 99% rule (+0.0047 [−0.0004, +0.0102]); IC rises with the hold in every row of the grid; best cell (30-minute lookback, 2-hour hold) IC +0.0151, +0.77 bps gross |
 
 ## Next steps
 
 1. Add the placebo runs' trade rate to the online agent's report (its result is recorded above).
-2. Decide whether to keep building on the reversal: it is real as an ordering (t 7.5) and under a tenth of a basis point as an amount. A second sample (another universe or period) would be the next honest test; E6–E8 all use the same data.
+2. Test longer holds with the lookback kept short (the grid's strongest direction), registered first: 30-minute lookback, hold of 2 hours, 4 hours and a day. The best E9 cell was chosen from nine, so it needs its own test before it is believed.
+3. Decide whether to keep building on the reversal: it is real as an ordering (t 7.5) and under a tenth of a basis point as an amount. A second sample (another universe or period) would be the next honest test; E6–E8 all use the same data.
 3. Redo the SIP reruns of section 22 (sweep, E2, hold-out, replication) after setting aside the files from the unfinished fetch; what ran so far is void.
 4. Cost, only if something survives: measure real trading costs (the IBKR recorder's quotes give spreads) and
    charge cost only when a position changes.
