@@ -1287,6 +1287,27 @@ information to predictions from 5-minute prices in this data. That is consistent
 what ordinal patterns of returns can see, the price window already shows, and the slow drift that matters at
 multi-hour horizons they barely see at all.
 
+## Entropy ablation: every result with and without permutation entropy (consolidated 2026-10-22)
+
+No new run. This collects, in one place, every time permutation entropy was added to something or removed from it,
+so the effect of entropy can be read against the entropy-free baseline. Each row is taken from the sections above.
+
+| Where entropy was added | Without entropy → with entropy | Effect |
+|---|---|---|
+| **A gate on days** (93 comparisons, IEX) | approved days against the rest | 7 of 93 intervals exclude zero where chance gives about 5, and 4 of the 7 point the wrong way. The default trend gate: 1 of 31, negative |
+| **Inputs to the models** (gbm, resnet1d; gross bps per trade, IEX) | seven pairs across four setups, from `gbm` −0.50 → `gbm_ent` −0.23 to `resnet1d` −0.13 → −0.58 | effects +0.27, +0.05, −0.24, +0.14, −0.45, −0.03, +0.08: average −0.03 bps, no consistent sign, every one inside its intervals (about ±1 to ±2.7 bps) |
+| **Trading only confident predictions** (S&P 500, top 10%) | `gbm` +3.91 → `gbm_ent` +3.15 bps gross | both intervals include zero |
+| **Inputs to the decision engine** (net bps per opportunity, 8 settings) | −0.18 → −0.35, −0.28 → −0.80, −0.27 → −0.38, −0.27 → −0.67, −0.20 → −0.79, −0.19 → −0.60, −2.95 → −2.34, −1.26 → −1.53 | worse in 7 of 8: with no signal to find, the engine learns patterns in the noise and trades two to five times as often |
+| **A condition on the reversal** (E6, SIP, 13.9 million stock-moments) | reversal IC in the lowest, middle and highest third of entropy: +0.0063, +0.0070, +0.0064 | top − bottom **+0.0001 [−0.0018, +0.0020]** at 99%: no conditioning, and a difference above about 0.002 is ruled out |
+
+**The entropy-free baseline is the result.** With entropy removed from every place above:
+- **No model beats cost, with or without entropy.** On the S&P 500 at 2 bps the best net rows are always long (−0.97) and logistic regression (−1.14); the trees are −1.29 without entropy and −1.15 with it. Entropy neither rescued the models nor made them worse in any consistent direction.
+- **The one robust structure was found without entropy.** The short-term reversal (E5) uses prices only: rank IC +0.0064, t 7.5, replicated on 399 mid caps (E11). Its strength does not depend on entropy.
+- **Plain statistics explain more than entropy does.** In the same E6 table, volatility conditions the reversal at +0.0031 [+0.0004, +0.0057] (t 3.1, reported only) and the size of the move at +0.0106 (t 10.0, with the range-restriction caveat above), against +0.0001 for entropy.
+- **Entropy carried no information of its own.** On 5-minute data it reads 0.991 for SPY and 0.991 for pure noise.
+
+**What this does not show.** The model, gate and engine pairs were run on IEX data. The SIP reruns of the sweep, E2, the hold-out and the replication (notebook section 22) were never validly completed (see Unfinished), so there is no SIP version of the model-input and gate comparisons. E6 is the only entropy test on SIP, and it is the cleanest one. The reinforcement-learning agent's *policy* entropy (the exploration bonus) is a different quantity and is not covered here.
+
 ## Advisor feedback and response (September 2026)
 
 The feedback asked for:
@@ -1366,6 +1387,7 @@ The response so far:
 | 2026-10-14 | LIVE_PLAN.md drafted: a forward test of the whole process on live companies, run daily on AWS, no orders |
 | 2026-10-14 | E12 (correlated peers from the data, residualized, against random peers) built and pre-registered; the forward-test length calculation built (section 30) |
 | 2026-10-14 | E12 result: correlated peers add nothing (+0.0012 [−0.0009, +0.0034]); 83% of the peers are in the stock's own sector; the correlated-peers arm is dropped from the forward test |
+| 2026-10-22 | Entropy ablation section: every with/without-entropy comparison consolidated in one table, no new run |
 
 ## Next steps
 
