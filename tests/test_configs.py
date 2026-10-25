@@ -201,3 +201,18 @@ def test_midcap_config_uses_e10s_holds_on_a_different_universe_and_the_same_cach
     assert a["universe"] == "universe/sp400.csv" and a["feed"] == "sip" and a["cache_dir"] == b["cache_dir"]
     assert vars(e11.holds) == vars(e10.holds)
     assert e11.second.compare_universe == e10.data.universe and e11.second.min_symbols_share == 0.9
+
+
+def test_entropy_free_config_is_the_sip_sweep_without_the_gate_and_the_entropy_models():
+    """configs/sip_pe_free.yaml: same data, features, folds, costs and models as the SIP sweep, minus `gbm_ent`."""
+    from src.models import needs_entropy
+
+    entropy_model = lambda a: a.endswith("_ent") or needs_entropy(a)       # the naming rule: `_ent` sees entropy features
+    free = load_config(ROOT / "configs" / "sip_pe_free.yaml")
+    sweep = load_config(ROOT / "configs" / "sip_sp500_multihour.yaml")
+    assert free.experiment == "sip_pe_free" and not any(entropy_model(a) for a in free.sweep.archs)
+    assert list(free.sweep.archs) == [a for a in sweep.sweep.archs if not entropy_model(a)] and "gbm" in free.sweep.archs
+    for block in sorted(set(vars(sweep)) - {"experiment", "sweep"}):
+        assert vars(getattr(free, block)) == vars(getattr(sweep, block)), block
+    assert vars(free.sweep).keys() == vars(sweep.sweep).keys() and free.sweep.seeds == sweep.sweep.seeds
+    assert not (ROOT / "outputs" / "sip_pe_free" / "screen.parquet").exists(), "an entropy gate file is in the folder"

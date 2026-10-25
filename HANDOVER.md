@@ -49,6 +49,7 @@ feeds must never share a cache folder, and the fetch refuses to overwrite one wi
 | 29 | E11 the reversal in mid caps |
 | 30 | Forward-test length (a design calculation, not a test) |
 | 31 | E12 correlated peers |
+| 32 | Entropy-free SIP baseline (built, not yet run) |
 | 9 | All results (old summaries only) |
 
 Do not use "Run all": it reruns every old section.

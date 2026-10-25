@@ -30,6 +30,7 @@ FROZEN = {
     "sip_e10_holds.yaml": "dbe879df1638da7bb51d0d9e220ebedffda527cfd6b4020198448e22897dcc0a",         # 2026-10-14
     "sip_e11_midcap.yaml": "232401ca0a48826a29216213686170962594ff487902b306ab8a9af79b175576",        # 2026-10-14
     "sip_e12_peers.yaml": "babb692d8230829171f3cb530bd96a1c723813896f68dd6c3abe2d036fb77a64",         # 2026-10-14
+    "sip_pe_free.yaml": "cd1b4a9825394cb76ede241e257203b293f615205ead63aa0924f604b637a993",             # 2026-10-25
 }
 
 

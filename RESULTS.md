@@ -1308,6 +1308,20 @@ so the effect of entropy can be read against the entropy-free baseline. Each row
 
 **What this does not show.** The model, gate and engine pairs were run on IEX data. The SIP reruns of the sweep, E2, the hold-out and the replication (notebook section 22) were never validly completed (see Unfinished), so there is no SIP version of the model-input and gate comparisons. E6 is the only entropy test on SIP, and it is the cleanest one. The reinforcement-learning agent's *policy* entropy (the exploration bonus) is a different quantity and is not covered here.
 
+### The entropy-free run on SIP (protocol fixed 2026-10-25, not yet run)
+
+`configs/sip_pe_free.yaml` (Colab section 32) is the SIP sweep with permutation entropy absent everywhere: the same
+503 stocks, 2016 onward, features, folds, costs and models as `sip_sp500_multihour.yaml`, with no gate (no
+`screen.parquet`) and no `_ent` model. It closes the gap named above, because the sweep reruns in notebook section 22
+never completed. Entropy enters the pipeline only through the gate and the `_ent` models; a test scrambles every
+entropy column in the dataset and checks that the plain models' predictions do not change.
+
+The rule: **beats cost** if any model's net 95% day-block interval at the 2 bps headline cost is above zero,
+otherwise **does not beat cost**, with every listed model counted. Gross and net at 0, 1, 2 and 5 bps, accuracy and
+the most-confident 10% are reported. The effect of entropy is read separately and never from this run alone:
+`gbm_ent` on the same rows (`scripts/sweep.py --config configs/sip_sp500_multihour.yaml --archs gbm_ent`) against
+`gbm` here. Until that run exists, the effect of entropy on SIP is not measured.
+
 ## Advisor feedback and response (September 2026)
 
 The feedback asked for:
@@ -1388,6 +1402,7 @@ The response so far:
 | 2026-10-14 | E12 (correlated peers from the data, residualized, against random peers) built and pre-registered; the forward-test length calculation built (section 30) |
 | 2026-10-14 | E12 result: correlated peers add nothing (+0.0012 [−0.0009, +0.0034]); 83% of the peers are in the stock's own sector; the correlated-peers arm is dropped from the forward test |
 | 2026-10-22 | Entropy ablation section: every with/without-entropy comparison consolidated in one table, no new run |
+| 2026-10-25 | Entropy-free SIP baseline (`sip_pe_free`, section 32) built and pre-registered; not yet run |
 
 ## Next steps
 

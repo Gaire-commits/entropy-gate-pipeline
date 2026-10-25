@@ -81,3 +81,26 @@ def test_tree_models_run_through_the_sweep_and_save_the_entropy_features(tmp_pat
     assert set(pred["arch"]) == {"gbm", "gbm_ent"}
     assert set(ENTROPY_COLUMNS) <= set(pred.columns)
     assert pred["prob"].between(0, 1).all() and (pred["n_params"] > 0).all()
+
+
+def test_a_model_without_the_ent_suffix_never_sees_the_entropy_features(tmp_path):
+    """The entropy-free baseline (configs/sip_pe_free.yaml) rests on this: scrambling every entropy column in the
+    dataset leaves the predictions of the plain models exactly as they were."""
+    cfg = SimpleNamespace(
+        features=SimpleNamespace(channels=["log_return", "session_return"], window=12, horizon=30, embargo=1,
+                                 stride=12, allow_overnight=False, normalize="fold_standardize", label_deadzone=0.0),
+        model=SimpleNamespace(epochs=30, patience=5, batch_size=256, lr=0.001, weight_decay=0.0001, dropout=0.2))
+    data = build_dataset({"T": bars_from_returns("T", ar_returns(120, 0.2, seed=7))}, None, cfg)
+    folds = walk_forward_splits(data["date"], SimpleNamespace(train_days=60, val_days=15, test_days=20, step_days=20))[:2]
+    for arch in ("logreg", "gbm"):
+        run_arch(data, folds, arch, 0, cfg, tmp_path / "a", log=lambda _: None)
+    rng = np.random.default_rng(1)
+    scrambled = dict(data)
+    for k in ENTROPY_COLUMNS:
+        if k in scrambled:
+            scrambled[k] = rng.normal(size=np.shape(scrambled[k]))
+    for arch in ("logreg", "gbm"):
+        run_arch(scrambled, folds, arch, 0, cfg, tmp_path / "b", log=lambda _: None)
+    a, b = load_predictions(tmp_path / "a"), load_predictions(tmp_path / "b")
+    assert any(k in data for k in ENTROPY_COLUMNS), "the dataset carries no entropy columns to scramble"
+    np.testing.assert_array_equal(a["prob"].to_numpy(), b["prob"].to_numpy())
