@@ -1308,7 +1308,7 @@ so the effect of entropy can be read against the entropy-free baseline. Each row
 
 **What this does not show.** The model, gate and engine pairs were run on IEX data. The SIP reruns of the sweep, E2, the hold-out and the replication (notebook section 22) were never validly completed (see Unfinished), so there is no SIP version of the model-input and gate comparisons. E6 is the only entropy test on SIP, and it is the cleanest one. The reinforcement-learning agent's *policy* entropy (the exploration bonus) is a different quantity and is not covered here.
 
-### The entropy-free run on SIP (protocol fixed 2026-10-25, not yet run)
+### The entropy-free run on SIP (protocol fixed 2026-10-25, run 2026-10-27)
 
 `configs/sip_pe_free.yaml` (Colab section 32) is the SIP sweep with permutation entropy absent everywhere: the same
 503 stocks, 2016 onward, features, folds, costs and models as `sip_sp500_multihour.yaml`, with no gate (no
@@ -1320,7 +1320,20 @@ The rule: **beats cost** if any model's net 95% day-block interval at the 2 bps 
 otherwise **does not beat cost**, with every listed model counted. Gross and net at 0, 1, 2 and 5 bps, accuracy and
 the most-confident 10% are reported. The effect of entropy is read separately and never from this run alone:
 `gbm_ent` on the same rows (`scripts/sweep.py --config configs/sip_sp500_multihour.yaml --archs gbm_ent`) against
-`gbm` here. Until that run exists, the effect of entropy on SIP is not measured.
+`gbm` here.
+
+**Result (34 folds, 2,142 test days, 2018-04 to 2026-10): DOES NOT BEAT COST.** Gross bps per trade [95%] and net at
+2 bps: always long +0.30 [−1.29, +1.92], net −1.70; `gbm` +0.15 [−1.37, +1.72], −1.85; `logreg` +0.16 [−0.95, +1.30],
+−1.84; `momentum_day` −0.04, −2.04; `momentum_window` −0.16, −2.16. Every gross interval includes zero, and no model
+beats always-long. The most-confident 10% does not help (best cell `logreg` +1.11 [−3.17, +5.42], net −0.89).
+
+**Effect of entropy (`scripts/entropy_effect.py`, `gbm` against `gbm_ent`, 2,990,619 identical rows, 2,142 days,
+paired day-block interval): ENTROPY ADDS NOTHING.** Gross +0.15 without, +0.12 with, difference −0.04 [−0.23, +0.17];
+accuracy 0.5075 against 0.5074 (−0.0001 [−0.0011, +0.0009]); net at 2 bps −1.85 without, −1.88 with. Entropy as an
+input to the trees changes nothing measurable on the headline feed. Note: the plain `summarize.py` table for
+`outputs/sip_sp500_multihour/` mixes an older, differently configured `gbm` (33 folds) with this `gbm_ent`; the paired
+comparison above is the one to cite. The gate-split cells in that table are 18 comparisons with no correction (one
+`momentum_day` cell reads +1.82 [+0.69, +2.90], what chance gives at this count) and are not a result.
 
 ## Advisor feedback and response (September 2026)
 
@@ -1403,6 +1416,7 @@ The response so far:
 | 2026-10-14 | E12 result: correlated peers add nothing (+0.0012 [−0.0009, +0.0034]); 83% of the peers are in the stock's own sector; the correlated-peers arm is dropped from the forward test |
 | 2026-10-22 | Entropy ablation section: every with/without-entropy comparison consolidated in one table, no new run |
 | 2026-10-25 | Entropy-free SIP baseline (`sip_pe_free`, section 32) built and pre-registered; not yet run |
+| 2026-10-27 | Entropy-free SIP baseline run: no model beats cost (best gross +0.30, net −1.70). `gbm` against `gbm_ent` on identical rows: entropy adds nothing (−0.04 [−0.23, +0.17] gross bps) |
 
 ## Next steps
 

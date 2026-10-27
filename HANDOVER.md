@@ -49,8 +49,8 @@ feeds must never share a cache folder, and the fetch refuses to overwrite one wi
 | 29 | E11 the reversal in mid caps |
 | 30 | Forward-test length (a design calculation, not a test) |
 | 31 | E12 correlated peers |
-| 32 | Entropy-free SIP baseline (built, not yet run) |
-| 33 | `gbm_ent` on SIP, the entropy arm to pair with section 32 (not yet run) |
+| 32 | Entropy-free SIP baseline (run 2026-10-27: no model beats cost) |
+| 33 | `gbm_ent` on SIP, paired with section 32 by `scripts/entropy_effect.py` (run 2026-10-27: entropy adds nothing) |
 | 9 | All results (old summaries only) |
 
 Do not use "Run all": it reruns every old section.
