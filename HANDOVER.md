@@ -130,13 +130,13 @@ Do not use "Run all": it reruns every old section.
 0. **The volatility question, in order** (nothing fitted or registered yet):
    1. Done: audit parts 1 and 2, recorded in RESULTS.md; the loader `src/volpanel.py` (causal eligibility, missingness
       reasons, calendar-aware half-days, no blanket exclusions) and `scripts/vol_sample.py`.
-   2. Done: section 35 rerun (auctions, trades) and section 36. The vendor's close is the official close; the cache's is not. The open
-      comparison was flawed (split-adjusted prices rounded to the cent) and the code now compares raw prices, but it has not been rerun:
-      it needs section 38 (or 36c) run in Colab after pulling, with the output pasted into the chat. Then size the gap between the vendor's open and the opening print by year (the validation and test years in particular) and settle whether O is
-      the vendor's open or the exchange's opening print, before the specification is registered.
+   2. Done: the auction check on raw prices (section 38, 20 symbols). The vendor's close is the official close; its open equals the
+      listing exchange's opening print on 74% of symbol-days and is up to 13% off on stress days (about 7% of the variance of an
+      approximate V). Decide whether O is the official open (proposed; needs the auction prints for all 503 symbols, a few minutes'
+      fetch, then the panel rebuilt with it) or the vendor's open, before the specification is registered.
    3. Kshitiz and the advisor decide, in RESULTS.md's "Not decided here": the permutation-entropy settings (they set the
       warm-up), the HAR form and loss, whether half-day targets are scored, V or V_id as the one primary target, the window
-      boundaries, the $5 and $10 million rules. Then register the specification (a config with a date, frozen by hash).
+      boundaries, the $5 and $10 million rules, the open (item 2). Then register the specification (a config with a date, frozen by hash).
    4. Only then fit: the HAR baseline on the development window, frozen, confirmed on validation, and the one-shot
       Clark-West comparison on test. Every window is reserved for this specification but previously exposed through
       related research (RESULTS.md, prior exposure).
