@@ -7,8 +7,8 @@ Does the vendor's daily open (close) equal the opening (closing) auction print, 
 after 09:30? The same question for the open and close rebuilt from the 5-minute cache. Reads the audit's
 sessions.parquet (so the 30-minute cache read is not repeated) and the reference sample; writes
 auction_summary.csv, auction_prints.csv, trades_open_close_check.csv and prints.md next to them.
-Prints arrive unadjusted, so they are first moved onto the split-adjusted basis (audit.split_factor).
-Read-only: nothing is fitted or excluded.
+Prints arrive unadjusted, so the vendor is compared on its raw bars; the cache is split-adjusted and rounded to the cent,
+so it is compared only on days nothing adjusts it (audit.split_factor). Read-only: nothing is fitted or excluded.
 """
 
 from __future__ import annotations
@@ -38,10 +38,11 @@ def main() -> int:
         return 1
     sip = pd.read_parquet(out / "sessions.parquet")
     traded = audit.real(pd.read_parquet(ref / "daily" / "daily_sip_split.parquet"))
-    factor = audit.split_factor(audit.real(pd.read_parquet(ref / "daily" / "daily_sip_raw.parquet")), traded)
+    unadjusted = audit.real(pd.read_parquet(ref / "daily" / "daily_sip_raw.parquet"))
+    factor = audit.split_factor(unadjusted, traded)
     lines = ["# Auction prints and trades at the open and close (read-only)", "",
-             "Prints are moved onto the split-adjusted basis first (split-adjusted daily close over the raw one, per "
-             "symbol-day). Equal means within 0.5 bp.", ""]
+             "Prints are unadjusted, so the vendor is compared on its raw bars. The cache (split-adjusted, rounded to the "
+             "cent) is compared only on the days nothing adjusts it. Equal means within 0.5 bp.", ""]
     for name, path in (("auctions", ref / "sample" / "auctions.parquet"),
                        ("trades", ref / "sample" / "trades_open_close.parquet")):
         if not path.exists():
@@ -49,14 +50,14 @@ def main() -> int:
             continue
         frame = pd.read_parquet(path)
         if name == "auctions":
-            res = audit.auction_check(frame, traded, sip, factor=factor)
+            res = audit.auction_check(frame, unadjusted, sip, factor=factor)
             res["summary"].to_csv(out / "auction_summary.csv", index=False)
             res["by_print"].to_csv(out / "auction_prints.csv", index=False)
             lines += [f"**Auction prints** ({len(frame):,} prints). Share of symbol-days where the vendor's (rebuilt) "
                       "open or close equals some auction print, and which prints:", "",
                       audit.md(res["summary"], ".4f"), "", audit.md(res["by_print"], ".4f", 30), ""]
         else:
-            res = audit.trades_check(frame, traded, sip, factor=factor)
+            res = audit.trades_check(frame, unadjusted, sip, factor=factor)
             res.to_csv(out / "trades_open_close_check.csv", index=False)
             if len(res):
                 lines += [f"**Trades at the open and close** ({len(frame):,} trades). For each candidate print, how "

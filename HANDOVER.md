@@ -17,7 +17,7 @@ pattern and was judged on whether structure exists and when it is stronger, not 
 
 **Since 2026-10-27 the question is volatility:** does permutation entropy of daily returns improve next-day
 volatility forecasts beyond a volatility-history (HAR-style) baseline? A precise null counts as success. The
-work is at the data-audit stage: parts 1 and 2 are run (the auction and trade check waits for a rerun), and the
+work is at the data-audit stage: parts 1 and 2 are run (the auction and trade check ran once; its comparison was flawed and is being redone), and the
 loader (`src/volpanel.py`) and a candidate sample are built. Nothing has been fitted or registered. RESULTS.md,
 "Data audit for the volatility question", has the measured results, the interpretations, what is unresolved, the
 variance target, the candidate windows with their sample sizes, and the prior exposure of every date.
@@ -63,11 +63,16 @@ feeds must never share a cache folder, and the fetch refuses to overwrite one wi
 | 33 | `gbm_ent` on SIP, paired with section 32 by `scripts/entropy_effect.py` (run 2026-10-27: entropy adds nothing) |
 | 34 | Data audit part 1 (run 2026-10-27; its files never reached Drive, see the Drive problem) |
 | 34b | Preserve: Drive status, zip download of results (the 2026-10-28 zip of part 1 was empty: those files were gone) |
-| 35 | Reference data from Alpaca: daily bars under five adjustment/mapping settings, corporate actions, a session sample, manifest (run 2026-10-28; the auctions and trades parts failed on a timestamp bug, fixed in `5871d73`: rerun to fetch them) |
-| 36 | Data audit part 2 (run 2026-10-28, 43 minutes; results in RESULTS.md) |
-| 36c | Auction prints and trades on their own, about a minute, from the audit's `sessions.parquet` (`scripts/audit_prints.py`). Run after rerunning 35 |
+| 35 | Reference data from Alpaca: daily bars under five adjustment/mapping settings, corporate actions, a session sample, manifest (run 2026-10-28; the auctions and trades failed on a timestamp bug, fixed in `5871d73`, and were fetched on the rerun at 15:05 UTC) |
+| 36 | Data audit part 2 (run 2026-10-28, 43 minutes; rerun 11:29 EDT with the auction and trade checks, whose first comparison was flawed; results in RESULTS.md) |
+| 36c | Auction prints and trades on their own, about a minute, from the audit's `sessions.parquet` (`scripts/audit_prints.py`). Compares raw prices; run it after pulling the fix |
 | 37 | Audit follow-up tables and the volatility sample (panel, missingness reasons, eligible stock-days by window, regimes), read-only, about 3 minutes (`scripts/audit_followup.py`, `scripts/vol_sample.py`) |
+| 38 | The vendor's open against the exchange's opening auction print, by year, and what it does to V; prints only, about a minute. Paste the output into the chat |
 | 36b | End of session only: push to Drive (unmounts and remounts Drive) |
+
+Results come back as printed output pasted into the chat, not as zip downloads (Kshitiz's preference, 2026-10-28); the
+download cells of sections 34b-36 are optional. Saving the notebook to GitHub from Colab replaces `notebooks/colab.ipynb`
+with the open copy: reload it from GitHub before saving, or new sections are lost (36c and 37 were, once, on 2026-10-28).
 | 9 | All results (old summaries only) |
 
 Do not use "Run all": it reruns every old section.
@@ -125,8 +130,10 @@ Do not use "Run all": it reruns every old section.
 0. **The volatility question, in order** (nothing fitted or registered yet):
    1. Done: audit parts 1 and 2, recorded in RESULTS.md; the loader `src/volpanel.py` (causal eligibility, missingness
       reasons, calendar-aware half-days, no blanket exclusions) and `scripts/vol_sample.py`.
-   2. Rerun section 35 (fetches the auctions and trades that failed), then 36c. If the vendor's open and close are not the
-      auction prints, revisit the target's definition.
+   2. Done: section 35 rerun (auctions, trades) and section 36. The vendor's close is the official close; the cache's is not. The open
+      comparison was flawed (split-adjusted prices rounded to the cent) and the code now compares raw prices, but it has not been rerun:
+      it needs section 38 (or 36c) run in Colab after pulling, with the output pasted into the chat. Then size the gap between the vendor's open and the opening print by year (the validation and test years in particular) and settle whether O is
+      the vendor's open or the exchange's opening print, before the specification is registered.
    3. Kshitiz and the advisor decide, in RESULTS.md's "Not decided here": the permutation-entropy settings (they set the
       warm-up), the HAR form and loss, whether half-day targets are scored, V or V_id as the one primary target, the window
       boundaries, the $5 and $10 million rules. Then register the specification (a config with a date, frozen by hash).

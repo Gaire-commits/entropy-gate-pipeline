@@ -1472,7 +1472,10 @@ SHA-256):
   bare-ticker bars that today's mapping no longer returns: IR 2016-01-04 to 2017-01-03 and Q 2016-01-04 to 2017-11-14.
 - Auctions and trades: **both failed in the first run.** Alpaca writes some timestamps with fractions of a second and some
   without, and pandas refused the mix. Fixed and tested on 2026-10-28 (`5871d73`), which also moved the auction comparison
-  onto the split-adjusted basis (prints arrive unadjusted). The checks wait for a rerun of sections 35 and 36c.
+  onto the split-adjusted basis (prints arrive unadjusted). The fetch was repeated at 15:05-15:07 UTC (264,889 auction prints for the
+  20 sample symbols, 7,919 trades); the results are under "Auction prints and trades" below. That repeat re-fetched every daily series and
+  the corporate actions too, and the audit run on it (section 36, 11:29 EDT) reproduced the first run's tables byte for byte: 28 of its 31
+  files are identical, `sessions.parquet` and every `vendor_*` table among them; the other three are the report and the two print tables.
 
 **Coverage and calendar:**
 - 2,709 NYSE sessions have bars for at least half the stocks, 2016-01-04 to 2026-10-12: none missing, none extra. The cache's
@@ -1502,6 +1505,39 @@ symbol-sessions):
 - **Open and close.** On full days the vendor's open equals the rebuilt open within 0.5 bp on 90.3% (99th percentile gap 27.8 bp) and its
   close on 32.5% (median gap 1.4 bp, 99th percentile 17.1 bp). 1,109 closes (all sessions) differ by more than 1%; 62.8% of those lack the
   cache's last slot, 11.5% are on complete cache days (by year: 2022 417, 2020 279, 2018 154, 2021 150). 20 differ by more than 10% (17 in 2020, 2 in 2022, 1 in 2019), and 17 of those 20 have the cache's last slot.
+- **Auction prints and trades** (run 2026-10-28, first reading, **flawed comparison: the agreement rates below are lower bounds**). Sample: 20 symbols (ADI, ALB,
+  APD, CFG, DECK, EBAY, IP, IQV, KO, LIN, MDLZ, MMM, MRSH, MSFT, PGR, RVTY, SO, TXT, VRSK, WEC), every session 2016-01-04 to 2026-10-14, 264,889 prints from Alpaca's
+  auctions endpoint. "Equal" is within 0.5 bp. Condition codes are Alpaca's own metadata: 6 market center closing trade, M market center official close, O market
+  center opening trade, Q market center official open. Exchange N is NYSE, Q NASDAQ OMX, T NASDAQ Int, P NYSE Arca. **The flaw:** the run moved the unadjusted prints
+  onto the split-adjusted basis with each day's adjusted-over-raw close, and the adjusted prices are rounded to the cent, so equal prices differ by up to half a cent
+  over the factor: 5 bp on DECK, adjusted down to about $10. Found by checking the trade-level misses against the raw bars (below). The code now compares the vendor's raw
+  bars with the raw prints and the cache only on days nothing adjusts it; the full-sample numbers are to be rerun on that basis and will replace these.
+  - *Close.* The vendor's close equals some closing print on **99.81%** of 53,470 symbol-days; the cache's last-bar close on **63.50%**. By print: under N the
+    vendor's close equals the M print 19,751 times of 19,751 and the 6 print on 99.75% of 39,267; under Q the M print on 99.96% of 7,298 and the 6 print on 99.96% of
+    7,261; under T 18.3% of 18,897 (M) and 72.4% of 13,246 (6); under P 27.5% of 24,854 (M) and 15.2% of 552 (6). The cache's close equals the Arca M print on 90.1%
+    and every other closing print on 18-32%.
+  - *Open.* The vendor's open equals some opening print on **77.10%** of 53,498 symbol-days; the cache's first-bar open on **70.58%**. By print: under N the vendor's open
+    equals the O print on 73.1% of 39,189 (cache 70.8%) and the Q print on 81.4% of 19,370 (cache 79.8%); under Q the O print on 65.5% of 7,474 (cache 45.9%) and the Q print
+    on 65.4% of 7,466 (cache 45.8%); under T 56.7% of 12,721 (O) and 6.6% of 19,522 (Q); under P 22.1% of 945 (O) and 10.8% of 27,046 (Q).
+  - *Trades* (30 symbol-days: ADI, ALB, APD, CFG, DECK on the full days 2016-01-25, 2016-02-04, 2016-04-21 and the half-days 2016-11-25, 2017-07-03, 2017-11-24;
+    the sample is 5 symbols in 2016-2017, nothing from the validation or test years). The vendor's close equals the first closing print (condition 6) on **30 of 30**,
+    the 15 half-day cases included. The cache's close equals it on 9 of 30 (median gap 1.7 bp, largest 15.2 bp) and equals the last trade before the close on 24; the
+    vendor's close equals that last trade on 8. The open window holds no trades on 3 of the 30 (APD 2017-07-03, CFG and DECK 2016-04-21; not examined). On the other 27
+    the vendor's open equals the first print flagged O on 22 and the first trade from 09:30 on 19; the five misses of the O comparison, read against the raw bars and the
+    trades around them:
+    - DECK 2016-11-25 and 2017-07-03: **no gap.** The NYSE opening print is $64.79 and $68.45 and the vendor's raw open the same; the 3 bp came from the cent-rounded
+      split-adjusted open (6-for-1 in 2024), the flaw above.
+    - APD 2016-02-04: the "first O print" is an odd-lot Arca print (conditions O and odd lot, about $132.53 raw) and the vendor's raw open is $133.29. An odd-lot print
+      cannot be the consolidated open, so the benchmark was wrong; the NYSE opening print is not among the candidates. (APD's NYSE opening print comes at about 09:30:09 on
+      the other days sampled.)
+    - ALB 2016-11-25: a Cboe BYX trade at $84.35 printed at 09:30:00.0670, 0.3 ms before the NYSE opening trade ($83.93); the vendor's open is $84.35. A regular trade
+      before the cross, so the vendor's open is not the cross.
+    - ADI 2016-11-25: an odd-lot sweep at $73.36 (09:30:00.010), the Nasdaq cross at $73.45 (.374); the vendor's open is $73.40, which is neither, presumably a regular
+      trade in between that the candidates do not list.
+    The vendor skipped a first trade flagged Form T or odd lot and took the exchange's opening print on ADI 2016-02-04, ALB 2017-11-24 and CFG 2017-07-03; on CFG the cache
+    took the Form T trade ($35.84, against the vendor's and the NYSE's $35.89). On ADI 2017-11-24 a regular Cboe BZX trade ($89.12) and the Nasdaq cross ($88.67) share the
+    same millisecond and the vendor took the cross. So in this sample the vendor's open is the opening print on 24 of 27, the exceptions being the two days (both 2016-11-25) on
+    which a regular round-lot trade printed before the cross, with APD 2016-02-04 not judgeable; the cache's open differs from the vendor's on 1 of the 27 (CFG).
 - **Range** (quoted prices; a log range does not depend on the adjustment). Of 1,306,054 sessions 93.0% agree within 0.1% and 98.9%
   within 2%. 949 (0.07%) differ by more than 25%, in both directions. On complete cache days the vendor's range is the wider by 92,
   103, 42, 58, 24, 12, 15, 17, 19, 23 and 20 sessions in 2016-2026, and the narrower by 39, 30, 16, 22, 10, 13, 9, 13, 9, 14 and 24.
@@ -1579,10 +1615,11 @@ symbol-sessions):
 1. **The first audit's half-day and 2026 readings were right.** Half-days are kept by clock time in the cache; the calendar-aware rebuild
    removes the first audit's missing closes on them. The 2026 "change" is the absence of half-days, plus the absence of the truncated
    dates (none in 2026).
-2. **For the target, the vendor's daily bar beats the cache, with the cache as a cross-check.** The vendor's open and close are
-   presumably the official prints (check pending). The cache's regular-hours window ends before the closing auction, and on the chaotic
+2. **For the target, the vendor's daily bar beats the cache, with the cache as a cross-check.** The vendor's close is the official closing price
+   (99.8% of the sample's symbol-days even on the flawed comparison, 30 of 30 in the trade-level sample, half-days included); the cache's is not
+   (63.5%). Its regular-hours window ends before the closing auction, and on the chaotic
    days of March 2020 the auction cleared far from the last 5-minute close (NCLH and CCL 2020-03-12, HLT and TRGP 2020-03-18, PCG
-   2019-01-24: 13-29% apart). The vendor is whole on 2022-01-24 and 2018-05-02/03 where the cache is not. But each source has bad prints on
+   2019-01-24: 13-29% apart). The vendor's open is the opening print wherever the trade-level sample can say (item 6). The vendor is whole on 2022-01-24 and 2018-05-02/03 where the cache is not. But each source has bad prints on
    about 0.05% of sessions, and a log range squared magnifies one: MRK 2021-06-11 alone has a range variance about 9,000 times the
    day's normal. So a session whose range the two sources contradict by more than 25% has no value.
 3. **Overnight returns need the `all` adjustment, and still need a list of events.** `split` creates jumps (SW, HON, APTV, RTX, EQT);
@@ -1595,13 +1632,24 @@ symbol-sessions):
 5. **Identity.** DOW, Q and IR are two issuers under one ticker (DOW and Q from public records, IR from the data); SMCI is one security across a
    relisting; EXE is one issuer whose equity was probably new after the gap (unchecked). The long gaps need no automatic identity split:
    a missing session leaves a hole, and the warm-up rule keeps the features of a security from crossing it.
+6. **The close is settled; the open is probably the opening print with exceptions, and how many is not yet measured.** Close: the vendor's daily close is the
+   official closing price, and the previous close of the overnight return should come from it, never from the cache. Open: on the full sample the flawed comparison
+   gives 77.1% equal to some opening print (73-81% against the NYSE's own), but the trade-level cases show that much of the shortfall can be the comparison itself (two
+   of the five misses, one more a wrong benchmark). What is left is a rule, not an error: the vendor's open is the first regular round-lot trade, which is the exchange's
+   opening print when that comes first and a trade from another venue when it does not (ALB, ADI 2016-11-25). The gap in those cases was 7 and 50 bp. The rule does
+   not look wrong, but it makes the overnight return "official close to first eligible trade", and the size of the difference from "official close to official open"
+   on the whole sample (by year, and in the validation and test years in particular) is unmeasured. The cache's first-bar open is the weaker candidate: it counted a Form T
+   trade as the open on CFG 2017-07-03.
 
 ### Part 2, unresolved
 
 - **Why the three vendor days and the three cache days are truncated.** Alpaca's side or ours is unknown. Whether the vendor's closes on 2021-04-19,
   2021-10-25 and 2022-03-08 are official is unknown, and treated as not.
-- **Whether the vendor's daily open and close are the auction prints**, and how far the rebuilt ones sit from them: the check failed and waits for
-  a rerun (sections 35, 36c).
+- **How often and how far the vendor's open differs from the exchange's opening print, by year.** The fetch ran, but its comparison was flawed (see
+  "Auction prints and trades"); the rerun on raw prices is notebook section 38 (or 36c), run in Colab. Also open: what the vendor's open is on the days it
+  is neither the cross nor the first trade (ADI 2016-11-25, APD 2016-02-04), whether its high and low include the auction prints, which exchange is each symbol's listing
+  exchange (the prints under N and Q follow the vendor's close; T and P do not), the 3 sampled days with no trades in the open window, and the 0.2% of symbol-days whose
+  close equals no closing print. The trade-level sample is 5 symbols in 2016-2017.
 - **DOW:** why Alpaca's mapping returns nothing for it. DOW is excluded from the primary sample for lack of vendor bars.
 - **CTVA 2026-10-01:** a recorded spin-off (CTVA→VYLR), adjusted in no series. A search for the event found only Corteva's 2019 separation, so the date and
   the structure are unconfirmed.
@@ -1630,7 +1678,9 @@ V_id(t) = rho(t)                              intraday only, a sensitivity targe
 
 - **Prices:** Alpaca SIP daily bars, retrieved 2026-10-28, symbol mapping as Alpaca's default (as the cache). O and C are the `all`-adjusted
   (split, cash dividend, spin-off) open and close; H and L are the quoted high and low, since a log range does not depend on the adjustment and
-  quoted prices are exact where adjusted ones are rounded.
+  quoted prices are exact where adjusted ones are rounded. C is the vendor's close, which is the official closing price (the auction check). O is
+  the vendor's open: the first regular round-lot trade, which is the exchange's opening print unless another venue's regular trade printed first
+  (interpretation 6; how often and by how much is being measured, and the definition stays open until it is).
 - **Overnight adjustment:** C(t−1) is the previous session of the same security, with a valid bar. If that session is missing, the overnight spans
   more than one session and is left missing; nothing is compressed. The overnight is also missing on the first session of a segment, after a
   truncated day, and on a session named by a corporate-action record, a vendor adjustment step or the registry (184 sessions: 95 forward splits, 14
@@ -1673,7 +1723,8 @@ V_id(t) = rho(t)                              intraday only, a sensitivity targe
   next-day variance forecasts. Only data after the registration date can be untouched.
 - **Not decided here, and needed before any fitting:** (1) the permutation-entropy settings (embedding, delay, window), which set the warm-up, not in the
   2026-10-27 brief; (2) the HAR form (levels or logs; pooled or per stock) and the loss, given a target this heavy-tailed; (3) whether half-day targets
-  are scored; (4) V or V_id as the one primary target (V proposed); (5) the window boundaries, here HEAT1's; (6) the $5 and $10 million rules.
+  are scored; (4) V or V_id as the one primary target (V proposed); (5) the window boundaries, here HEAT1's; (6) the $5 and $10 million rules; (7) the
+  open: the vendor's (proposed) or the exchange's opening print, to be settled by the measurement above before the specification is registered.
 
 ### Open questions (as of 2026-10-28)
 
@@ -1768,6 +1819,7 @@ The response so far:
 | 2026-10-28 | Prior exposure checked against HEAT's records: HEAT1 scored 2024-01-03 to 2026-10-12 on 2026-10-22 and tuned on 2022-01-04 to 2023-12-29. Data audit part 2 built (Alpaca reference fetch with a manifest, calendar-aware sessions, identity and corporate actions) |
 | 2026-10-28 | Data audit part 2 run (sections 35-36). The cache keeps half-days by clock time; six full days hold a fraction of the session, three of them in Alpaca's own daily bars; vendor and cache ranges contradict each other on 0.07% of sessions; split-only adjustment (the cache's) creates jumps that `all` mostly removes. The auctions and trades fetch failed on a timestamp bug (fixed) |
 | 2026-10-28 | Volatility panel built (`src/volpanel.py`, `scripts/vol_sample.py`): the variance target, the rules and candidate windows with their eligible stock-days. Nothing registered, nothing fitted |
+| 2026-10-28 | Auction and trade check fetched and run (rerun of sections 35-36): the vendor's close is the official close (99.8% of symbol-days, 30 of 30 at trade level), the cache's is not (63.5%); the vendor's open is the opening print wherever the trade-level sample can say, with exceptions where a regular trade came first. The comparison had a flaw (split-adjusted prices rounded to the cent), so the full-sample open rates are lower bounds; the code now compares raw prices and the rerun is pending |
 
 ## Next steps
 

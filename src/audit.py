@@ -456,9 +456,9 @@ def session_definition_check(ext: pd.DataFrame, vendor: pd.DataFrame, table: pd.
 
 
 def split_factor(raw: pd.DataFrame, split: pd.DataFrame) -> pd.DataFrame:
-    """Per symbol-day, the multiplier that puts a price printed that day on the cache's split-adjusted basis:
-    the split-adjusted daily close over the raw one. Auction and trade prints arrive unadjusted, so a stock that
-    split later would otherwise look unequal to every vendor and rebuilt price."""
+    """Per symbol-day, the split-adjusted daily close over the raw one: 1 when nothing adjusts that day, otherwise roughly the
+    multiplier from an unadjusted price to the cache's basis. Only roughly: the adjusted close is rounded to the cent, which is
+    5 bp on a stock adjusted down to $10, so the factor tells which days the cache is unadjusted, not how to rescale a print."""
     m = raw[["symbol", "date", "close"]].merge(split[["symbol", "date", "close"]], on=["symbol", "date"],
                                                suffixes=("_raw", "_split"))
     m["factor"] = m["close_split"] / m["close_raw"]
@@ -469,45 +469,54 @@ def auction_check(auctions: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFr
                   factor: pd.DataFrame | None = None) -> dict:
     """For the sample symbols on every day: does the vendor's open (close) equal an opening (closing)
     auction print, and which condition and exchange; and the same for the rebuilt open and close.
-    `factor` (split_factor) moves the unadjusted prints onto the vendor's and the cache's adjusted basis."""
+
+    Prints arrive unadjusted, so `vendor` is the unadjusted daily bars and the comparison is exact. The cache is split-adjusted
+    and rounded to the cent, and no rescaling of a print undoes that to half a basis point, so the rebuilt values are compared
+    only on days `factor` (split_factor) says nothing adjusts; elsewhere `rebuilt_equal` is empty, and `rebuilt_days` counts
+    the symbol-days compared."""
     if auctions.empty:
         return {"summary": pd.DataFrame(), "by_print": pd.DataFrame()}
     a = auctions.copy()
     a["date"] = pd.to_datetime(a["date"]).dt.normalize()
-    if factor is not None:
-        a = a.merge(factor, on=["symbol", "date"], how="left")
-        a["price"] = a["price"] * a["factor"]
     v = vendor[["symbol", "date", "open", "close"]].rename(columns={"open": "vendor_open", "close": "vendor_close"})
     r = table[table["bars"] > 0][["symbol", "date", "open", "close"]].rename(
         columns={"open": "rebuilt_open", "close": "rebuilt_close"})
     m = a.merge(v, on=["symbol", "date"], how="left").merge(r, on=["symbol", "date"], how="left")
+    if factor is not None:
+        m = m.merge(factor, on=["symbol", "date"], how="left")
+        m.loc[~np.isclose(m["factor"], 1.0, rtol=0, atol=1e-9), ["rebuilt_open", "rebuilt_close"]] = np.nan
     for who in ("vendor", "rebuilt"):
         ref = np.where(m["side"] == "open", m[f"{who}_open"], m[f"{who}_close"])
-        m[f"{who}_equal"] = np.abs(1e4 * np.log(m["price"] / ref)) <= tol_bp
+        m[f"{who}_equal"] = (np.abs(1e4 * np.log(m["price"] / ref)) <= tol_bp).astype(float)
+        m.loc[np.isnan(ref), f"{who}_equal"] = np.nan
     by_print = m.groupby(["side", "condition", "exchange"]).agg(prints=("price", "size"),
                                                                  vendor_equal=("vendor_equal", "mean"),
-                                                                 rebuilt_equal=("rebuilt_equal", "mean")).reset_index()
-    days = m.groupby(["symbol", "date", "side"]).agg(vendor_any=("vendor_equal", "any"),
-                                                     rebuilt_any=("rebuilt_equal", "any")).reset_index()
+                                                                 rebuilt_equal=("rebuilt_equal", "mean"),
+                                                                 rebuilt_prints=("rebuilt_equal", "count")).reset_index()
+    days = m.groupby(["symbol", "date", "side"]).agg(vendor_any=("vendor_equal", "max"),
+                                                     rebuilt_any=("rebuilt_equal", "max")).reset_index()
     summary = days.groupby("side")[["vendor_any", "rebuilt_any"]].mean().reset_index()
-    summary["symbol_days"] = days.groupby("side").size().to_numpy()
+    summary["symbol_days"] = days.groupby("side")["vendor_any"].count().to_numpy()
+    summary["rebuilt_days"] = days.groupby("side")["rebuilt_any"].count().to_numpy()
     return {"summary": summary, "by_print": by_print}
 
 
 def trades_check(trades: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFrame, tol_bp: float = TOL_BP,
                  factor: pd.DataFrame | None = None) -> pd.DataFrame:
     """For each trade-sample symbol-day: the first trades at or after 09:30 and the auction-flagged prints,
-    and which of them the vendor's and the rebuilt open and close equal (`factor` as in auction_check)."""
+    and which of them the vendor's and the rebuilt open and close equal (`vendor` unadjusted, the rebuilt only on the days
+    `factor` says nothing adjusts, as in auction_check)."""
     if trades.empty:
         return pd.DataFrame()
     t = trades.copy()
     ts = t["t"].dt.tz_convert(EASTERN).dt.tz_localize(None)
     t["date"], t["clock"] = ts.dt.normalize(), ts - ts.dt.normalize()
-    if factor is not None:
-        t = t.merge(factor, on=["symbol", "date"], how="left")
-        t["price"] = t["price"] * t["factor"]
     v = vendor.set_index(["symbol", "date"])
     r = table[table["bars"] > 0].set_index(["symbol", "date"])
+    unadjusted = None
+    if factor is not None:
+        f = factor[np.isclose(factor["factor"], 1.0, rtol=0, atol=1e-9)]
+        unadjusted = set(zip(f["symbol"], f["date"]))
     rows = []
     for (sym, day, window), g in t.sort_values("t").groupby(["symbol", "date", "window"]):
         field = "open" if window == "open" else "close"
@@ -523,15 +532,17 @@ def trades_check(trades: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFrame
             cands[f"first print with condition {code}"] = flagged.iloc[0] if len(flagged) else None
         vend = v[field].get((sym, day), np.nan)
         rebuilt = r[field].get((sym, day), np.nan)
+        if unadjusted is not None and (sym, day) not in unadjusted:
+            rebuilt = np.nan
         for name, trade in cands.items():
             if trade is None:
                 continue
             rows.append({"symbol": sym, "date": day, "window": window, "candidate": name, "price": trade["price"],
                          "conditions": trade["conditions"], "exchange": trade["exchange"],
                          "time": trade["clock"], "vendor": vend, "rebuilt": rebuilt,
-                         "vendor_equal": abs(1e4 * np.log(trade["price"] / vend)) <= tol_bp if vend == vend else None,
-                         "rebuilt_equal": abs(1e4 * np.log(trade["price"] / rebuilt)) <= tol_bp
-                         if rebuilt == rebuilt else None})
+                         "vendor_equal": float(abs(1e4 * np.log(trade["price"] / vend)) <= tol_bp) if vend == vend else np.nan,
+                         "rebuilt_equal": float(abs(1e4 * np.log(trade["price"] / rebuilt)) <= tol_bp)
+                         if rebuilt == rebuilt else np.nan})
     return pd.DataFrame(rows)
 
 

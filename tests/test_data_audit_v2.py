@@ -256,26 +256,33 @@ def test_a_broken_drive_link_stops_with_a_message(tmp_path, monkeypatch, capsys)
     assert "Drive is not mounted" in capsys.readouterr().out
 
 
-def test_prints_are_moved_onto_the_adjusted_basis_before_they_are_compared():
-    """Auction and trade prints arrive unadjusted; a later 2-for-1 split must not make them look unequal."""
-    day = pd.Timestamp("2024-11-04")
-    adjusted = pd.DataFrame({"symbol": ["AAA"], "date": [day], "open": [50.0], "close": [51.0]})
-    raw = pd.DataFrame({"symbol": ["AAA"], "date": [day], "open": [100.0], "close": [102.0]})
-    table = adjusted.assign(bars=78)
-    factor = audit.split_factor(raw, adjusted)
-    assert factor["factor"].tolist() == [0.5]
-    auctions = pd.DataFrame({"symbol": "AAA", "date": [day, day], "side": ["open", "close"], "condition": ["Q", "M"],
-                             "price": [100.0, 102.0], "size": 1, "t": pd.Timestamp("2024-11-04T14:30:00Z"),
+def test_the_vendor_is_compared_unadjusted_and_the_cache_only_where_nothing_adjusts_it():
+    """Prints arrive unadjusted. A later 2-for-1 split must not make the vendor look unequal to them, and the cache (split-adjusted
+    and rounded to the cent, so not comparable to half a basis point) is compared only on the day nothing adjusts."""
+    d1, d2 = pd.Timestamp("2024-11-04"), pd.Timestamp("2024-11-05")
+    raw = pd.DataFrame({"symbol": "AAA", "date": [d1, d2], "open": [100.0, 100.0], "close": [102.0, 102.0]})
+    split = pd.DataFrame({"symbol": "AAA", "date": [d1, d2], "open": [50.0, 100.0], "close": [51.0, 102.0]})   # 2-for-1 after d1
+    table = split.assign(bars=78)
+    factor = audit.split_factor(raw, split)
+    assert factor["factor"].tolist() == [0.5, 1.0]
+    auctions = pd.DataFrame({"symbol": "AAA", "date": [d1, d1, d2, d2], "side": ["open", "close"] * 2, "condition": ["Q", "M"] * 2,
+                             "price": [100.0, 102.0, 100.0, 102.0], "size": 1, "t": pd.Timestamp("2024-11-04T14:30:00Z"),
                              "exchange": "N"})
-    scaled = audit.auction_check(auctions, adjusted, table, factor=factor)["summary"].set_index("side")
-    assert scaled["vendor_any"].eq(1).all() and scaled["rebuilt_any"].eq(1).all()
-    unscaled = audit.auction_check(auctions, adjusted, table)["summary"].set_index("side")
-    assert unscaled["vendor_any"].eq(0).all()                                 # what the unadjusted comparison said
-    trades = pd.DataFrame({"symbol": "AAA", "t": [pd.Timestamp("2024-11-04T14:30:00.2Z"), pd.Timestamp("2024-11-04T20:59:59Z")],
-                           "price": [100.0, 102.0], "size": 1, "exchange": "N", "conditions": ["O", "6"], "tape": "A",
-                           "id": [1, 2], "update": None, "window": ["open", "close"]})
-    t = audit.trades_check(trades, adjusted, table, factor=factor)
-    assert t["vendor_equal"].astype(bool).all() and t["rebuilt_equal"].astype(bool).all()
+    res = audit.auction_check(auctions, raw, table, factor=factor)
+    summary = res["summary"].set_index("side")
+    assert summary["vendor_any"].eq(1).all() and summary["symbol_days"].eq(2).all()
+    assert summary["rebuilt_any"].eq(1).all() and summary["rebuilt_days"].eq(1).all()      # d1 is adjusted: not compared
+    assert res["by_print"]["rebuilt_prints"].eq(1).all()
+    wrong_basis = audit.auction_check(auctions, split, table, factor=factor)["summary"].set_index("side")
+    assert wrong_basis["vendor_any"].eq(0.5).all()                                          # what an adjusted vendor would say
+    trades = pd.DataFrame({"symbol": "AAA", "t": [pd.Timestamp("2024-11-04T14:30:00.2Z"), pd.Timestamp("2024-11-04T20:59:59Z"),
+                                                  pd.Timestamp("2024-11-05T14:30:00.2Z"), pd.Timestamp("2024-11-05T20:59:59Z")],
+                           "price": [100.0, 102.0, 100.0, 102.0], "size": 1, "exchange": "N", "conditions": ["O", "6", "O", "6"],
+                           "tape": "A", "id": [1, 2, 3, 4], "update": None, "window": ["open", "close", "open", "close"]})
+    t = audit.trades_check(trades, raw, table, factor=factor)
+    assert t["vendor_equal"].eq(1).all()
+    assert t.loc[t["date"] == d1, "rebuilt_equal"].isna().all()
+    assert t.loc[t["date"] == d2, "rebuilt_equal"].eq(1).all()
 
 
 def test_the_prints_script_runs_from_the_audit_outputs(outputs, monkeypatch, capsys):

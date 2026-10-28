@@ -160,12 +160,13 @@ def main() -> int:
         if (sample / "ext_5min.parquet").exists():
             ext = pd.read_parquet(sample / "ext_5min.parquet")
             results["definitions"] = audit.session_definition_check(ext, traded, sip)
-        factor = audit.split_factor(audit.real(settings["raw"]), traded)
+        unadjusted = audit.real(settings["raw"])   # prints are unadjusted, so the vendor is compared on its raw bars
+        factor = audit.split_factor(unadjusted, traded)
         if (sample / "auctions.parquet").exists():
-            results["auctions"] = audit.auction_check(pd.read_parquet(sample / "auctions.parquet"), traded, sip,
+            results["auctions"] = audit.auction_check(pd.read_parquet(sample / "auctions.parquet"), unadjusted, sip,
                                                       factor=factor)
         if (sample / "trades_open_close.parquet").exists():
-            results["trades"] = audit.trades_check(pd.read_parquet(sample / "trades_open_close.parquet"), traded, sip,
+            results["trades"] = audit.trades_check(pd.read_parquet(sample / "trades_open_close.parquet"), unadjusted, sip,
                                                    factor=factor)
         ca = audit.normalize_actions(pd.read_parquet(ref / "corporate_actions.parquet")) \
             if (ref / "corporate_actions.parquet").exists() else audit.normalize_actions(pd.DataFrame())
@@ -365,12 +366,14 @@ def report(args, sip, meta, cal, halfd, cov_year, change, dv_year, sip_problems,
                       f"The same 5-minute bars fetched again against the cache, inside the session: {d['cache_vs_refetch']}.", ""]
         if "auctions" in results and len(results["auctions"]["summary"]):
             lines += ["**Auction prints** (sample symbols, every day): share of symbol-days where the vendor's (rebuilt) "
-                      "open or close equals an auction print, and which prints:", "",
+                      "open or close equals an auction print within 0.5 bp, and which prints. Prints are unadjusted, so the "
+                      "vendor is compared on its raw bars; the cache (split-adjusted, rounded to the cent) only on the "
+                      "`rebuilt_days` symbol-days nothing adjusts:", "",
                       md(results["auctions"]["summary"], ".4f"), "", md(results["auctions"]["by_print"], ".4f", 30), ""]
         if "trades" in results and len(results["trades"]):
             t = results["trades"]
             lines += ["**Trades at the open and close** (subsample): for each candidate print, how often the vendor's "
-                      "and the rebuilt value equal it (rows in trades_open_close_check.csv):", "",
+                      "and the rebuilt value equal it (same bases; rows in trades_open_close_check.csv):", "",
                       md(t.groupby(["window", "candidate"])[["vendor_equal", "rebuilt_equal"]].mean().reset_index(), ".3f"), ""]
         g, s, m = results["gaps"], results["splices"], results["moves"]
         ph, idt = results["placeholders"], results["identity"]
