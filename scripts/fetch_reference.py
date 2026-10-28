@@ -36,7 +36,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _common import ROOT  # noqa: F401  (puts the repo root on the path)
+from _common import reachable
 
 from src import nyse
 from src.alpaca_rest import BASE_URL, DOCS, AlpacaREST, daily_frame, rfc3339
@@ -94,6 +94,14 @@ def record(manifest: dict, out: Path, path: Path, **info) -> None:
     info.update(sha256=sha256(path), bytes=path.stat().st_size)
     manifest["files"][str(path.relative_to(out))] = info
     save_json(manifest, out / "manifest.json")
+
+
+def failed(manifest: dict, out: Path, path: Path, exc: Exception, **info) -> None:
+    """A part that could not be fetched: recorded with the server's message instead of stopping the run."""
+    info.update(error=f"{type(exc).__name__}: {str(exc)[:500]}", failed_at=now())
+    manifest["files"][str(path.relative_to(out))] = info
+    save_json(manifest, out / "manifest.json")
+    print(f"could not fetch {path.name}: {info['error']} (recorded in the manifest; the rest goes on)")
 
 
 def fetch_daily(client, symbols, start, end, out, manifest, force) -> None:
@@ -213,25 +221,35 @@ def fetch_sample(client, symbols, start, end, out, manifest, force, seed, n_symb
         began, n0 = now(), len(client.log)
         lo, _ = day_window(start)
         _, hi = day_window(end)
-        df = client.auctions(plan["symbols"], lo, hi)
-        save(df, path)
-        record(manifest, out, path, endpoint="GET /v2/stocks/auctions", docs=DOCS["auctions"],
-               settings={"feed": "sip", "asof": "not sent (default)", "start": lo, "end": hi,
-                         "symbols": plan["symbols"]},
-               retrieved_at={"start": began, "end": now()}, requests=len(client.log) - n0, rows=len(df))
-        print(f"wrote {path}: {len(df):,} auction prints")
+        settings = {"feed": "sip", "asof": "not sent (default)", "start": lo, "end": hi, "symbols": plan["symbols"]}
+        try:
+            df = client.auctions(plan["symbols"], lo, hi)
+        except Exception as exc:  # noqa: BLE001  (the audit runs without this part)
+            failed(manifest, out, path, exc, endpoint="GET /v2/stocks/auctions", docs=DOCS["auctions"],
+                   settings=settings, retrieved_at={"start": began}, requests=len(client.log) - n0)
+        else:
+            save(df, path)
+            record(manifest, out, path, endpoint="GET /v2/stocks/auctions", docs=DOCS["auctions"], settings=settings,
+                   retrieved_at={"start": began, "end": now()}, requests=len(client.log) - n0, rows=len(df))
+            print(f"wrote {path}: {len(df):,} auction prints")
 
     path = out / "sample" / "trades_open_close.parquet"
     if force or not path.exists():
         began, n0, frames, windows = now(), len(client.log), [], []
-        for d in plan["trade_days"]:
-            day = pd.Timestamp(d)
-            close = day + nyse.close_time(day)
-            for name, lo, hi in (("open", day + pd.Timedelta(hours=9, minutes=29, seconds=30),
-                                  day + pd.Timedelta(hours=9, minutes=31)),
-                                 ("close", close - pd.Timedelta(seconds=30), close + pd.Timedelta(minutes=15))):
-                windows.append({"day": d, "window": name, "start": rfc3339(lo), "end": rfc3339(hi)})
-                frames.append(client.trades(plan["trade_symbols"], rfc3339(lo), rfc3339(hi)).assign(window=name))
+        try:
+            for d in plan["trade_days"]:
+                day = pd.Timestamp(d)
+                close = day + nyse.close_time(day)
+                for name, lo, hi in (("open", day + pd.Timedelta(hours=9, minutes=29, seconds=30),
+                                      day + pd.Timedelta(hours=9, minutes=31)),
+                                     ("close", close - pd.Timedelta(seconds=30), close + pd.Timedelta(minutes=15))):
+                    windows.append({"day": d, "window": name, "start": rfc3339(lo), "end": rfc3339(hi)})
+                    frames.append(client.trades(plan["trade_symbols"], rfc3339(lo), rfc3339(hi)).assign(window=name))
+        except Exception as exc:  # noqa: BLE001
+            failed(manifest, out, path, exc, endpoint="GET /v2/stocks/trades", docs=DOCS["trades"],
+                   settings={"feed": "sip", "symbols": plan["trade_symbols"], "windows": windows},
+                   retrieved_at={"start": began}, requests=len(client.log) - n0)
+            return
         df = pd.concat(frames, ignore_index=True)
         save(df, path)
         record(manifest, out, path, endpoint="GET /v2/stocks/trades", docs=DOCS["trades"],
@@ -256,6 +274,8 @@ def main() -> int:
     args = parser.parse_args()
 
     out = Path(args.out)
+    if not reachable(args.out):
+        return 1
     out.mkdir(parents=True, exist_ok=True)
     symbols = resolve_universe(args.universe)
     manifest_path = out / "manifest.json"

@@ -24,15 +24,21 @@ class Response:
         return self._body
 
 
+class Refused:
+    status_code, headers, text = 403, {}, '{"message":"subscription does not permit querying auctions"}'
+
+
 class Router:
     """Answers each endpoint with a small valid body and remembers the parameters it was sent."""
 
-    def __init__(self):
-        self.calls = []
+    def __init__(self, refuse=()):
+        self.calls, self.refuse = [], refuse
 
     def get(self, url, params=None, headers=None, timeout=None):
         params = dict(params)
         self.calls.append((url, params))
+        if any(url.endswith(r) for r in self.refuse):
+            return Refused()
         syms = params.get("symbols", "").split(",")
         if url.endswith("/v2/stocks/bars"):
             days = pd.bdate_range(params["start"][:10], params["end"][:10])
@@ -59,9 +65,9 @@ class Router:
         raise AssertionError(url)
 
 
-def run(tmp_path, monkeypatch, *extra):
+def run(tmp_path, monkeypatch, *extra, refuse=()):
     import fetch_reference as script
-    router = Router()
+    router = Router(refuse)
     monkeypatch.setattr(script, "make_client", lambda: AlpacaREST("k", "s", session=router, sleep=lambda s: None))
     pd.DataFrame({"symbol": ["AAA", "BBB", "CCC"], "name": "x", "sector": "x"}).to_csv(tmp_path / "u.csv", index=False)
     monkeypatch.setattr(sys, "argv", ["fetch_reference.py", "--universe", str(tmp_path / "u.csv"), "--start",
@@ -93,6 +99,28 @@ def test_every_file_and_its_settings_are_recorded(tmp_path, monkeypatch):
     for name in ("ext_5min", "auctions", "trades_open_close"):
         assert (ref / "sample" / f"{name}.parquet").exists()
     assert (ref / "meta" / "conditions_C.json").exists()
+
+
+def test_a_refused_part_is_recorded_and_the_rest_goes_on(tmp_path, monkeypatch):
+    run(tmp_path, monkeypatch, refuse=("/v2/stocks/auctions",))
+    ref = tmp_path / "ref"
+    manifest = json.loads((ref / "manifest.json").read_text())
+    entry = manifest["files"]["sample/auctions.parquet"]
+    assert "HTTP 403" in entry["error"] and "sha256" not in entry
+    assert not (ref / "sample" / "auctions.parquet").exists()
+    assert (ref / "sample" / "trades_open_close.parquet").exists()            # the parts after it still ran
+    assert manifest["runs"][-1]["finished"]
+    again = run(tmp_path, monkeypatch)                                        # the next run retries only that part
+    assert {url.rsplit("/", 1)[-1] for url, _ in again.calls} == {"auctions"}
+
+
+def test_a_broken_drive_link_stops_with_a_message(tmp_path, monkeypatch, capsys):
+    import fetch_reference as script
+    (tmp_path / "data").symlink_to(tmp_path / "drive_not_mounted" / "data")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["fetch_reference.py", "--out", "data/reference"])
+    assert script.main() == 1
+    assert "Drive is not mounted" in capsys.readouterr().out
 
 
 def test_a_second_run_keeps_finished_files_and_force_refetches(tmp_path, monkeypatch):

@@ -1,6 +1,9 @@
 """The extended audit on synthetic bars with every case planted: half-days with prints after 13:00, an
-impossible bar, a reused ticker, a special dividend, a spin-off, a genuine crash next to an ordinary
-dividend, a symbol-mapping splice, and vendor daily bars that count extended-hours volume."""
+impossible bar, tickers reused (shown by an exit record, by a when-issued rename, and by Alpaca's issuer
+mapping alone), the same issuer not trading for a while (vendor placeholder bars), a special dividend recorded
+under an older ticker, a distribution with no record that the dividend adjustment shows, a spin-off, a genuine
+crash next to an ordinary dividend, a symbol-mapping splice, a symbol the mapping returns nothing for, and
+vendor daily bars that count extended-hours volume."""
 
 import json
 import sys
@@ -17,19 +20,20 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from src import audit, nyse
 
 DAYS = nyse.sessions("2024-10-01", "2024-12-31")
-SYMBOLS = ["S0", "S1", "S2", "S3", "S4", "S5"]
-EVENTS = {"S3": (30, np.log(0.65)), "S2": (35, np.log(0.5)), "S4": (40, -0.30)}   # session index, overnight move
-GAP = range(20, 45)                                                               # S1 has no bars here
+SYMBOLS = ["S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10"]
+EVENTS = {"S3": (30, np.log(0.65)), "S2": (35, np.log(0.5)), "S4": (40, -0.30), "S9": (25, np.log(0.5))}
+GAP = range(20, 45)                                   # these symbols have no bars here
+GAPPED = {"S1": 3.0, "S6": 1.0, "S7": 3.0, "S8": 3.0}   # price factor when trading resumes (1.0: same issuer)
 
 
 def build(symbol, rng):
     """Returns (cache bars as the cache stores them, every bar of each day incl. extended hours)."""
     rows, price = [], 100.0
     for i, day in enumerate(DAYS):
-        if symbol == "S1" and i in GAP:
+        if symbol in GAPPED and i in GAP:
             continue
-        if symbol == "S1" and i == GAP.stop:
-            price *= 3.0                                                     # a different issuer, a different price
+        if symbol in GAPPED and i == GAP.stop:
+            price *= GAPPED[symbol]
         if symbol in EVENTS and EVENTS[symbol][0] == i:
             price *= np.exp(EVENTS[symbol][1])
         close_h = 13 if nyse.is_half_day(day) else 16
@@ -70,6 +74,14 @@ def vendor_daily(full: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index()
 
 
+def with_placeholders(df, symbol):
+    """Alpaca-style placeholder bars for the sessions a symbol did not trade: zero volume, last close."""
+    last = df[(df["symbol"] == symbol) & (df["date"] < DAYS[GAP.start])]["close"].iloc[-1]
+    fill = pd.DataFrame({"symbol": symbol, "date": DAYS[list(GAP)], "open": last, "high": last, "low": last,
+                         "close": last, "volume": 0.0, "trade_count": 0.0, "vwap": 0.0})
+    return pd.concat([df, fill], ignore_index=True).sort_values(["symbol", "date"]).reset_index(drop=True)
+
+
 def scale_before(df, symbol, day, factor):
     df = df.copy()
     sel = (df["symbol"] == symbol) & (df["date"] < day)
@@ -95,15 +107,18 @@ def made(tmp_path_factory):
             path.with_suffix(".meta.json").write_text(json.dumps({"start": "2024-10-01", "end": "2024-12-31",
                                                                    "feed": feed, "adjustment": "split"}))
     full = pd.concat(fulls, ignore_index=True)
-    split = vendor_daily(full)
-    ex2, spin4 = DAYS[EVENTS["S2"][0]], DAYS[EVENTS["S4"][0]]
+    split = with_placeholders(vendor_daily(full), "S6")
+    ex2, spin4, ex9 = DAYS[EVENTS["S2"][0]], DAYS[EVENTS["S4"][0]], DAYS[EVENTS["S9"][0]]
     prev2 = split[(split["symbol"] == "S2") & (split["date"] < ex2)]["close"].iloc[-1]
-    divs = scale_before(split, "S2", ex2, 0.5)
+    divs = scale_before(scale_before(split, "S2", ex2, 0.5), "S9", ex9, 0.5)
     every = scale_before(divs, "S4", spin4, np.exp(EVENTS["S4"][1]))
     nomap = split[~((split["symbol"] == "S5") & (split["date"] < DAYS[10]))]
+    # Alpaca's issuer mapping: S8's issuer starts after its gap; S10 gets nothing at all
+    mapped = lambda df: df[~((df["symbol"] == "S8") & (df["date"] < DAYS[GAP.start])) & (df["symbol"] != "S10")]  # noqa: E731
     ref = tmp / "ref"
     (ref / "daily").mkdir(parents=True)
-    for tag, df in {"raw": split, "split": split, "split+dividend": divs, "all": every, "split_nomap": nomap}.items():
+    for tag, df in {"raw": mapped(split), "split": mapped(split), "split+dividend": mapped(divs), "all": mapped(every),
+                    "split_nomap": nomap}.items():
         df.to_parquet(ref / "daily" / f"daily_sip_{tag}.parquet")
     ca = pd.DataFrame([
         {"kind": "name_changes", "id": "1", "old_symbol": "S1", "new_symbol": "S1X", "process_date": str(DAYS[GAP.start].date())},
@@ -114,6 +129,7 @@ def made(tmp_path_factory):
         {"kind": "cash_dividends", "id": "4", "symbol": "S3", "rate": 0.1, "special": False,
          "ex_date": str(DAYS[EVENTS["S3"][0] - 3].date())},
         {"kind": "name_changes", "id": "5", "old_symbol": "OLD5", "new_symbol": "S5", "process_date": str(DAYS[10].date())},
+        {"kind": "name_changes", "id": "7", "old_symbol": "S7.WI", "new_symbol": "S7", "process_date": str(DAYS[GAP.stop].date())},
     ])
     ca.to_parquet(ref / "corporate_actions.parquet")
     sample_days = [pd.Timestamp("2024-11-29"), DAYS[5]]
@@ -127,6 +143,7 @@ def made(tmp_path_factory):
     auctions = auctions.assign(size=1, exchange="N", t=pd.Timestamp("2024-01-01", tz="UTC"))[
         ["symbol", "date", "side", "condition", "price", "size", "t", "exchange"]]
     auctions.to_parquet(ref / "sample" / "auctions.parquet")
+    (ref / "manifest.json").write_text(json.dumps({"files": {}}))
     pd.DataFrame({"symbol": SYMBOLS, "name": "x", "sector": "x"}).to_csv(tmp / "u.csv", index=False)
     return tmp
 
@@ -148,24 +165,38 @@ def outputs(made):
 def test_every_planted_move_gets_its_class(outputs):
     moves = pd.read_csv(outputs / "large_moves.csv", parse_dates=["date"])
     cls = {(r.symbol, r.kind): r["class"] for _, r in moves.iterrows()}
-    assert cls[("S2", "overnight")] == "cash distribution"
+    assert cls[("S2", "overnight")] == "cash distribution"                 # found under the older ticker
+    assert cls[("S9", "overnight")] == "cash distribution (shown by Alpaca's dividend adjustment; no record)"
     assert cls[("S4", "overnight")] == "spin-off"
     assert cls[("S3", "overnight")] == "market move (no corporate action found)"   # kept, despite the dividend 3 days before
-    assert cls[("S1", "overnight")] == "identity change (after a long gap)"
-    s2 = moves[moves["symbol"] == "S2"].iloc[0]
-    assert "removed by split+dividend: True" in s2["reason"]
-    assert len(moves) == 4
+    for sym in ("S1", "S7", "S8"):
+        assert cls[(sym, "overnight")] == "identity change (after a long gap)"
+    assert "removed by split+dividend: True" in moves[moves["symbol"] == "S2"].iloc[0]["reason"]
+    assert len(moves) == 7                                                   # S6 resumes at its old price: no move
 
 
-def test_the_reused_ticker_and_the_mapping_splice(outputs):
-    gaps = pd.read_csv(outputs / "gaps.csv")
-    s1 = gaps[gaps["symbol"] == "S1"].iloc[0]
-    assert s1["sessions"] == len(GAP) and s1["class"] == "ticker reused by a different issuer"
-    splices = pd.read_csv(outputs / "symbol_mapping_splices.csv")
-    assert splices.set_index("symbol").loc["S5", "mapped_only_days"] == 10
+def test_gaps_are_classified_on_evidence(outputs):
+    gaps = pd.read_csv(outputs / "gaps.csv").set_index("symbol")
+    assert (gaps.loc[["S1", "S6", "S7", "S8"], "sessions"] == len(GAP)).all()
+    assert gaps.loc["S1", "class"] == audit.REUSED                           # an exit record
+    assert gaps.loc["S7", "class"] == audit.REUSED                           # a when-issued rename at the gap's end
+    assert gaps.loc["S8", "class"] == audit.REUSED                           # the issuer mapping starts after the gap
+    assert gaps.loc["S6", "class"] == audit.SAME_ISSUER_NO_TRADING
+    assert "placeholder bars during the gap: mapped 25" in gaps.loc["S6", "evidence"]
+    splices = pd.read_csv(outputs / "symbol_mapping_splices.csv").set_index("symbol")
+    assert splices.loc["S5", "mapped_only_days"] == 10
+    ph = pd.read_csv(outputs / "vendor_placeholder_bars.csv")
+    assert ph["symbol"].tolist() == ["S6"] and ph["bars"].iloc[0] == len(GAP)
+
+
+def test_unresolved_cases_are_listed_apart(outputs):
     unresolved = pd.read_csv(outputs / "unresolved.csv")
-    assert set(unresolved["kind"]) == {"impossible bar values (cause unknown)"}
-    assert unresolved["symbol"].tolist() == ["S0"]
+    assert dict(zip(unresolved["kind"], unresolved["symbol"])) == {
+        "impossible bar values (cause unknown)": "S0",
+        "gap cause not recorded (identity: same issuer)": "S6",
+        "Alpaca's mapping returns no bars": "S10"}
+    identity = pd.read_csv(outputs / "identity_vs_mapping.csv").set_index("symbol")
+    assert identity.loc["S8", "cache_only_days"] == GAP.start                 # explained by the reuse, so not unresolved
 
 
 def test_impossible_values_are_located(outputs):
@@ -180,8 +211,9 @@ def test_impossible_values_are_located(outputs):
 def test_half_days_end_at_13_and_the_first_audits_rule_missed_them(outputs):
     cov = pd.read_csv(outputs / "coverage_by_year.csv")
     half = cov[cov["day_type"] == "half"].iloc[0]
+    in_gap = sum(1 for d in nyse.HALF_DAYS if d in DAYS and DAYS.get_loc(d) in GAP) * len(GAPPED)
     assert half["sessions"] == 2 and half["missing_close"] == 0
-    assert half["first_audit_missing_close"] == 2 * len(SYMBOLS) - 1       # S1 is in its gap on one of them
+    assert half["first_audit_missing_close"] == 2 * len(SYMBOLS) - in_gap   # every half-day the first audit saw
     days = pd.read_csv(outputs / "half_days.csv")
     assert (days["with_bars_after_13"] == days["symbols"]).all()
 
@@ -206,8 +238,19 @@ def test_sessions_table_covers_every_symbol_and_session(outputs):
     assert (s1.loc[list(GAP), "status"] == "no_bars").all()
     assert s1.loc[GAP.stop, "gap_sessions"] == len(GAP) + 1                   # the return spans the gap, and says so
     assert s1.loc[GAP.stop, "segment"] == 1 and s1.loc[0, "segment"] == 0
+    s6 = s[s["symbol"] == "S6"].reset_index(drop=True)
+    assert (s6["segment"] == 0).all()                                         # same issuer: no segment break
     assert s["dv_trailing63"].notna().any()
     report = (outputs / "report.md").read_text()
     for section in ("## 1. Calendar", "## 2. Half-day", "## 3. Dollar volume", "## 4. Impossible", "## 5. Vendor",
-                    "## 6. Security identity", "## Unresolved"):
+                    "## 6. Security identity", "**Placeholder bars.**", "## Unresolved"):
         assert section in report
+
+
+def test_a_broken_drive_link_stops_with_a_message(tmp_path, monkeypatch, capsys):
+    import data_audit_v2 as script
+    (tmp_path / "outputs").symlink_to(tmp_path / "drive_not_mounted" / "outputs")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["data_audit_v2.py", "--out", "outputs/data_audit_v2"])
+    assert script.main() == 1
+    assert "Drive is not mounted" in capsys.readouterr().out

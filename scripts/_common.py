@@ -11,6 +11,26 @@ sys.path.insert(0, str(ROOT))
 DEFAULT_CONFIG = "configs/etf_intraday.yaml"
 
 
+def unreachable(path) -> str | None:
+    """The first part of `path` that is a link to nothing, or None. In Colab `data/` and `outputs/` link
+    into Drive, so a broken link means Drive is not mounted; without this check the script fails deep inside
+    with "File exists: 'outputs'"."""
+    p = Path(path)
+    for part in [*reversed(p.parents), p]:
+        if part.is_symlink() and not part.exists():
+            return str(part)
+    return None
+
+
+def reachable(*paths) -> bool:
+    """False, with a message, when any path runs through a broken link (Drive not mounted)."""
+    broken = sorted({b for b in (unreachable(p) for p in paths) if b})
+    if broken:
+        print(f"STOPPED: {', '.join(broken)} point at Google Drive, but Drive is not mounted. Run section 1 to "
+              "mount it (or restart the session and run sections 1-3), then run this cell again.")
+    return not broken
+
+
 def enough_symbols(bars: dict, universe: list, cache_dir, minimum: float = 0.9) -> bool:
     """False, with a message, when the cache holds too little of the universe to run on.
 

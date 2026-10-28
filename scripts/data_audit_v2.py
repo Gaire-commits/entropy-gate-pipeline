@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _common import ROOT  # noqa: F401  (puts the repo root on the path)
+from _common import reachable
 
 from src import audit, nyse
 from src.data import cache_path, read_meta, resolve_universe
@@ -87,7 +87,11 @@ def main() -> int:
     ap.add_argument("--start", default="2016-01-04")
     args = ap.parse_args()
     out, ref = Path(args.out), Path(args.reference)
+    if not reachable(args.out, args.sip, args.iex, args.reference):
+        return 1
     out.mkdir(parents=True, exist_ok=True)
+    if not (ref / "manifest.json").exists():
+        print(f"note: no reference data in {ref} (run section 35 first); sections 5 and 6 will be skipped")
     universe = resolve_universe(args.universe)
     calendar = nyse.sessions(args.start, "2026-12-31")
     t0 = time.time()
@@ -146,7 +150,8 @@ def main() -> int:
     unresolved = []
     if have_ref:
         split = settings["split"]
-        results["vendor"] = audit.vendor_comparison(sip, split)
+        traded = audit.real(split)          # placeholder bars (no trades) are not trading days
+        results["vendor"] = audit.vendor_comparison(sip, traded)
         b = results["vendor"]["basis"]
         for _, r in b[b["basis"] == "varies over time"].iterrows():
             unresolved.append({"kind": "adjustment basis varies over time", "symbol": r["symbol"],
@@ -154,37 +159,62 @@ def main() -> int:
         sample = ref / "sample"
         if (sample / "ext_5min.parquet").exists():
             ext = pd.read_parquet(sample / "ext_5min.parquet")
-            results["definitions"] = audit.session_definition_check(ext, split, sip)
+            results["definitions"] = audit.session_definition_check(ext, traded, sip)
         if (sample / "auctions.parquet").exists():
-            results["auctions"] = audit.auction_check(pd.read_parquet(sample / "auctions.parquet"), split, sip)
+            results["auctions"] = audit.auction_check(pd.read_parquet(sample / "auctions.parquet"), traded, sip)
         if (sample / "trades_open_close.parquet").exists():
-            results["trades"] = audit.trades_check(pd.read_parquet(sample / "trades_open_close.parquet"), split, sip)
+            results["trades"] = audit.trades_check(pd.read_parquet(sample / "trades_open_close.parquet"), traded, sip)
         ca = audit.normalize_actions(pd.read_parquet(ref / "corporate_actions.parquet")) \
             if (ref / "corporate_actions.parquet").exists() else audit.normalize_actions(pd.DataFrame())
         gap_rows = audit.gaps(sip[sip["date"] <= common_end])
-        nomap = settings.get("split_nomap", pd.DataFrame(columns=["symbol", "date"]))
+        nomap = settings.get("split_nomap", pd.DataFrame(columns=["symbol", "date", "volume", "trade_count", "close"]))
         splices = audit.mapping_splices(split, nomap) if len(nomap) else pd.DataFrame()
-        gap_cls = audit.classify_gaps(gap_rows, ca, nomap)
+        gap_cls = audit.classify_gaps(gap_rows, ca, split, nomap)
         moves = audit.large_moves(sip)
         move_cls = audit.classify_moves(moves, {k: settings[k] for k in SETTINGS if k in settings}, ca, gap_rows, splices)
-        results.update(gaps=gap_cls, splices=splices, moves=move_cls, actions=ca)
-        for _, g in gap_cls[gap_cls["class"].str.startswith("unresolved")].iterrows():
-            unresolved.append({"kind": "gap", "symbol": g["symbol"],
+        identity = audit.identity_vs_mapping(sip[sip["date"] <= common_end], split, universe)
+        results.update(gaps=gap_cls, splices=splices, moves=move_cls, actions=ca, identity=identity,
+                       placeholders=audit.placeholder_runs(split), placeholders_nomap=audit.placeholder_runs(nomap)
+                       if len(nomap) else pd.DataFrame(), coverage=audit.action_coverage(ca),
+                       fractional=audit.fractional_splits(ca))
+        for _, g in gap_cls[gap_cls["class"].isin(["unresolved", audit.SAME_ISSUER_NO_TRADING])].iterrows():
+            kind = "gap" if g["class"] == "unresolved" else "gap cause not recorded (identity: same issuer)"
+            unresolved.append({"kind": kind, "symbol": g["symbol"],
                                "detail": f"{g['first_missing'].date()} to {g['last_missing'].date()}, "
                                          f"{g['sessions']} sessions; {g['evidence']}"})
+        reused = set(gap_cls.loc[gap_cls["class"] == audit.REUSED, "symbol"])
+        for _, r in identity.iterrows():
+            if r["note"]:
+                unresolved.append({"kind": "Alpaca's mapping returns no bars", "symbol": r["symbol"],
+                                   "detail": f"the cache has {r['cache_days']} trading days; vendor comparison and "
+                                             "issuer mapping unavailable for this symbol"})
+            elif r["cache_only_days"] > 0 and r["symbol"] not in reused:
+                unresolved.append({"kind": "cache has days outside today's issuer (Alpaca's mapping)", "symbol": r["symbol"],
+                                   "detail": f"{r['cache_only_days']} days, {r['cache_only_first']} to {r['cache_only_last']}"})
         for _, m in move_cls[move_cls["class"] == "unresolved"].iterrows():
             unresolved.append({"kind": f"large {m['kind']} move", "symbol": m["symbol"],
                                "detail": f"{m['date'].date()} log {m['move']:+.3f}: {m['reason']}"})
         if len(splices):
-            for _, s in splices[splices["mapped_only_days"] > 0].iterrows():
-                names = ca[(ca["new_symbol"] == s["symbol"]) & ca["kind"].astype(str).str.contains("name_change")]
-                if names.empty:
+            renames = ca[ca["kind"].astype(str).str.contains("name_change")]
+            records_begin = renames["when"].min() if len(renames) else pd.NaT
+            notes = []
+            for _, s in splices.iterrows():
+                if s["mapped_only_days"] == 0:
+                    notes.append("")
+                elif len(renames[renames["new_symbol"] == s["symbol"]]):
+                    notes.append("name-change record")
+                elif pd.notna(records_begin) and s["mapped_only_last"] < records_begin:
+                    notes.append(f"rename before the name-change records begin ({records_begin.date()}): identity "
+                                 "from Alpaca's mapping alone")
+                else:
+                    notes.append("no name-change record")
                     unresolved.append({"kind": "symbol mapping adds history without a name-change record",
                                        "symbol": s["symbol"],
                                        "detail": f"{s['mapped_only_days']} days, {s['mapped_only_first']} to {s['mapped_only_last']}"})
+            splices["note"] = notes
         # issuer segments, only where a gap was classified as reuse on the evidence
         sip["segment"] = 0
-        for _, g in gap_cls[gap_cls["class"] == "ticker reused by a different issuer"].iterrows():
+        for _, g in gap_cls[gap_cls["class"] == audit.REUSED].iterrows():
             sip.loc[(sip["symbol"] == g["symbol"]) & (sip["date"] > g["last_missing"]), "segment"] += 1
     for _, p in sip_problems.groupby("symbol"):
         unresolved.append({"kind": "impossible bar values (cause unknown)", "symbol": p["symbol"].iloc[0],
@@ -220,6 +250,12 @@ def main() -> int:
         results["gaps"].to_csv(out / "gaps.csv", index=False)
         results["splices"].to_csv(out / "symbol_mapping_splices.csv", index=False)
         results["moves"].to_csv(out / "large_moves.csv", index=False)
+        results["identity"].to_csv(out / "identity_vs_mapping.csv", index=False)
+        results["placeholders"].to_csv(out / "vendor_placeholder_bars.csv", index=False)
+        if len(results["placeholders_nomap"]):
+            results["placeholders_nomap"].to_csv(out / "vendor_placeholder_bars_unmapped.csv", index=False)
+        results["coverage"].to_csv(out / "corporate_action_coverage.csv", index=False)
+        results["fractional"].to_csv(out / "fractional_split_records.csv", index=False)
 
     lines = report(args, sip, meta, cal, halfd, cov_year, change, dv_year, sip_problems, iex_problems,
                    nonfinite_first, nonfinite_sip, results, unresolved, ref, have_ref, common_end)
@@ -334,7 +370,22 @@ def report(args, sip, meta, cal, halfd, cov_year, change, dv_year, sip_problems,
                       "and the rebuilt value equal it (rows in trades_open_close_check.csv):", "",
                       md(t.groupby(["window", "candidate"])[["vendor_equal", "rebuilt_equal"]].mean().reset_index(), ".3f"), ""]
         g, s, m = results["gaps"], results["splices"], results["moves"]
+        ph, idt = results["placeholders"], results["identity"]
         lines += ["## 6. Security identity and corporate actions", "",
+                  "**What the records cover.** Alpaca's corporate-action records by kind; where a kind starts late, "
+                  "older events of that kind can only be seen in the adjustment factors or not at all:", "",
+                  md(results["coverage"]), "",
+                  "Split records whose ratio is not a whole number either way (several match spin-offs, which "
+                  "Alpaca's split adjustment then covers):", "", md(results["fractional"], ".4f", 40), "",
+                  f"**Placeholder bars.** Vendor daily bars with zero volume or zero trades (no trading under the "
+                  f"ticker; prices repeat the last close): {int(ph['bars'].sum()) if len(ph) else 0} bars in "
+                  f"{ph['symbol'].nunique() if len(ph) else 0} symbols with symbol mapping on"
+                  + (f", {int(results['placeholders_nomap']['bars'].sum())} with it off"
+                     if len(results["placeholders_nomap"]) else "") + ". They are left out of every comparison.", "",
+                  md(ph.sort_values("bars", ascending=False) if len(ph) else ph, ".2f", 20), "",
+                  "**The cache against today's issuer.** Trading days the cache has that Alpaca's issuer mapping "
+                  "(as of the reference retrieval) does not give today's issuer, and the reverse:", "",
+                  md(idt.sort_values("cache_only_days", ascending=False) if len(idt) else idt, ".0f", 30), "",
                   f"Gaps of 5+ sessions with no bar: {len(g)} ({(g['sessions'] >= audit.LONG_GAP).sum()} of "
                   f"{audit.LONG_GAP}+). Rule for long gaps: an exit record for an earlier issuer under the ticker near the "
                   "gap's start means reuse; bars under the bare ticker during the gap mean the cache is missing them; "

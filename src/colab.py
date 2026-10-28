@@ -1,11 +1,14 @@
-"""Colab helpers: push results to Drive, check Drive is really there, and keep a copy that does not depend on it.
+"""Colab helpers: check Drive is really there, keep a copy of results that does not depend on it, and push to Drive
+at the end of a session.
 
 Colab writes to Drive through a mount that uploads in the background. In this project's runtimes the upload
 has been failing quietly: since about 2026-10-14 Drive shows the folders runs create but none of the files
 (HEAT's registered run printed "could not flush Drive" and "Mountpoint must not already contain files").
-So every result is also zipped and downloaded to your computer, the flush is time-limited so it never
-hangs a session, and `drive_status` reports the mount and the space Drive says is left (a full Drive
-accepts folders but refuses files).
+So every result is zipped and downloaded to your computer.
+
+Flushing to Drive means unmounting it, and while Drive is unmounted `data/` and `outputs/` (links into it)
+point at nothing. So `sync_drive` is only for the end of a session, never between sections, and
+`ensure_drive` remounts Drive before a section that needs it.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ import threading
 import zipfile
 
 MOUNT = "/content/drive"
+LINKS = ("data", "outputs")
 
 
 def in_colab() -> bool:
@@ -27,16 +31,28 @@ def drive_status(mount: str = MOUNT) -> str:
     if not os.path.exists(mount):
         return f"{mount} does not exist: Drive is not mounted (run section 1)."
     if not os.path.ismount(mount):
-        return (f"{mount} is a plain folder, NOT a Drive mount: anything written there stays on this machine. "
-                "Restart the runtime (Runtime -> Restart session) and run section 1 again.")
+        return (f"{mount} is NOT a Drive mount: run section 1. If mounting fails with 'Mountpoint must not already "
+                "contain files', restart the session (Runtime -> Restart session) and run sections 1-3.")
     total, used, free = shutil.disk_usage(mount)
     note = " Drive reports almost no free space: it will accept folders but refuse files." if free < 1e9 else ""
     return f"Drive mounted at {mount}: {used / 1e9:.1f} GB used of {total / 1e9:.1f} GB, {free / 1e9:.1f} GB free.{note}"
 
 
-def sync_drive(timeout: int = 300, mount: str = MOUNT) -> str:
-    """Flush pending uploads and remount. Never hangs: after `timeout` seconds it returns and the upload
-    carries on in the background while the session lives."""
+def ensure_drive(mount: str = MOUNT) -> bool:
+    """Mount Drive if it is not mounted, then check that data/ and outputs/ reach it."""
+    if in_colab() and not os.path.ismount(mount):
+        from google.colab import drive
+        drive.mount(mount)
+    broken = [name for name in LINKS if os.path.islink(name) and not os.path.exists(name)]
+    print(drive_status(mount))
+    if broken:
+        print(f"STOP: {', '.join(broken)} point at Drive but Drive is not reachable. Run sections 1-3 again.")
+        return False
+    return True
+
+
+def sync_drive(timeout: int = 900, mount: str = MOUNT) -> str:
+    """End of session only: flush pending uploads (this unmounts Drive), then mount it again."""
     if not in_colab():
         return "not in Colab: nothing to sync"
     from google.colab import drive
@@ -53,13 +69,13 @@ def sync_drive(timeout: int = 300, mount: str = MOUNT) -> str:
     t.start()
     t.join(timeout)
     if t.is_alive():
-        return (f"Drive still uploading after {timeout}s; it keeps going while this session lives. "
-                "Your downloaded zip is the copy to rely on.")
+        return (f"Drive is still flushing after {timeout}s and will unmount when it finishes. Before running any "
+                "other cell, run section 1 to mount it again. The downloaded zips are the copies to rely on.")
     try:
         drive.mount(mount)
     except Exception as exc:  # noqa: BLE001
-        return f"flushed, but could not remount ({exc}); run drive.mount('{mount}') yourself"
-    return f"could not flush Drive: {failed[0]}" if failed else "Drive flushed and remounted."
+        return f"flushed, but Drive could not be mounted again ({exc}): restart the session and run sections 1-3"
+    return f"could not flush Drive: {failed[0]}" if failed else "Drive flushed and mounted again."
 
 
 def download_results(path: str, name: str, keep: tuple = (".md", ".csv", ".json", ".parquet"),
@@ -84,9 +100,12 @@ def download_results(path: str, name: str, keep: tuple = (".md", ".csv", ".json"
                 z.write(full, os.path.relpath(full, path))
                 total, n = total + size, n + 1
     print(f"{n} files, {total:.1f} MB before compression, in {target}")
+    if n == 0:
+        print(f"WARNING: {path} has no result files on this runtime, so the zip is empty (they were never written "
+              "here, or Drive lost them). Rerun the section that writes them.")
     if skipped:
-        print("left out (too large; still on this runtime and Drive):", ", ".join(skipped))
-    if in_colab():
+        print("left out (too large; still on this runtime):", ", ".join(skipped))
+    if in_colab() and n:
         from google.colab import files
         files.download(target)
     return target

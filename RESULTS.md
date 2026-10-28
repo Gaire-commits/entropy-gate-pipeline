@@ -1465,12 +1465,52 @@ cannot send combined adjustments:
 It writes `sessions.parquet`, every stock-session with its status and the reason it is unusable. That is the
 base for the loader. The tests plant every case on synthetic bars.
 
+**First reference fetch, 2026-10-28 03:33-03:38 UTC** (measured; read from the downloaded zip, manifest included):
+
+- **Daily bars.** All five settings were fetched for 2016-01-04 to 2026-10-13. With Alpaca's default symbol
+  mapping, 502 of 503 symbols came back: **the mapping returns no bars for DOW**. With mapping off, all 503 came
+  back.
+- **Corporate actions: 16,718 records.**
+  - Coverage by kind: cash dividends from 2016-01-04; forward splits from 2016-02-10 and reverse splits from
+    2016-01-05; spin-offs from 2019-02-25; **name changes from 2019-11-06**; mergers from 2020.
+  - Earlier renames, spin-offs and mergers can only be seen through prices and the symbol mapping.
+  - 28 split records have ratios that are not whole numbers either way. Several match spin-offs: HON 1000→1011 on
+    2018-10-01, TT 1000→1289 on 2020-03-02, DELL 1000→1973 on 2021-11-02. Alpaca's "split" adjustment therefore
+    covers those spin-offs.
+- **Placeholder bars.** These are daily bars with zero volume and zero trades, every price equal to the last close.
+  - With mapping on: 530 bars in 5 symbols, including SMCI 349 (2018-08-23 to 2020-01-13) and EXE 156 (2020-06-29
+    to 2021-02-09). These are exactly the cache's two long same-issuer gaps.
+  - With mapping off: 5,609 bars in 14 symbols, including DOW 396 at 66.65 from 2017-09-01 to 2019-04-01.
+- **Symbol mapping.**
+  - The mapping extends 43 symbols' history with earlier tickers, e.g. EXE←CHK (to 2024-10-01) and META←FB.
+  - 11 of those are renames from before the name-change records begin (among them KDP←DPS, IQV, BKNG, TPR, WELL).
+  - **Q**: the mapped history starts 2025-11-03, the day of a spin-off from DD and a Q.WI→Q rename. The bare
+    ticker has 472 earlier days.
+  - **IR**: the mapped history starts 2017-05-12. Records show GDI→IR and IR→TT on 2020-03-02. The bare ticker
+    has 342 earlier days.
+- **Auctions.** The request failed and stopped the run, so no trades were fetched either. The fetch now records a
+  failed part and carries on.
+
+**Interpretations:**
+- The cache's early Q bars (2016-2017) are another issuer's. From memory, Quintiles traded as Q until its 2017
+  rename to IQV. IQV's mapped history goes back past 2017 without a record, which fits.
+- The cache's IR bars before 2017-05-12 are the former Ingersoll-Rand plc, now TT, per the 2020-03-02 records.
+- DOW before 2017-09 is Dow Chemical (from memory).
+- SMCI and EXE are the same issuer across their gaps (per the mapping), with no trading on the consolidated tape:
+  SMCI's 2018-2020 Nasdaq delisting and Chesapeake's 2020-2021 bankruptcy, both from memory. Neither has a record.
+
+**Section 36 crashed on 2026-10-28.** Drive had been unmounted by the end-of-section Drive flush in sections 34b
+and 35, and `outputs/` pointed at nothing. The flush now runs only at the end of a session (section 36b). The
+scripts stop with a plain message when Drive is not mounted, and each section remounts it first. The part-1 zip
+was empty: its files were already gone, so part 1 survives only as the numbers above.
+
 ### Open questions (as of 2026-10-28)
 
-- Who issued the Q, DOW and IR segments, and why the SMCI and EXE gaps exist.
-- How KDP, PNR and HON appear under each adjustment setting.
+- Why the SMCI and EXE gaps exist. There are no records; the identity is the same per the mapping.
+- Why Alpaca's mapping returns nothing for DOW, and confirmation of who issued its pre-2017 bars.
+- How KDP, PNR and HON appear under each adjustment setting. None of their 2018 events has a record.
 - Which price made the first audit's mean ratio non-finite.
-- Whether Alpaca's daily open and close are the auction prints.
+- Whether Alpaca's daily open and close are the auction prints, and why the auctions request failed.
 - Whether HEAT2's test has been scored.
 - **Drive has not received files written from Colab since about 2026-10-14** (folders appear, files do not; HEAT
   logged the same). Results are preserved by zip downloads until this is fixed (HANDOVER.md).

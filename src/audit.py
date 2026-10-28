@@ -601,11 +601,63 @@ def gaps(table: pd.DataFrame, min_len: int = 5) -> pd.DataFrame:
                                        "open_after", "log_move_across"])
 
 
+def placeholder(vendor: pd.DataFrame) -> pd.Series:
+    """Vendor daily bars that record no trading: zero volume or zero trades. Alpaca fills sessions in which
+    nothing traded under a ticker with such bars, every price equal to the last close (found 2026-10-28:
+    DOW unmapped carries 396 of them at 66.65 from 2017-09-01 to 2019-04-01). They are not trading days."""
+    vol = vendor["volume"].fillna(0)
+    trades = vendor["trade_count"].fillna(0) if "trade_count" in vendor else vol
+    return (vol <= 0) | (trades <= 0)
+
+
+def real(vendor: pd.DataFrame) -> pd.DataFrame:
+    return vendor[~placeholder(vendor)]
+
+
+def placeholder_runs(vendor: pd.DataFrame, min_len: int = 1) -> pd.DataFrame:
+    """Runs of placeholder bars per symbol."""
+    v = vendor.sort_values(["symbol", "date"]).assign(ph=lambda x: placeholder(x).to_numpy())
+    rows = []
+    for sym, g in v.groupby("symbol"):
+        flag = g["ph"].to_numpy()
+        if not flag.any():
+            continue
+        edges = np.flatnonzero(np.diff(np.r_[0, flag.astype(np.int8), 0]))
+        dates = g["date"].to_numpy()
+        for s, e in zip(edges[::2], edges[1::2]):
+            if e - s >= min_len:
+                rows.append({"symbol": sym, "first": pd.Timestamp(dates[s]), "last": pd.Timestamp(dates[e - 1]),
+                             "bars": int(e - s), "price": float(g["close"].iloc[s])})
+    return pd.DataFrame(rows, columns=["symbol", "first", "last", "bars", "price"])
+
+
+def identity_vs_mapping(table: pd.DataFrame, mapped: pd.DataFrame, universe: list[str]) -> pd.DataFrame:
+    """Per symbol, the cache's trading days against the trading days Alpaca's issuer mapping (as of the
+    reference retrieval) gives today's issuer: days the cache has that the mapping does not (another issuer's
+    bars, or a mapping that changed since the cache was fetched), and days the mapping has that the cache lacks."""
+    cache = table[(table["bars"] > 0) & table["nyse_session"]].groupby("symbol")["date"].apply(set)
+    vend = real(mapped).groupby("symbol")["date"].apply(set)
+    rows = []
+    for sym in universe:
+        c, v = cache.get(sym, set()), vend.get(sym, set())
+        if not c and not v:
+            continue
+        extra, lacking = sorted(c - v), sorted(v - c)
+        if extra or lacking or not v:
+            rows.append({"symbol": sym, "cache_days": len(c), "mapped_days": len(v),
+                         "cache_only_days": len(extra), "cache_only_first": extra[0] if extra else pd.NaT,
+                         "cache_only_last": extra[-1] if extra else pd.NaT, "mapped_only_days": len(lacking),
+                         "mapped_only_first": lacking[0] if lacking else pd.NaT,
+                         "mapped_only_last": lacking[-1] if lacking else pd.NaT,
+                         "note": "Alpaca's mapping returns no bars for this symbol" if not v else ""})
+    return pd.DataFrame(rows)
+
+
 def mapping_splices(mapped: pd.DataFrame, unmapped: pd.DataFrame) -> pd.DataFrame:
-    """Per symbol, the days Alpaca's symbol mapping adds (bars under an earlier ticker of the same issuer,
-    by Alpaca's records) and the days only the unmapped query has."""
-    a = mapped.groupby("symbol")["date"].apply(set)
-    b = unmapped.groupby("symbol")["date"].apply(set)
+    """Per symbol, the trading days Alpaca's symbol mapping adds (bars under an earlier ticker of the same
+    issuer, by Alpaca's records) and the days only the unmapped query has. Placeholder bars are not days."""
+    a = real(mapped).groupby("symbol")["date"].apply(set)
+    b = real(unmapped).groupby("symbol")["date"].apply(set)
     rows = []
     for sym in sorted(set(a.index) | set(b.index)):
         sa, sb = a.get(sym, set()), b.get(sym, set())
@@ -619,14 +671,29 @@ def mapping_splices(mapped: pd.DataFrame, unmapped: pd.DataFrame) -> pd.DataFram
     return pd.DataFrame(rows)
 
 
-def classify_gaps(gap_rows: pd.DataFrame, ca: pd.DataFrame, unmapped: pd.DataFrame) -> pd.DataFrame:
-    """Rule, for gaps of LONG_GAP sessions or more: an exit record for an earlier issuer under this ticker
-    near the gap's start (the ticker as the old symbol of a name change, the target of a merger, or a
-    worthless removal) makes it "ticker reused by a different issuer"; bars under the bare ticker during
-    the gap make it "missing from the cache"; anything else is unresolved. Shorter gaps are listed only."""
+REUSED = "ticker reused by a different issuer"
+SAME_ISSUER_NO_TRADING = "same issuer (Alpaca's mapping); no trading on the consolidated tape during the gap"
+
+
+def classify_gaps(gap_rows: pd.DataFrame, ca: pd.DataFrame, mapped: pd.DataFrame, unmapped: pd.DataFrame) -> pd.DataFrame:
+    """Gaps of LONG_GAP sessions or more, against the records and Alpaca's issuer mapping. Rules, in order:
+      reused        an exit record for an earlier issuer under this ticker near the gap's start (old symbol of
+                    a name change, target of a merger, or a worthless removal); or an entry record creating the
+                    ticker near the gap's end (a spin-off's new symbol, or a rename from its when-issued symbol);
+                    or Alpaca's mapping gives today's issuer no trading day before the gap while the cache has
+                    some (the earlier bars belong to someone else);
+      missing       the bare ticker has real (traded) bars during the gap: the cache lacks them;
+      same issuer   the mapping gives today's issuer real bars on both sides and none during the gap: the issuer
+                    did not trade on the consolidated tape (a suspension, a delisting with over-the-counter trading,
+                    a bankruptcy); the cause has no record, so it is also listed as unresolved;
+      unresolved    anything else.
+    Placeholder bars (zero volume) never count as trading. Shorter gaps are listed only."""
     out = gap_rows.copy()
     classes, evidence = [], []
-    have = unmapped.groupby("symbol")["date"].apply(lambda d: pd.DatetimeIndex(d)) if len(unmapped) else pd.Series(dtype=object)
+    days_of = lambda df: real(df).groupby("symbol")["date"].apply(pd.DatetimeIndex) if len(df) else pd.Series(dtype=object)  # noqa: E731
+    bare, issuer = days_of(unmapped), days_of(mapped)
+    ph = pd.concat([df[placeholder(df)].assign(source=name) for name, df in (("mapped", mapped), ("unmapped", unmapped))
+                    if len(df)]) if len(mapped) or len(unmapped) else pd.DataFrame(columns=["symbol", "date", "source"])
     for _, g in out.iterrows():
         sym, lo, hi = g["symbol"], g["first_missing"], g["last_missing"]
         names = aliases(ca, sym)
@@ -638,20 +705,52 @@ def classify_gaps(gap_rows: pd.DataFrame, ca: pd.DataFrame, unmapped: pd.DataFra
         # an exit under this very ticker; a rename into it (same issuer, per Alpaca's mapping) is not an exit
         exits = near_start[(near_start["old_symbol"] == sym) | (near_start["acquiree_symbol"] == sym) |
                            (near_start["kind"].astype(str).str.contains("worthless") & (near_start["symbol"] == sym))]
-        near_end = actions_for(ca, names, hi - pd.Timedelta(days=45), hi + pd.Timedelta(days=15))
-        entries = near_end[near_end["new_symbol"] == sym]
-        days = have.get(sym, pd.DatetimeIndex([])) if len(have) else pd.DatetimeIndex([])
-        during = int(((days >= lo) & (days <= hi)).sum()) if len(days) else 0
-        if len(exits):
-            classes.append("ticker reused by a different issuer")
-        elif during:
-            classes.append("missing from the cache (the bare ticker has bars)")
+        near_end = actions_for(ca, {sym} | {sym + ".WI", sym + "V"}, hi - pd.Timedelta(days=45), hi + pd.Timedelta(days=20))
+        when_issued = near_end["old_symbol"].isin({sym + ".WI", sym + "V"}) & (near_end["new_symbol"] == sym)
+        entries = near_end[(near_end["kind"].astype(str).str.contains("spin_off") & (near_end["new_symbol"] == sym)) |
+                           when_issued]
+        b = bare.get(sym, pd.DatetimeIndex([])) if len(bare) else pd.DatetimeIndex([])
+        i = issuer.get(sym, pd.DatetimeIndex([])) if len(issuer) else pd.DatetimeIndex([])
+        bare_during = int(((b >= lo) & (b <= hi)).sum())
+        issuer_before, issuer_after = int((i < lo).sum()), int((i > hi).sum())
+        inside = ph[(ph["symbol"] == sym) & (ph["date"] >= lo) & (ph["date"] <= hi)] if len(ph) else ph
+        placeholders = ", ".join(f"{k} {v}" for k, v in inside["source"].value_counts().items()) or "none"
+        if len(exits) or len(entries) or (len(i) and issuer_before == 0 and issuer_after > 0):
+            classes.append(REUSED)
+        elif bare_during:
+            classes.append("missing from the cache (the bare ticker traded)")
+        elif issuer_before and issuer_after:
+            classes.append(SAME_ISSUER_NO_TRADING)
         else:
-            classes.append("unresolved: no corporate action explains the gap")
-        evidence.append("; ".join(x for x in (describe(exits), describe(entries),
-                                              f"bare-ticker bars during gap: {during}") if x))
+            classes.append("unresolved")
+        evidence.append("; ".join(x for x in (
+            describe(exits), describe(entries),
+            f"today's issuer per Alpaca's mapping: {issuer_before} trading days before the gap, {issuer_after} after"
+            if len(i) else "Alpaca's mapping returns no bars for this symbol",
+            f"bare-ticker trading days during the gap: {bare_during}",
+            f"placeholder bars during the gap: {placeholders}") if x))
     out["class"], out["evidence"] = classes, evidence
     return out
+
+
+def action_coverage(ca: pd.DataFrame) -> pd.DataFrame:
+    """How far back each kind of corporate-action record goes."""
+    if ca.empty:
+        return pd.DataFrame(columns=["kind", "records", "earliest", "latest"])
+    g = ca.groupby("kind")["when"]
+    return pd.DataFrame({"records": g.size(), "earliest": g.min(), "latest": g.max()}).reset_index()
+
+
+def fractional_splits(ca: pd.DataFrame) -> pd.DataFrame:
+    """Split records whose ratio is not a whole number either way. Several match spin-offs (e.g. HON
+    1000->1011 on 2018-10-01, DELL 1000->1973 on 2021-11-02): Alpaca's "split" adjustment then covers them."""
+    s = ca[ca["kind"].astype(str).str.contains("split")].copy()
+    if s.empty:
+        return s
+    s["ratio"] = s["new_rate"] / s["old_rate"]
+    whole = lambda r: (r - r.round()).abs() < 0.01  # noqa: E731
+    s = s[~whole(s["ratio"]) & ~whole(1 / s["ratio"])]
+    return s[["when", "symbol", "kind", "old_rate", "new_rate", "ratio"]].sort_values("when")
 
 
 def large_moves(table: pd.DataFrame, threshold: float = JUMP) -> pd.DataFrame:
@@ -666,7 +765,8 @@ def large_moves(table: pd.DataFrame, threshold: float = JUMP) -> pd.DataFrame:
 
 
 def vendor_move(vendor: pd.DataFrame, kind: str) -> pd.Series:
-    v = vendor.sort_values(["symbol", "date"])
+    """Overnight (open over the previous traded close) or in-session moves, placeholder bars left out."""
+    v = real(vendor).sort_values(["symbol", "date"])
     if kind == "overnight":
         move = np.log(v["open"] / v.groupby("symbol")["close"].shift())
     else:
@@ -689,6 +789,9 @@ def classify_moves(moves: pd.DataFrame, settings: dict[str, pd.DataFrame], ca: p
                           (reported: whether it does);
       spin-off            a spin-off record with this symbol as source on that day (reported: whether the
                           "all" setting, which includes spin-offs, takes it out);
+      (no record)         Alpaca's records are thin before 2019-2020, so a move the split+dividend setting
+                          takes out is a cash distribution, and one only "all" takes out is a spin-off,
+                          each labelled as shown by the adjustment with no record;
       market move         no relevant record (anything on that day except an ordinary dividend under 2% of
                           the price, or an identity record in the window), every adjustment setting shows
                           the same move as the split-only data, and that agrees with the cache: kept as a
@@ -745,6 +848,15 @@ def classify_moves(moves: pd.DataFrame, settings: dict[str, pd.DataFrame], ca: p
             if cls is None and len(spins):
                 cls = "spin-off"
                 reason = f"removed by all: {bool(abs(got.get('all', np.nan)) < JUMP)}"
+        if cls is None and kind == "overnight":
+            # no record (Alpaca's records are thin before 2019-2020), but its adjustment factors show the event
+            sp, sd, al = (got.get(k, np.nan) for k in ("split", "split+dividend", "all"))
+            if abs(sp) > JUMP and abs(sd) < JUMP:
+                cls = "cash distribution (shown by Alpaca's dividend adjustment; no record)"
+                reason = f"split-adjusted move {sp:+.3f}, split+dividend {sd:+.3f}"
+            elif abs(sp) > JUMP and abs(sd) > JUMP and abs(al) < JUMP:
+                cls = "spin-off (shown by Alpaca's spin-off adjustment; no record)"
+                reason = f"split-adjusted move {sp:+.3f}, all {al:+.3f}"
         if cls is None:
             same = [abs(got[name] - got.get("split", np.nan)) < 0.01 for name in got if np.isfinite(got[name])]
             agrees = abs(got.get("split", np.nan) - move) < 0.02
