@@ -129,3 +129,15 @@ def test_a_second_run_keeps_finished_files_and_force_refetches(tmp_path, monkeyp
     assert not again.calls
     forced = run(tmp_path, monkeypatch, "--force", "--parts", "daily")
     assert len(forced.calls) == 5
+
+
+def test_the_auctions_part_fetches_every_symbol_and_resumes(tmp_path, monkeypatch):
+    router = run(tmp_path, monkeypatch, "--parts", "auctions")
+    ref = tmp_path / "ref"
+    df = pd.read_parquet(ref / "auctions.parquet")
+    assert set(df["symbol"]) == {"AAA", "BBB", "CCC"}
+    entry = json.loads((ref / "manifest.json").read_text())["files"]["auctions.parquet"]
+    assert entry["symbols_returned"] == 3 and entry["sha256"] == hashlib.sha256((ref / "auctions.parquet").read_bytes()).hexdigest()
+    assert not (ref / "auctions_parts").exists()                               # the batches are combined and removed
+    assert {url.rsplit("/", 1)[-1] for url, _ in router.calls} == {"auctions"}
+    assert not run(tmp_path, monkeypatch, "--parts", "auctions").calls         # kept on the next run

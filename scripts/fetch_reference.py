@@ -14,6 +14,8 @@ Writes under data/reference/ (on Drive in Colab):
   sample/auctions.parquet             opening and closing auction prints for the sample symbols, every day
   sample/trades_open_close.parquet    trades around the open and the close, for a smaller subsample
   meta/conditions_{A,B,C}.json, meta/exchanges.json   code tables for the trades and auctions
+  auctions.parquet                    opening and closing auction prints for every symbol, every day (only with
+      --parts auctions; scripts/official_prices.py turns them into the official open and close)
   manifest.json                       for every file: endpoint, request settings, retrieval time, request
       and row counts, symbols missing, and a SHA-256 of the file
 
@@ -259,6 +261,44 @@ def fetch_sample(client, symbols, start, end, out, manifest, force, seed, n_symb
         print(f"wrote {path}: {len(df):,} trades")
 
 
+def fetch_auctions(client, symbols, start, end, out, manifest, force) -> None:
+    """Opening and closing auction prints for every symbol, every day: the official open and close. Fetched 50 symbols
+    at a time; each finished batch is kept aside, so a dropped session resumes, and the batches are combined at the end."""
+    path = out / "auctions.parquet"
+    if path.exists() and not force:
+        print(f"kept {path}")
+        return
+    parts = out / "auctions_parts"
+    lo, _ = day_window(start)
+    _, hi = day_window(end)
+    settings = {"feed": "sip", "asof": "not sent (default)", "start": lo, "end": hi, "limit": 10000,
+                "symbols_per_request": BATCH}
+    began, n0 = now(), len(client.log)
+    groups = batches(symbols)
+    for i, group in enumerate(groups):
+        part = parts / f"batch_{i:03d}.parquet"
+        if part.exists() and not force:
+            continue
+        try:
+            save(client.auctions(group, lo, hi), part)
+        except Exception as exc:  # noqa: BLE001  (finished batches stay; the next run retries from here)
+            failed(manifest, out, path, exc, endpoint="GET /v2/stocks/auctions", docs=DOCS["auctions"],
+                   settings=settings, retrieved_at={"start": began}, requests=len(client.log) - n0,
+                   batches_done=i, batches=len(groups))
+            return
+        print(f"  auctions: {min((i + 1) * BATCH, len(symbols))}/{len(symbols)} symbols", end="\r")
+    df = pd.concat([pd.read_parquet(parts / f"batch_{i:03d}.parquet") for i in range(len(groups))], ignore_index=True)
+    save(df, path)
+    got = set(df["symbol"])
+    record(manifest, out, path, endpoint="GET /v2/stocks/auctions", docs=DOCS["auctions"], settings=settings,
+           retrieved_at={"start": began, "end": now()}, requests=len(client.log) - n0, rows=len(df),
+           symbols_requested=len(symbols), symbols_returned=len(got), missing_symbols=sorted(set(symbols) - got))
+    for f in parts.glob("batch_*.parquet"):
+        f.unlink()
+    parts.rmdir()
+    print(f"wrote {path}: {len(df):,} auction prints, {len(got)} of {len(symbols)} symbols")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--universe", default="universe/sp500.csv")
@@ -308,6 +348,8 @@ def main() -> int:
     if "sample" in parts:
         fetch_sample(client, symbols, args.start, args.end, out, manifest, args.force, args.seed,
                      args.sample_symbols, args.sample_full_days, args.trade_symbols)
+    if "auctions" in parts:
+        fetch_auctions(client, symbols, args.start, args.end, out, manifest, args.force)
     manifest["runs"][-1].update(finished=now(), requests=len(client.log))
     save_json(manifest, manifest_path)
     print(f"done in {time.time() - t0:.0f}s, {len(client.log)} requests; manifest at {manifest_path}")

@@ -68,6 +68,7 @@ feeds must never share a cache folder, and the fetch refuses to overwrite one wi
 | 36c | Auction prints and trades on their own, about a minute, from the audit's `sessions.parquet` (`scripts/audit_prints.py`). Compares raw prices; run it after pulling the fix |
 | 37 | Audit follow-up tables and the volatility sample (panel, missingness reasons, eligible stock-days by window, regimes), read-only, about 3 minutes (`scripts/audit_followup.py`, `scripts/vol_sample.py`) |
 | 38 | The vendor's open against the exchange's opening auction print, by year, and what it does to V; prints only, about a minute. Paste the output into the chat |
+| 39 | The official open and close for all 503 stocks: auction prints fetched (`fetch_reference.py --parts auctions`), then `scripts/official_prices.py` (`src/official.py`) picks the listing exchange's prints and prints a summary; about 10 minutes |
 | 36b | End of session only: push to Drive (unmounts and remounts Drive) |
 
 Results come back as printed output pasted into the chat, not as zip downloads (Kshitiz's preference, 2026-10-28); the
@@ -133,7 +134,7 @@ Do not use "Run all": it reruns every old section.
    2. Done: the auction check on raw prices (section 38, 20 symbols). The vendor's close is the official close; its open equals the
       listing exchange's opening print on 74% of symbol-days and is up to 13% off on stress days (about 7% of the variance of an
       approximate V). Decide whether O is the official open (proposed; needs the auction prints for all 503 symbols, a few minutes'
-      fetch, then the panel rebuilt with it) or the vendor's open, before the specification is registered.
+      fetch, now notebook section 39; then the panel rebuilt with it) or the vendor's open, before the specification is registered.
    3. Kshitiz and the advisor decide, in RESULTS.md's "Not decided here": the permutation-entropy settings (they set the
       warm-up), the HAR form and loss, whether half-day targets are scored, V or V_id as the one primary target, the window
       boundaries, the $5 and $10 million rules, the open (item 2). Then register the specification (a config with a date, frozen by hash).
