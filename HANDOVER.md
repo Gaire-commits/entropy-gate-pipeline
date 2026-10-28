@@ -1,6 +1,6 @@
 # Handover
 
-Updated 2026-10-28 (data audit for the volatility question). A snapshot to restart work from, for Kshitiz or
+Updated 2026-10-28 (data audit part 2 run; volatility panel and candidate sample built). A snapshot to restart work from, for Kshitiz or
 for a new Claude session.
 [RESULTS.md](RESULTS.md) is the full record of results and [README.md](README.md) explains how
 everything works; this file is the short version, plus what is unfinished.
@@ -17,9 +17,10 @@ pattern and was judged on whether structure exists and when it is stronger, not 
 
 **Since 2026-10-27 the question is volatility:** does permutation entropy of daily returns improve next-day
 volatility forecasts beyond a volatility-history (HAR-style) baseline? A precise null counts as success. The
-work is at the data-audit stage: part 1 is done, part 2 is built and waits for a Colab run (sections 35-36).
-Nothing has been fitted. RESULTS.md, "Data audit for the volatility question", has the measured results, the
-interpretations, the open questions and the prior exposure of every date.
+work is at the data-audit stage: parts 1 and 2 are run (the auction and trade check waits for a rerun), and the
+loader (`src/volpanel.py`) and a candidate sample are built. Nothing has been fitted or registered. RESULTS.md,
+"Data audit for the volatility question", has the measured results, the interpretations, what is unresolved, the
+variance target, the candidate windows with their sample sizes, and the prior exposure of every date.
 
 ## Where everything is
 
@@ -27,7 +28,7 @@ interpretations, the open questions and the prior exposure of every date.
 |---|---|
 | Code | `~/entropy-gate-pipeline`, GitHub `Gaire-commits/entropy-gate-pipeline` (public), branch `main` |
 | HEAT (transfer entropy) | `~/Transfer-entropy-`, GitHub `Gaire-commits/Transfer-entropy-`; outputs in Drive `.../outputs/heat_v1`, `heat_v2`. Its scored dates are in RESULTS.md (prior exposure) |
-| Tests | 438 pass (`python3 -m pytest -q`, about 2 min, with the parked `tests/test_folding.py` present). `tests/test_frozen.py` fails if a pre-registered config is edited |
+| Tests | 460 pass (`python3 -m pytest -q`, about 4 min, with the parked `tests/test_folding.py` present). `tests/test_frozen.py` fails if a pre-registered config is edited |
 | Bars | Google Drive, `My Drive/entropy-gate-pipeline-data/data`. `bars/` is IEX (from July 2020); `bars_sip/` is SIP (503 stocks, 2016-01-04 to 2026-10-12, 98–99.7% of slots filled). Never committed |
 | Outputs | Drive, `.../outputs/<experiment>/`. Claude reads the `.md` reports through the Google Drive connector |
 | **Drive problem** | Since about 2026-10-14 Drive has received the folders Colab creates but none of the files (HEAT's runs too). Until fixed, every result is also zipped and downloaded to the Mac (`src/colab.py`: `download_results`; `drive_status` reports whether `/content/drive` is a real mount and Drive's free space; `ensure_drive` remounts before a section). Flushing unmounts Drive and breaks the `data/` and `outputs/` links, so `sync_drive` is for the end of a session only (it crashed section 36 on 2026-10-28 when run between sections). Check Drive storage first: a full Drive accepts folders but refuses files |
@@ -62,8 +63,10 @@ feeds must never share a cache folder, and the fetch refuses to overwrite one wi
 | 33 | `gbm_ent` on SIP, paired with section 32 by `scripts/entropy_effect.py` (run 2026-10-27: entropy adds nothing) |
 | 34 | Data audit part 1 (run 2026-10-27; its files never reached Drive, see the Drive problem) |
 | 34b | Preserve: Drive status, zip download of results (the 2026-10-28 zip of part 1 was empty: those files were gone) |
-| 35 | Reference data from Alpaca: daily bars under five adjustment/mapping settings, corporate actions, a session sample, manifest (first run 2026-10-28 stopped at auctions; now records a failed part and continues; rerun) |
-| 36 | Data audit part 2 (first run crashed because Drive had been unmounted; fixed, rerun) |
+| 35 | Reference data from Alpaca: daily bars under five adjustment/mapping settings, corporate actions, a session sample, manifest (run 2026-10-28; the auctions and trades parts failed on a timestamp bug, fixed in `5871d73`: rerun to fetch them) |
+| 36 | Data audit part 2 (run 2026-10-28, 43 minutes; results in RESULTS.md) |
+| 36c | Auction prints and trades on their own, about a minute, from the audit's `sessions.parquet` (`scripts/audit_prints.py`). Run after rerunning 35 |
+| 37 | Audit follow-up tables and the volatility sample (panel, missingness reasons, eligible stock-days by window, regimes), read-only, about 3 minutes (`scripts/audit_followup.py`, `scripts/vol_sample.py`) |
 | 36b | End of session only: push to Drive (unmounts and remounts Drive) |
 | 9 | All results (old summaries only) |
 
@@ -119,18 +122,18 @@ Do not use "Run all": it reruns every old section.
 
 ## Unfinished
 
-0. **The volatility question, in order** (nothing fitted yet):
-   1. Run sections 34b (preserve part 1, if the runtime still has it), 35 (reference fetch) and 36 (audit part
-      2). Each ends by downloading a zip to the Mac.
-   2. Record part 2 in RESULTS.md: measured, interpreted, unresolved, kept apart.
-   3. Fix the volatility loader's rules from part 2's findings. It must enforce causal eligibility, keep
-      missingness reasons (`sessions.parquet` has them), satisfy eligibility and feature warm-up, handle
-      half-days by the calendar without compressing the timeline, and never blanket-exclude large moves or
-      split identity at gaps without evidence.
-   4. Before any fitting, return: exact candidate development, validation and test dates; eligible sample sizes;
-      the precise variance target and overnight adjustment. Describe the history as reserved for this
-      specification but previously exposed (RESULTS.md, prior exposure).
-   5. Open: whether HEAT2's test has been scored; why Drive refuses files.
+0. **The volatility question, in order** (nothing fitted or registered yet):
+   1. Done: audit parts 1 and 2, recorded in RESULTS.md; the loader `src/volpanel.py` (causal eligibility, missingness
+      reasons, calendar-aware half-days, no blanket exclusions) and `scripts/vol_sample.py`.
+   2. Rerun section 35 (fetches the auctions and trades that failed), then 36c. If the vendor's open and close are not the
+      auction prints, revisit the target's definition.
+   3. Kshitiz and the advisor decide, in RESULTS.md's "Not decided here": the permutation-entropy settings (they set the
+      warm-up), the HAR form and loss, whether half-day targets are scored, V or V_id as the one primary target, the window
+      boundaries, the $5 and $10 million rules. Then register the specification (a config with a date, frozen by hash).
+   4. Only then fit: the HAR baseline on the development window, frozen, confirmed on validation, and the one-shot
+      Clark-West comparison on test. Every window is reserved for this specification but previously exposed through
+      related research (RESULTS.md, prior exposure).
+   5. Open: whether HEAT2's test has been scored; why Drive refuses files; the unresolved list in RESULTS.md.
 1. **The forward test ([LIVE_PLAN.md](LIVE_PLAN.md)).** Freeze the rules, then score every new trading day by
    a daily AWS job (no orders). Done: the plan, E12 (the correlated-peers arm is dropped). Next: section 30's
    length calculation (its first Colab run wrote nothing; the script passes its end-to-end test), then the
@@ -200,8 +203,11 @@ Do not use "Run all": it reruns every old section.
 | `src/nyse.py` | NYSE calendar 2016-2026: closures and 1:00 pm half-days (session counts tested against the cache) |
 | `src/alpaca_rest.py` | Direct REST calls for reference data (combined adjustments, symbol mapping off, auctions, corporate actions), keys never logged |
 | `src/audit.py` | Data audit part 2: calendar-aware sessions, impossible values, dollar volume, vendor comparison, identity and corporate actions |
+| `src/audit_followup.py` | Follow-up tables: vendor against cache ranges and closes, truncated days, adjustment steps against records, evidence behind each large move |
+| `src/volpanel.py` | The volatility project's panel: variance target (overnight plus Parkinson), missingness reasons, causal eligibility, windows, sample sizes. `registry/vol_registry.csv` holds the checked identity changes and unrecorded corporate actions |
 | `src/colab.py` | Drive status, time-limited flush, zip download of results |
 | `scripts/data_audit.py`, `scripts/fetch_reference.py`, `scripts/data_audit_v2.py` | Data audit part 1; reference fetch with manifest; data audit part 2 |
+| `scripts/audit_prints.py`, `scripts/audit_followup.py`, `scripts/vol_sample.py` | Auction and trade check (section 36c); follow-up tables; the volatility sample (panel, sizes, regimes) |
 
 Each script's docstring gives its usage. Experiments on the reversal: `scripts/leadlag.py`,
 `scripts/reversal.py`, `scripts/reversal_slope.py`.

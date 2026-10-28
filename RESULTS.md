@@ -1335,14 +1335,15 @@ input to the trees changes nothing measurable on the headline feed. Note: the pl
 comparison above is the one to cite. The gate-split cells in that table are 18 comparisons with no correction (one
 `momentum_day` cell reads +1.82 [+0.69, +2.90], what chance gives at this count) and are not a result.
 
-## Data audit for the volatility question (part 1 run 2026-10-27; part 2 built 2026-10-28, not yet run)
+## Data audit for the volatility question (part 1 run 2026-10-27; part 2 run 2026-10-28)
 
 The question from here on (fixed 2026-10-27): **does permutation entropy of daily returns improve next-day
 volatility forecasts beyond a volatility-history (HAR-style) baseline?** A positive or a null answer both count;
 the evidence standard is one registered PE hypothesis, nested comparison on identical folds (Clark-West), PE
 settings fixed in advance. Before any fitting, a read-only audit of the data. Part 1 is `scripts/data_audit.py`
-(notebook section 34). Part 2 is `scripts/fetch_reference.py` and `scripts/data_audit_v2.py` (sections 35-36).
-Below, measured results, interpretations and open questions are kept apart.
+(notebook section 34). Part 2 is `scripts/fetch_reference.py` and `scripts/data_audit_v2.py` (sections 35-36), with
+`scripts/audit_prints.py` (36c) and `scripts/audit_followup.py`. The candidate sample is built by `src/volpanel.py` and
+`scripts/vol_sample.py`. Below, measured results, interpretations and open questions are kept apart.
 
 ### Measured (part 1, run 2026-10-27, SIP cache of 503 stocks, IEX cache of 503)
 
@@ -1373,7 +1374,7 @@ Below, measured results, interpretations and open questions are kept apart.
 - **Close bars and early closes.** Stock-days missing the session's last bar, by year: 401, 934, 1,715, 1,900, 911,
   992, 1,086, 873, 1,341, 1,236, and 5 in 2026. The first audit's early-close flag fired 0-657 times a year.
 
-### Interpretations (each is tested in part 2; none is verified yet)
+### Interpretations from part 1 (what part 2 found is in brackets)
 
 1. **Half-days are mostly treated as full sessions.**
    - The cache keeps bars by clock time, 09:30-16:00 ([scripts/fetch_data.py](scripts/fetch_data.py)), so
@@ -1383,19 +1384,26 @@ Below, measured results, interpretations and open questions are kept apart.
      (1,341), and 2026 has had none (5).
    - Alpaca's documentation says daily bars leave extended-hours trades out of the open, high, low and close but
      count their volume, while minute bars include them.
+   - [Confirmed. The vendor's high and low follow the 13:00 session on half-days (98%), not 09:30-16:00 (92-94%), and its volume is
+     the whole day's.]
 2. **The 2026 "coverage change" is most likely the absence of half-days** (the first of 2026 is 2026-11-27).
+   [Confirmed, with a second part: the six truncated dates below, none in 2026.]
 3. **Ticker identity.**
    - Q and DOW look like two issuers under one ticker: an earlier company's bars, a long gap, then a later company.
    - SMCI and EXE look like delisting or over-the-counter periods.
    - Alpaca's default symbol mapping (`asof`, on by default) returns an issuer's earlier tickers under today's
      symbol, so EXE's pre-2024 history is Chesapeake's.
+   - [Q and DOW confirmed (SEC filings), IR from the data; SMCI relisted on 2020-01-14. EXE and the delisting dates are unchecked.]
 4. **Distributions, not splits.**
    - No stock split appears unadjusted.
    - KDP on 2018-07-10 matches the special distribution at the Keurig Dr Pepper merger, PNR on 2018-05-01 the
      nVent spin-off, and HON in 2026 looks like a spin-off. All are from memory and unchecked.
    - Split-only adjustment leaves distributions as price drops. KDP alone is about a fifth of 2018's mean squared
      overnight gap.
+   - [Revised: split-only adjustment also creates jumps that raw prices do not have (SW, HON, APTV, RTX, EQT). The `all` adjustment removes
+     KDP, GEN, LDOS and six spin-offs but not those, and PNR and YUM are spin-offs with no record and no adjustment.]
 5. **The blank mean ratio** means at least one zero or negative price in SIP or IEX.
+   [Confirmed: one IEX bar with low 0.0 (T, 2021-06-11) and one zero-range day (GE, 2022-03-08).]
 
 ### Rules agreed for what follows (2026-10-28)
 
@@ -1441,79 +1449,238 @@ Below, measured results, interpretations and open questions are kept apart.
 - 2026-10-12 is the cache endpoint, not the start of an untouched confirmation period. Such a period, if used,
   starts when this specification is registered.
 
-### Part 2 (built 2026-10-28, not yet run)
+### Part 2, measured (run 2026-10-28)
 
-**`scripts/fetch_reference.py` (notebook section 35)** fetches from Alpaca's REST API directly, because alpaca-py
-cannot send combined adjustments:
-- SIP daily bars for the 503 stocks under `raw`, `split`, `split,dividend`, `all`, and `split` with symbol mapping
-  off.
-- Corporate actions from 2015 for these stocks and the older tickers they were renamed from.
-- A seeded sample of extended-hours 5-minute bars, auction prints and trades at the open and close.
-- `manifest.json` with every request setting, the retrieval time and a SHA-256 per file.
+Code: `scripts/fetch_reference.py` (section 35), `scripts/data_audit_v2.py` (36), `scripts/audit_prints.py` (36c) and
+`scripts/audit_followup.py`. The tables are in the audit zip, and the follow-up tables rebuild from it in a minute.
 
-**`scripts/data_audit_v2.py` (section 36)**:
-- Rebuilds sessions on the NYSE calendar and reports coverage by year and month, with the 2026 change.
-- Checks half-day timestamps.
-- Computes dollar volume, with a trailing past-only median per stock-session.
-- Locates every impossible bar and every non-finite ratio, including the first audit's blank one.
-- Compares vendor daily bars with the rebuilt sessions after checking that both use the same adjustment basis,
-  finds which session definition the vendor uses, and checks auction prints.
-- Classifies every long gap and every move over 0.25 against the corporate-action records and the adjustment
-  settings: identity change, unadjusted split, cash distribution, spin-off, genuine market move (kept), or
-  unresolved (listed apart).
+**The reference fetch** (2026-10-28 03:33-03:38 UTC; `manifest.json` holds each request's settings, time, row counts and
+SHA-256):
+- Daily bars under all five settings, 2016-01-04 to 2026-10-13. With Alpaca's default symbol mapping 502 of 503 symbols
+  came back: **the mapping returns no bars for DOW**. With mapping off all 503 did.
+- 16,718 corporate-action records. Cash dividends from 2016-01-04, forward splits from 2016-02-10, reverse splits from
+  2016-01-05, spin-offs from 2019-02-25, **name changes from 2019-11-06**, mergers from 2020. Earlier renames, spin-offs and
+  mergers show only in prices and the mapping. 28 split records have ratios that are not whole numbers either way (HON
+  1000→1011 on 2018-10-01, TT 1000→1289 on 2020-03-02, DELL 1000→1973 on 2021-11-02).
+- Placeholder bars (zero volume and trades, every price the last close): 530 in 5 symbols with mapping on, among them SMCI
+  349 and EXE 156, the two same-issuer gaps; 5,609 in 14 symbols with it off, among them DOW 396 at 66.65.
+- The mapping extends 43 symbols with earlier tickers (EXE←CHK to 2024-10-01, META←FB); 11 are renames from before the
+  name-change records begin. Q: mapped from 2025-11-03, the bare ticker has 472 earlier days. IR: mapped from 2017-05-12, the
+  bare ticker has 342 earlier days.
+- **The cache follows Alpaca's mapping as of its own fetch.** Its prices agree with the mapped daily bars for 502 symbols (basis
+  "same"); GEN's 2016-2019 cache bars are priced at $20-28, not the $1-3 of the shares that traded as GEN then. But it also keeps
+  bare-ticker bars that today's mapping no longer returns: IR 2016-01-04 to 2017-01-03 and Q 2016-01-04 to 2017-11-14.
+- Auctions and trades: **both failed in the first run.** Alpaca writes some timestamps with fractions of a second and some
+  without, and pandas refused the mix. Fixed and tested on 2026-10-28 (`5871d73`), which also moved the auction comparison
+  onto the split-adjusted basis (prints arrive unadjusted). The checks wait for a rerun of sections 35 and 36c.
 
-It writes `sessions.parquet`, every stock-session with its status and the reason it is unusable. That is the
-base for the loader. The tests plant every case on synthetic bars.
+**Coverage and calendar:**
+- 2,709 NYSE sessions have bars for at least half the stocks, 2016-01-04 to 2026-10-12: none missing, none extra. The cache's
+  metadata ends 2026-10-13 for 502 stocks and 2026-10-14 for CTVA (one more day of bars).
+- Full-day stock-sessions with at least 90% of their slots: 96.6% to 99.7% by year (2026: 99.7%).
+- **Half-days.** 21 sessions end at 13:00 (1, 2, 3, 3, 2, 1, 1, 2, 3, 3 in 2016-2025; none yet in 2026). On each, the median last
+  in-session bar starts at 12:55. At least 99.5% of that day's stocks also have bars after 13:00, because the cache keeps bars by
+  clock time; those bars hold 15.5% to 34.5% of the day's volume in the cache (median by day). The first audit called 0-2
+  stock-days early per half-day; its "missing close bars" on half-days (350 to 1,382 a year) are 0 to 2 a year on the calendar.
+- **The 2026 change.** Full-day slot share 0.9985 in 2026 against 0.9894 before; missing close bars 0.005% of stock-sessions against
+  0.19%. 2026 has had no half-day yet (the first is 2026-11-27). The full-day missing closes of 2018, 2019, 2021 and 2022 (371,
+  519, 675 and 625) come mostly from the truncated dates below.
+- **Dollar volume** (in-session, from the cache; the vendor's volume is about 28% larger because it counts extended hours). The
+  median across stocks of each stock's yearly median rises from $113M (2016) to $268M (2026), the 1st percentile from $7.7M to
+  $58.7M. Stocks whose yearly median is under $10M: 8, 7, 5, 3, 4, 2, 2, 1, 0, 0, 0 for 2016-2026.
+- **Impossible bars and non-finite ratios.** SIP cache: 0 impossible bars. IEX: 1 (T, 2021-06-11 11:25, low 0.0). The first
+  audit's blank mean ratio came from that bar and from one zero-range day in both feeds (GE, 2022-03-08, a truncated day below).
+  Vendor daily bars: 0 non-finite, non-positive or inconsistent open-high-low-close among 1,307,857 real bars, and 119 zero-range
+  days (69 of them in 2022). After the calendar-aware rebuild no SIP session has a non-finite log ratio.
 
-**First reference fetch, 2026-10-28 03:33-03:38 UTC** (measured; read from the downloaded zip, manifest included):
+**Vendor daily bars against the rebuilt sessions** (adjustment basis the same for all 502 symbols compared; 1,307,277
+symbol-sessions):
+- **Which session the vendor uses** (extended-hours 5-minute sample). On full days its high and low equal the regular-session
+  rebuild on 99.6% and 99.4% of sampled days (79% and 81% with extended hours). On half-days they equal the 09:30-13:00 rebuild on
+  98.1% and 98.3% (94.0% and 91.6% for 09:30-16:00). Its volume matches the whole day, extended hours included (ratio 1.011), not
+  the session (1.317); it is within about 1% of the whole day's volume, not exact.
+- **Open and close.** On full days the vendor's open equals the rebuilt open within 0.5 bp on 90.3% (99th percentile gap 27.8 bp) and its
+  close on 32.5% (median gap 1.4 bp, 99th percentile 17.1 bp). 1,109 closes (all sessions) differ by more than 1%; 62.8% of those lack the
+  cache's last slot, 11.5% are on complete cache days (by year: 2022 417, 2020 279, 2018 154, 2021 150). 20 differ by more than 10% (17 in 2020, 2 in 2022, 1 in 2019), and 17 of those 20 have the cache's last slot.
+- **Range** (quoted prices; a log range does not depend on the adjustment). Of 1,306,054 sessions 93.0% agree within 0.1% and 98.9%
+  within 2%. 949 (0.07%) differ by more than 25%, in both directions. On complete cache days the vendor's range is the wider by 92,
+  103, 42, 58, 24, 12, 15, 17, 19, 23 and 20 sessions in 2016-2026, and the narrower by 39, 30, 16, 22, 10, 13, 9, 13, 9, 14 and 24.
+  The vendor's low is wrong on MRK 2021-06-11 (log range 1.61 against the cache's 0.017) and VZ 2026-01-08, its high on META 2016-06-02,
+  NVDA 2024-06-10 and TSLA 2021-03-01; where the cache is the wider (NWSA 2025-01-29, NTRS 2019-12-26) its low is the odd one.
+  Neither source is uniformly right. Mean Parkinson variance: vendor 3.2414e-4, rebuilt 3.2239e-4; without those 949 sessions both
+  are 3.2239e-4, so the whole 0.5% gap comes from them.
+- Mean squared overnight gap, vendor over rebuilt, by year: 0.996 to 1.007. The 5-minute bars re-fetched against the cache, inside
+  the session: open, high, low, close and volume exactly equal on all 911 sampled symbol-days.
 
-- **Daily bars.** All five settings were fetched for 2016-01-04 to 2026-10-13. With Alpaca's default symbol
-  mapping, 502 of 503 symbols came back: **the mapping returns no bars for DOW**. With mapping off, all 503 came
-  back.
-- **Corporate actions: 16,718 records.**
-  - Coverage by kind: cash dividends from 2016-01-04; forward splits from 2016-02-10 and reverse splits from
-    2016-01-05; spin-offs from 2019-02-25; **name changes from 2019-11-06**; mergers from 2020.
-  - Earlier renames, spin-offs and mergers can only be seen through prices and the symbol mapping.
-  - 28 split records have ratios that are not whole numbers either way. Several match spin-offs: HON 1000→1011 on
-    2018-10-01, TT 1000→1289 on 2020-03-02, DELL 1000→1973 on 2021-11-02. Alpaca's "split" adjustment therefore
-    covers those spin-offs.
-- **Placeholder bars.** These are daily bars with zero volume and zero trades, every price equal to the last close.
-  - With mapping on: 530 bars in 5 symbols, including SMCI 349 (2018-08-23 to 2020-01-13) and EXE 156 (2020-06-29
-    to 2021-02-09). These are exactly the cache's two long same-issuer gaps.
-  - With mapping off: 5,609 bars in 14 symbols, including DOW 396 at 66.65 from 2017-09-01 to 2019-04-01.
-- **Symbol mapping.**
-  - The mapping extends 43 symbols' history with earlier tickers, e.g. EXE←CHK (to 2024-10-01) and META←FB.
-  - 11 of those are renames from before the name-change records begin (among them KDP←DPS, IQV, BKNG, TPR, WELL).
-  - **Q**: the mapped history starts 2025-11-03, the day of a spin-off from DD and a Q.WI→Q rename. The bare
-    ticker has 472 earlier days.
-  - **IR**: the mapped history starts 2017-05-12. Records show GDI→IR and IR→TT on 2020-03-02. The bare ticker
-    has 342 earlier days.
-- **Auctions.** The request failed and stopped the run, so no trades were fetched either. The fetch now records a
-  failed part and carries on.
+**Six full days hold a fraction of the session** (`truncated_days.csv`):
 
-**Interpretations:**
-- The cache's early Q bars (2016-2017) are another issuer's. From memory, Quintiles traded as Q until its 2017
-  rename to IQV. IQV's mapped history goes back past 2017 without a record, which fits.
-- The cache's IR bars before 2017-05-12 are the former Ingersoll-Rand plc, now TT, per the 2020-03-02 records.
-- DOW before 2017-09 is Dow Chemical (from memory).
-- SMCI and EXE are the same issuer across their gaps (per the mapping), with no trading on the consolidated tape:
-  SMCI's 2018-2020 Nasdaq delisting and Chesapeake's 2020-2021 bankruptcy, both from memory. Neither has a record.
+| Date | Stocks | Cache: share of slots missing | Cache: last bar before 14:55 | Vendor: median trades | Vendor: trades over trailing median |
+|---|---|---|---|---|---|
+| 2021-04-19 | 489 | 69.5% | 70.1% | 2 | 0.0001 |
+| 2022-03-08 | 422 | 63.7% | 64.5% | 72 | 0.0019 |
+| 2021-10-25 | 488 | 63.7% | 64.1% | 22 | 0.0007 |
+| 2022-01-24 | 490 | 44.5% | 54.9% | 21,719 | 0.585 |
+| 2018-05-03 | 467 | 27.5% | 27.6% | 21,020 | 1.13 |
+| 2018-05-02 | 466 | 27.3% | 27.5% | 20,867 | 1.11 |
 
-**Section 36 crashed on 2026-10-28.** Drive had been unmounted by the end-of-section Drive flush in sections 34b
-and 35, and `outputs/` pointed at nothing. The flush now runs only at the end of a session (section 36b). The
-scripts stop with a plain message when Drive is not mounted, and each section remounts it first. The part-1 zip
-was empty: its files were already gone, so part 1 survives only as the numbers above.
+- On the first three the **vendor's own daily bar** is a handful of prints: a median of 2, 72 and 22 trades against 20,000-40,000
+  on neighbouring days, and 8-16% of normal volume. The next lowest full day has a trade-count ratio of 0.526, 280 times the highest
+  of these three, and no other stock-session (0 of 1,286,314) is under 5% of its own trailing median.
+- On 2022-01-24 the cache stops at 10:40 for 55% of stocks while the vendor's bar looks complete (ratio 0.585, within the range of
+  ordinary low-volume days). On 2018-05-02 and 2018-05-03 about 27% of stocks have a single bar in the cache and the vendor is normal.
+- On 2020-03-09, 03-12 and 03-16 every stock misses 2-3 slots (3.3-3.7%).
+
+**Security identity and corporate actions:**
+- **Gaps of five or more sessions** (five; the audit's class, then what was found outside it):
+
+| Symbol | Sessions | Audit class | Evidence |
+|---|---|---|---|
+| Q | 2,001 (2017-11-15 to 2025-10-31) | ticker reused by a different issuer | Records: spin-off DD→Q and name change Q.WI→Q on 2025-11-03. Public record (SEC 8-K): Qnity, one share per two DuPont shares |
+| DOW | 396 (2017-09-01 to 2019-04-01) | unresolved | Dow Inc.'s 10-Q: spin-off 2019-04-01, regular-way trading from 2019-04-02. The earlier bars end 2017-08-31 (placeholders after). A different issuer |
+| SMCI | 349 (2018-08-23 to 2020-01-13) | same issuer, no tape trading | Relisted on Nasdaq 2020-01-14 (company statement). The delisting date is unchecked |
+| EXE | 156 (2020-06-29 to 2021-02-09) | same issuer, no tape trading | Alpaca's mapping only; the bankruptcy and emergence are unchecked |
+| IR | 89 (2017-01-04 to 2017-05-11) | ticker reused by a different issuer | Data only: the bare ticker traded then at $86-100 but the cache has no bars; the cache's IR from 2017-05-12 trades at $24 (Gardner Denver) |
+
+- **The vendor's adjustments.** The ratio of adjusted to raw close steps on a session when an adjustment starts. In the split series it
+  steps by more than 0.001 on 111 sessions (13,161 above 0.0002 and 1,277 above 0.0005, but the count falls to 111 at 0.001 and stays flat
+  above it: the smaller steps are rounding of adjusted prices). 108 sit on a split or spin-off record; the other three are APTV 2017-12-05
+  (−1.10), DD 2019-04-02 (+0.40) and DOC 2016-11-01 (+0.09), spin-offs with no record. Of 148 split, stock-dividend and spin-off records, 17 have no vendor step above 1% on their session: the spin-offs
+  PFE 2020-11-17, IP 2021-10-01, O 2021-11-15, ZBH 2022-03-01, BDX 2022-04-01, J 2025-05-16 and CTVA 2026-10-01, RJF's stock dividend
+  2023-04-13, and records under older tickers that have no bars of their own.
+- **Split-only adjustment can create a jump that raw prices do not have.** Overnight log move on the day, by series:
+
+| Stock, date | Raw | Split | Split + dividend | All | Reading |
+|---|---|---|---|---|---|
+| SW 2016-05-16 | −0.079 | −1.871 | −1.871 | −1.871 | A reverse-split record (1→0.1666) on a day with no jump: the adjustment adds ln 6 |
+| HON 2026-06-29 | +0.036 | −0.657 | −0.657 | −0.011 | Reverse split plus spin-off: split-only adds the jump, `all` cancels it |
+| APTV 2017-12-05 | −0.160 | −1.258 | −1.258 | −1.259 | A spin-off with no record, adjusted as a split |
+| RTX 2020-04-03 | −0.520 | −1.213 | −1.213 | −1.213 | Records: name change UTX→RTX and reverse split 1→0.5 |
+| EQT 2018-11-13 | −0.606 | −0.830 | −0.829 | −0.829 | Record: reverse split 1→0.8; the raw drop is real and the adjustment widens it |
+| KDP 2018-07-10 | −1.799 | −1.799 | +0.027 | +0.027 | A special distribution: the dividend adjustment removes it |
+| GEN 2020-02-03, LDOS 2016-08-17 | −0.532, −0.302 | same | +0.017, +0.004 | same | Special dividends: removed by the dividend adjustment |
+| DD 2025-11-03, EXC 2022-02-02, FLEX 2024-01-03, FTV 2025-06-30, WDC 2025-02-24 | −0.885, −0.342, −0.283, −0.319, −0.267 | same | same | −0.014, −0.002, +0.036, +0.082, +0.117 | Spin-offs: removed by `all` |
+| CTVA 2026-10-01 | −1.682 | −1.682 | −1.682 | −1.682 | A recorded spin-off, adjusted in no series |
+
+  The cache is split-only, so it carries the SW, HON, APTV, RTX and EQT jumps. `all` keeps SW, APTV, RTX, EQT and CTVA.
+- **Large moves** (|log| > 0.25 on calendar-aware sessions): 182. The audit's classes: 154 "market move (no corporate action found)", 13
+  unresolved, 7 spin-offs, 3 identity changes at a mapping boundary, 3 after a long gap, 2 cash distributions. The follow-up (`move_evidence.csv`):
+  - *The 13 unresolved:* 8 are genuine moves flagged only because a close or a nearby record differs (BE 2018-07-25, the first
+    session in the data; EQT 2020-03-13; EXE 2020-04-15, 04-30, 06-08 and 06-09; META 2022-02-03, whose nearby name-change record
+    belongs to an earlier holder of the ticker; OXY 2020-03-09, where the dividend explains 0.03 of −0.545); 3 where the cache's last
+    5-minute close is 13-29% from the vendor's close (the day before for NCLH 2020-03-13; PCG 2019-01-24 and TRGP 2020-03-18 are session
+    moves); 2 adjustment artifacts (EQT 2018-11-13, SW 2016-05-16).
+  - *The 154 market moves:* 147 have volume at least 1.5 times the trailing 63-session median (115 at five times or more); 7 have no
+    trailing median (new listings, early 2016). Volume does not separate a spin-off from news. **Two of the 154 are spin-offs with no
+    Alpaca record: YUM 2016-11-01 (Yum China, distributed 2016-10-31) and PNR 2018-05-01 (nVent, 2018-04-30)**, both found by reading the list and confirmed
+    in the companies' filings. The other 152 were not checked one by one.
+
+### Part 2, interpretations (what I conclude from the measurements; each can be wrong)
+
+1. **The first audit's half-day and 2026 readings were right.** Half-days are kept by clock time in the cache; the calendar-aware rebuild
+   removes the first audit's missing closes on them. The 2026 "change" is the absence of half-days, plus the absence of the truncated
+   dates (none in 2026).
+2. **For the target, the vendor's daily bar beats the cache, with the cache as a cross-check.** The vendor's open and close are
+   presumably the official prints (check pending). The cache's regular-hours window ends before the closing auction, and on the chaotic
+   days of March 2020 the auction cleared far from the last 5-minute close (NCLH and CCL 2020-03-12, HLT and TRGP 2020-03-18, PCG
+   2019-01-24: 13-29% apart). The vendor is whole on 2022-01-24 and 2018-05-02/03 where the cache is not. But each source has bad prints on
+   about 0.05% of sessions, and a log range squared magnifies one: MRK 2021-06-11 alone has a range variance about 9,000 times the
+   day's normal. So a session whose range the two sources contradict by more than 25% has no value.
+3. **Overnight returns need the `all` adjustment, and still need a list of events.** `split` creates jumps (SW, HON, APTV, RTX, EQT);
+   `all` fixes spin-offs and special dividends but not these, and the vendor adjusted nothing for CTVA. An overnight is dropped on any session named by
+   a record (split, stock dividend, spin-off), by a vendor adjustment step, or by the registry of checked unrecorded events (YUM, PNR). Ordinary cash
+   dividends stay: the vendor adjusts them correctly.
+4. **Three days are a failure at the source, not in the cache.** On 2021-04-19, 2021-10-25 and 2022-03-08 Alpaca's daily bars hold a
+   few prints, so range and volume are unusable. The closes may be official prints but cannot be verified, so the next session's overnight is
+   dropped too. The cause is unknown.
+5. **Identity.** DOW, Q and IR are two issuers under one ticker (DOW and Q from public records, IR from the data); SMCI is one security across a
+   relisting; EXE is one issuer whose equity was probably new after the gap (unchecked). The long gaps need no automatic identity split:
+   a missing session leaves a hole, and the warm-up rule keeps the features of a security from crossing it.
+
+### Part 2, unresolved
+
+- **Why the three vendor days and the three cache days are truncated.** Alpaca's side or ours is unknown. Whether the vendor's closes on 2021-04-19,
+  2021-10-25 and 2022-03-08 are official is unknown, and treated as not.
+- **Whether the vendor's daily open and close are the auction prints**, and how far the rebuilt ones sit from them: the check failed and waits for
+  a rerun (sections 35, 36c).
+- **DOW:** why Alpaca's mapping returns nothing for it. DOW is excluded from the primary sample for lack of vendor bars.
+- **CTVA 2026-10-01:** a recorded spin-off (CTVA→VYLR), adjusted in no series. A search for the event found only Corteva's 2019 separation, so the date and
+  the structure are unconfirmed.
+- **Unrecorded corporate actions among the other 152 "market moves":** read through, not checked one by one.
+- **EXE's bankruptcy and emergence dates, SMCI's delisting date, IR's pre-2017 identity** were not checked outside the data.
+- **The cache's mapping history:** why IR and Q keep bare-ticker bars from before today's mapping, and whether the cache's early bars for the
+  other 41 mapped symbols are the mapped issuer's.
+- Whether HEAT2's test has been scored. Why Drive refuses files from Colab (HANDOVER.md).
+
+### The volatility panel (candidate, 2026-10-28; nothing registered, nothing fitted)
+
+`src/volpanel.py` builds one row per stock and NYSE session with the target, the reason it is missing, and causal eligibility;
+`scripts/vol_sample.py` writes the tables below from the audit's outputs. `registry/vol_registry.csv` lists the identity changes and unrecorded
+corporate actions that were checked against public records. The rules are proposed here, before any forecast, and each can be changed on
+request.
+
+**The variance target** (per stock and NYSE session t, not annualized, not scaled for calendar time: a weekend overnight is one overnight, and a
+half-day is a session of its own, 09:30-13:00):
+
+```
+r_on(t) = ln O(t) − ln C(t−1)                 overnight log return from the previous NYSE session's close
+rho(t)  = (ln H(t) − ln L(t))² / (4 ln 2)     Parkinson range variance of the regular session
+V(t)    = r_on(t)² + rho(t)                   the primary target: overnight plus intraday, previous close to close
+V_id(t) = rho(t)                              intraday only, a sensitivity target
+```
+
+- **Prices:** Alpaca SIP daily bars, retrieved 2026-10-28, symbol mapping as Alpaca's default (as the cache). O and C are the `all`-adjusted
+  (split, cash dividend, spin-off) open and close; H and L are the quoted high and low, since a log range does not depend on the adjustment and
+  quoted prices are exact where adjusted ones are rounded.
+- **Overnight adjustment:** C(t−1) is the previous session of the same security, with a valid bar. If that session is missing, the overnight spans
+  more than one session and is left missing; nothing is compressed. The overnight is also missing on the first session of a segment, after a
+  truncated day, and on a session named by a corporate-action record, a vendor adjustment step or the registry (184 sessions: 95 forward splits, 14
+  reverse splits, 29 spin-offs and a stock dividend by record, 43 by vendor steps, 2 in the registry).
+- **A session's V is missing, with its reason kept,** if the security has no vendor bars (DOW), lies outside its span, has no bar or a placeholder or an
+  invalid one, falls on a truncated vendor day, or its range disagrees by more than 25% with a complete 5-minute day (or is the narrower on an incomplete
+  one). Genuine extremes stay: 151 of the 154 "market moves" are in the target (YUM and PNR are the two spin-offs, and BIIB 2020-11-09 follows a day with
+  no trading); so do EXE 2020-06-09 (V = 1.68) and META 2022-02-03.
+- **Eligibility of the forecast origin t (all known at the close of t):** a valid V(t); at least 4 of the last 5 and 18 of the last 22 sessions with a
+  valid V (the HAR windows, in sessions); at least 90% of a warm-up window with a valid V and a valid close-to-close return, inside the same segment; the quoted
+  close at least $5; the trailing 63-session median in-session dollar volume (earlier sessions only) at least $10 million. The target is V(t+1).
+- The distribution of V over 1,303,072 valid stock-sessions: median 1.84e-4, mean 4.87e-4, 99th percentile 5.1e-3, 99.9th 0.022, largest 1.68 (EXE 2020-06-09). 70
+  sessions exceed 0.1, 11 exceed 0.25; 13 are exactly 0.
+
+**Candidate windows** (by target date, HEAT1's boundaries; the sessions 2022-01-03 and 2024-01-02 between windows are an embargo, as in HEAT):
+
+| Window | Target dates | Sessions | Eligible stock-days, warm-up 63 / 126 / 252 sessions | Stocks | Typical daily vol (√ of mean market V) |
+|---|---|---|---|---|---|
+| Development | 2016-01-05 to 2021-12-31 | 1,510 | 667,280 / 640,203 / 586,779 | 487 / 486 / 483 | 2.14% |
+| Validation | 2022-01-04 to 2023-12-29 | 500 | 239,449 / 239,209 / 238,618 | 490 / 489 / 488 | 2.21% |
+| Test | 2024-01-03 to 2026-10-12 | 696 | 341,880 / 341,463 / 340,610 | 502 / 500 / 500 | 2.27% |
+
+- **What each choice costs** (stock-days, development / validation / test at warm-up 63): a missing target 3,102 / 1,075 / 180 (0.4%); the price and
+  liquidity rules 21,294 / 3,184 / 4,298 (3.0%, 1.3%, 1.2%); the HAR windows 4,417 / 2,024 / 175; the warm-up 17,597 / 171 / 320. A longer warm-up costs
+  almost nothing outside development: 126 sessions 44,674 / 411 / 737, 252 sessions 98,098 / 1,002 / 1,590 (14.3% of development). The half-day
+  targets (21 sessions in all) are 5,573 / 1,458 / 2,941 of those stock-days (0.6-0.9%) and are in the panel; scoring them is a decision below.
+- **Regimes, measured** (market-wide V is the cross-section's mean V per session; sessions above three times the all-session median 82 / 28 / 41):
+
+| Year | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 to Oct 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Typical daily vol | 1.73% | 1.38% | 1.86% | 1.73% | 3.50% | 1.91% | 2.46% | 1.93% | 1.96% | 2.33% | 2.54% |
+
+  The highest session in each window: 2020-03-16 (market V 0.0227) in development, 2022-02-24 (0.0024) in validation, 2025-04-09 (0.0058) in test. The eleven
+  highest sessions of the sample are all in 2020 (ten in March, one on 2020-11-09); the twelfth is 2025-04-09. From memory, not measured: development holds the 2016 oil and
+  China selloff, the very quiet 2017, the February and fourth-quarter 2018 selloffs, the 2020 crash and the 2021 recovery; validation the 2022 rate-hike
+  bear market and the March 2023 bank failures; test a calm 2024 with an August spike, the April 2025 tariff shock, and a rising 2026.
+- **Exposure.** Every window is **reserved for this specification but previously exposed through related research.** Development is HEAT1's training span
+  and E5-E12's sample; validation is HEAT1's validation span (tuned on 2026-10-22); test is HEAT1's scored test (2026-10-22), which ends on the cache's last day,
+  not the start of untouched data. E1 and E6 looked at volatility and at permutation entropy on these dates for the reversal and the volatile-moment lead, not for
+  next-day variance forecasts. Only data after the registration date can be untouched.
+- **Not decided here, and needed before any fitting:** (1) the permutation-entropy settings (embedding, delay, window), which set the warm-up, not in the
+  2026-10-27 brief; (2) the HAR form (levels or logs; pooled or per stock) and the loss, given a target this heavy-tailed; (3) whether half-day targets
+  are scored; (4) V or V_id as the one primary target (V proposed); (5) the window boundaries, here HEAT1's; (6) the $5 and $10 million rules.
 
 ### Open questions (as of 2026-10-28)
 
-- Why the SMCI and EXE gaps exist. There are no records; the identity is the same per the mapping.
-- Why Alpaca's mapping returns nothing for DOW, and confirmation of who issued its pre-2017 bars.
-- How KDP, PNR and HON appear under each adjustment setting. None of their 2018 events has a record.
-- Which price made the first audit's mean ratio non-finite.
-- Whether Alpaca's daily open and close are the auction prints, and why the auctions request failed.
-- Whether HEAT2's test has been scored.
-- **Drive has not received files written from Colab since about 2026-10-14** (folders appear, files do not; HEAT
-  logged the same). Results are preserved by zip downloads until this is fixed (HANDOVER.md).
+- The unresolved list above.
+- Whether HEAT2's test has been scored (asked twice).
+- **Drive has not received files written from Colab since about 2026-10-14** (folders appear, files do not; HEAT logged the same). Results
+  are preserved by zip downloads until this is fixed (HANDOVER.md).
 
 ## Advisor feedback and response (September 2026)
 
@@ -1598,7 +1765,9 @@ The response so far:
 | 2026-10-25 | Entropy-free SIP baseline (`sip_pe_free`, section 32) built and pre-registered; not yet run |
 | 2026-10-27 | Entropy-free SIP baseline run: no model beats cost (best gross +0.30, net −1.70). `gbm` against `gbm_ent` on identical rows: entropy adds nothing (−0.04 [−0.23, +0.17] gross bps) |
 | 2026-10-27 | New question: does permutation entropy of daily returns improve next-day volatility forecasts beyond HAR? Data audit part 1 run (section 34): 2,709 sessions to 2026-10-12, 97.5% of stock-days usable, half-days mostly treated as full days, 5 tickers with long gaps, 175 large moves |
-| 2026-10-28 | Prior exposure checked against HEAT's records: HEAT1 scored 2024-01-03 to 2026-10-12 on 2026-10-22 and tuned on 2022-01-04 to 2023-12-29. Data audit part 2 built (Alpaca reference fetch with a manifest, calendar-aware sessions, identity and corporate actions); not yet run |
+| 2026-10-28 | Prior exposure checked against HEAT's records: HEAT1 scored 2024-01-03 to 2026-10-12 on 2026-10-22 and tuned on 2022-01-04 to 2023-12-29. Data audit part 2 built (Alpaca reference fetch with a manifest, calendar-aware sessions, identity and corporate actions) |
+| 2026-10-28 | Data audit part 2 run (sections 35-36). The cache keeps half-days by clock time; six full days hold a fraction of the session, three of them in Alpaca's own daily bars; vendor and cache ranges contradict each other on 0.07% of sessions; split-only adjustment (the cache's) creates jumps that `all` mostly removes. The auctions and trades fetch failed on a timestamp bug (fixed) |
+| 2026-10-28 | Volatility panel built (`src/volpanel.py`, `scripts/vol_sample.py`): the variance target, the rules and candidate windows with their eligible stock-days. Nothing registered, nothing fitted |
 
 ## Next steps
 

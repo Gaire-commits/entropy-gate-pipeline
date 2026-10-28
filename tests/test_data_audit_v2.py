@@ -292,3 +292,13 @@ def test_the_prints_script_stops_when_the_audit_has_not_run(tmp_path, monkeypatc
     monkeypatch.setattr(sys, "argv", ["audit_prints.py", "--audit", str(tmp_path), "--reference", str(tmp_path)])
     assert script.main() == 1
     assert "STOPPED" in capsys.readouterr().out
+
+
+def test_the_followup_and_sample_scripts_run_from_the_audit_outputs(outputs, monkeypatch, tmp_path):
+    import audit_followup as followup
+    monkeypatch.setattr(sys, "argv", ["audit_followup.py", "--audit", str(outputs), "--reference", str(outputs.parent / "ref")])
+    assert followup.main() == 0
+    text = (outputs / "followup" / "followup.md").read_text()
+    for part in ("## 1. The vendor's daily range", "## 2. Dates on which", "## 3. The vendor's adjustment steps", "## 4. The vendor's close", "## 5. Evidence"):
+        assert part in text
+    assert (outputs / "followup" / "range_buckets.csv").exists()
