@@ -455,13 +455,28 @@ def session_definition_check(ext: pd.DataFrame, vendor: pd.DataFrame, table: pd.
     return {"definitions": pd.DataFrame(rows), "cache_vs_refetch": agree}
 
 
-def auction_check(auctions: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFrame, tol_bp: float = TOL_BP) -> dict:
+def split_factor(raw: pd.DataFrame, split: pd.DataFrame) -> pd.DataFrame:
+    """Per symbol-day, the multiplier that puts a price printed that day on the cache's split-adjusted basis:
+    the split-adjusted daily close over the raw one. Auction and trade prints arrive unadjusted, so a stock that
+    split later would otherwise look unequal to every vendor and rebuilt price."""
+    m = raw[["symbol", "date", "close"]].merge(split[["symbol", "date", "close"]], on=["symbol", "date"],
+                                               suffixes=("_raw", "_split"))
+    m["factor"] = m["close_split"] / m["close_raw"]
+    return m[["symbol", "date", "factor"]]
+
+
+def auction_check(auctions: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFrame, tol_bp: float = TOL_BP,
+                  factor: pd.DataFrame | None = None) -> dict:
     """For the sample symbols on every day: does the vendor's open (close) equal an opening (closing)
-    auction print, and which condition and exchange; and the same for the rebuilt open and close."""
+    auction print, and which condition and exchange; and the same for the rebuilt open and close.
+    `factor` (split_factor) moves the unadjusted prints onto the vendor's and the cache's adjusted basis."""
     if auctions.empty:
         return {"summary": pd.DataFrame(), "by_print": pd.DataFrame()}
     a = auctions.copy()
     a["date"] = pd.to_datetime(a["date"]).dt.normalize()
+    if factor is not None:
+        a = a.merge(factor, on=["symbol", "date"], how="left")
+        a["price"] = a["price"] * a["factor"]
     v = vendor[["symbol", "date", "open", "close"]].rename(columns={"open": "vendor_open", "close": "vendor_close"})
     r = table[table["bars"] > 0][["symbol", "date", "open", "close"]].rename(
         columns={"open": "rebuilt_open", "close": "rebuilt_close"})
@@ -479,14 +494,18 @@ def auction_check(auctions: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFr
     return {"summary": summary, "by_print": by_print}
 
 
-def trades_check(trades: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFrame, tol_bp: float = TOL_BP) -> pd.DataFrame:
+def trades_check(trades: pd.DataFrame, vendor: pd.DataFrame, table: pd.DataFrame, tol_bp: float = TOL_BP,
+                 factor: pd.DataFrame | None = None) -> pd.DataFrame:
     """For each trade-sample symbol-day: the first trades at or after 09:30 and the auction-flagged prints,
-    and which of them the vendor's and the rebuilt open and close equal."""
+    and which of them the vendor's and the rebuilt open and close equal (`factor` as in auction_check)."""
     if trades.empty:
         return pd.DataFrame()
     t = trades.copy()
     ts = t["t"].dt.tz_convert(EASTERN).dt.tz_localize(None)
     t["date"], t["clock"] = ts.dt.normalize(), ts - ts.dt.normalize()
+    if factor is not None:
+        t = t.merge(factor, on=["symbol", "date"], how="left")
+        t["price"] = t["price"] * t["factor"]
     v = vendor.set_index(["symbol", "date"])
     r = table[table["bars"] > 0].set_index(["symbol", "date"])
     rows = []

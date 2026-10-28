@@ -254,3 +254,41 @@ def test_a_broken_drive_link_stops_with_a_message(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(sys, "argv", ["data_audit_v2.py", "--out", "outputs/data_audit_v2"])
     assert script.main() == 1
     assert "Drive is not mounted" in capsys.readouterr().out
+
+
+def test_prints_are_moved_onto_the_adjusted_basis_before_they_are_compared():
+    """Auction and trade prints arrive unadjusted; a later 2-for-1 split must not make them look unequal."""
+    day = pd.Timestamp("2024-11-04")
+    adjusted = pd.DataFrame({"symbol": ["AAA"], "date": [day], "open": [50.0], "close": [51.0]})
+    raw = pd.DataFrame({"symbol": ["AAA"], "date": [day], "open": [100.0], "close": [102.0]})
+    table = adjusted.assign(bars=78)
+    factor = audit.split_factor(raw, adjusted)
+    assert factor["factor"].tolist() == [0.5]
+    auctions = pd.DataFrame({"symbol": "AAA", "date": [day, day], "side": ["open", "close"], "condition": ["Q", "M"],
+                             "price": [100.0, 102.0], "size": 1, "t": pd.Timestamp("2024-11-04T14:30:00Z"),
+                             "exchange": "N"})
+    scaled = audit.auction_check(auctions, adjusted, table, factor=factor)["summary"].set_index("side")
+    assert scaled["vendor_any"].eq(1).all() and scaled["rebuilt_any"].eq(1).all()
+    unscaled = audit.auction_check(auctions, adjusted, table)["summary"].set_index("side")
+    assert unscaled["vendor_any"].eq(0).all()                                 # what the unadjusted comparison said
+    trades = pd.DataFrame({"symbol": "AAA", "t": [pd.Timestamp("2024-11-04T14:30:00.2Z"), pd.Timestamp("2024-11-04T20:59:59Z")],
+                           "price": [100.0, 102.0], "size": 1, "exchange": "N", "conditions": ["O", "6"], "tape": "A",
+                           "id": [1, 2], "update": None, "window": ["open", "close"]})
+    t = audit.trades_check(trades, adjusted, table, factor=factor)
+    assert t["vendor_equal"].astype(bool).all() and t["rebuilt_equal"].astype(bool).all()
+
+
+def test_the_prints_script_runs_from_the_audit_outputs(outputs, monkeypatch, capsys):
+    import audit_prints as script
+    monkeypatch.setattr(sys, "argv", ["audit_prints.py", "--audit", str(outputs), "--reference", str(outputs.parent / "ref")])
+    assert script.main() == 0
+    summary = pd.read_csv(outputs / "auction_summary.csv").set_index("side")
+    assert summary["vendor_any"].eq(1).all()
+    assert "trades_open_close.parquet` is missing" in (outputs / "prints.md").read_text()
+
+
+def test_the_prints_script_stops_when_the_audit_has_not_run(tmp_path, monkeypatch, capsys):
+    import audit_prints as script
+    monkeypatch.setattr(sys, "argv", ["audit_prints.py", "--audit", str(tmp_path), "--reference", str(tmp_path)])
+    assert script.main() == 1
+    assert "STOPPED" in capsys.readouterr().out

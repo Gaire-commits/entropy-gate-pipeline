@@ -108,7 +108,7 @@ class AlpacaREST:
                 rows += [(sym, b.get("t"), b.get("o"), b.get("h"), b.get("l"), b.get("c"), b.get("v"), b.get("n"),
                           b.get("vw")) for b in items]
         df = pd.DataFrame(rows, columns=["symbol", "t", "open", "high", "low", "close", "volume", "trade_count", "vwap"])
-        df["t"] = pd.to_datetime(df["t"], utc=True)
+        df["t"] = pd.to_datetime(df["t"], utc=True, format="ISO8601")
         return df
 
     def auctions(self, symbols: list[str], start, end, asof: str | None = None, limit: int = 10000) -> pd.DataFrame:
@@ -123,8 +123,8 @@ class AlpacaREST:
                         rows += [(sym, day.get("d"), side, a.get("c"), a.get("p"), a.get("s"), a.get("t"), a.get("x"))
                                  for a in day.get(key) or []]
         df = pd.DataFrame(rows, columns=["symbol", "date", "side", "condition", "price", "size", "t", "exchange"])
-        df["t"] = pd.to_datetime(df["t"], utc=True)
-        df["date"] = pd.to_datetime(df["date"])
+        df["t"] = pd.to_datetime(df["t"], utc=True, format="ISO8601")
+        df["date"] = pd.to_datetime(df["date"], format="ISO8601")
         return df
 
     def trades(self, symbols: list[str], start, end, feed: str = "sip", asof: str | None = None,
@@ -137,7 +137,7 @@ class AlpacaREST:
                 rows += [(sym, t.get("t"), t.get("p"), t.get("s"), t.get("x"), " ".join(t.get("c") or []), t.get("z"),
                           t.get("i"), t.get("u")) for t in items]
         df = pd.DataFrame(rows, columns=["symbol", "t", "price", "size", "exchange", "conditions", "tape", "id", "update"])
-        df["t"] = pd.to_datetime(df["t"], utc=True)
+        df["t"] = pd.to_datetime(df["t"], utc=True, format="ISO8601")
         return df
 
     def corporate_actions(self, symbols: list[str], start, end, types: list[str] | None = None,

@@ -98,6 +98,25 @@ def test_corporate_actions_and_auctions_flatten():
     assert sorted(a["side"]) == ["close", "open"] and c.session.calls[0]["params"]["feed"] == "sip"
 
 
+def test_timestamps_with_and_without_fractional_seconds_parse_together():
+    """Alpaca writes a whole-second time without a fraction and others with one; the first section 35 run failed on this."""
+    auctions = {"auctions": {"AAA": [{"d": "2024-01-03", "o": [{"c": "Q", "p": 10.0, "t": "2024-01-03T14:30:00.123456Z",
+                                                                "x": "N"}],
+                                      "c": [{"c": "M", "p": 11.0, "t": "2024-01-03T21:00:00Z", "x": "N"}]}]},
+                "next_page_token": None}
+    a = client([Response(200, auctions)]).auctions(["AAA"], "a", "b")
+    assert a["t"].tolist() == [pd.Timestamp("2024-01-03T14:30:00.123456Z"), pd.Timestamp("2024-01-03T21:00:00Z")]
+    trades = {"trades": {"AAA": [{"t": "2024-01-03T14:30:00.5Z", "p": 10, "s": 1, "x": "N", "c": ["O"], "z": "A", "i": 1},
+                                 {"t": "2024-01-03T14:30:01Z", "p": 10, "s": 1, "x": "N", "c": [], "z": "A", "i": 2}]},
+              "next_page_token": None}
+    t = client([Response(200, trades)]).trades(["AAA"], "a", "b")
+    assert t["t"].dt.second.tolist() == [0, 1]
+    bars = {"bars": {"AAA": [{"t": "2024-01-03T14:30:00Z", "o": 1, "h": 1, "l": 1, "c": 1, "v": 1, "n": 1, "vw": 1},
+                             {"t": "2024-01-03T14:35:00.25Z", "o": 1, "h": 1, "l": 1, "c": 1, "v": 1, "n": 1, "vw": 1}]},
+            "next_page_token": None}
+    assert len(client([Response(200, bars)]).bars(["AAA"], "5Min", "a", "b", "split")) == 2
+
+
 def test_rfc3339_reads_naive_times_as_new_york():
     assert rfc3339("2024-01-03 09:30") == "2024-01-03T14:30:00Z"
     assert rfc3339("2024-07-03 09:30") == "2024-07-03T13:30:00Z"

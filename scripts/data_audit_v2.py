@@ -160,10 +160,13 @@ def main() -> int:
         if (sample / "ext_5min.parquet").exists():
             ext = pd.read_parquet(sample / "ext_5min.parquet")
             results["definitions"] = audit.session_definition_check(ext, traded, sip)
+        factor = audit.split_factor(audit.real(settings["raw"]), traded)
         if (sample / "auctions.parquet").exists():
-            results["auctions"] = audit.auction_check(pd.read_parquet(sample / "auctions.parquet"), traded, sip)
+            results["auctions"] = audit.auction_check(pd.read_parquet(sample / "auctions.parquet"), traded, sip,
+                                                      factor=factor)
         if (sample / "trades_open_close.parquet").exists():
-            results["trades"] = audit.trades_check(pd.read_parquet(sample / "trades_open_close.parquet"), traded, sip)
+            results["trades"] = audit.trades_check(pd.read_parquet(sample / "trades_open_close.parquet"), traded, sip,
+                                                   factor=factor)
         ca = audit.normalize_actions(pd.read_parquet(ref / "corporate_actions.parquet")) \
             if (ref / "corporate_actions.parquet").exists() else audit.normalize_actions(pd.DataFrame())
         gap_rows = audit.gaps(sip[sip["date"] <= common_end])
