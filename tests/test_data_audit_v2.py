@@ -1,0 +1,213 @@
+"""The extended audit on synthetic bars with every case planted: half-days with prints after 13:00, an
+impossible bar, a reused ticker, a special dividend, a spin-off, a genuine crash next to an ordinary
+dividend, a symbol-mapping splice, and vendor daily bars that count extended-hours volume."""
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from src import audit, nyse
+
+DAYS = nyse.sessions("2024-10-01", "2024-12-31")
+SYMBOLS = ["S0", "S1", "S2", "S3", "S4", "S5"]
+EVENTS = {"S3": (30, np.log(0.65)), "S2": (35, np.log(0.5)), "S4": (40, -0.30)}   # session index, overnight move
+GAP = range(20, 45)                                                               # S1 has no bars here
+
+
+def build(symbol, rng):
+    """Returns (cache bars as the cache stores them, every bar of each day incl. extended hours)."""
+    rows, price = [], 100.0
+    for i, day in enumerate(DAYS):
+        if symbol == "S1" and i in GAP:
+            continue
+        if symbol == "S1" and i == GAP.stop:
+            price *= 3.0                                                     # a different issuer, a different price
+        if symbol in EVENTS and EVENTS[symbol][0] == i:
+            price *= np.exp(EVENTS[symbol][1])
+        close_h = 13 if nyse.is_half_day(day) else 16
+        times = [day + pd.Timedelta(hours=8) + k * audit.BAR for k in range(18)]          # pre-market 08:00-09:25
+        times += list(pd.date_range(day + pd.Timedelta(hours=9, minutes=30), day + pd.Timedelta(hours=close_h) - audit.BAR,
+                                    freq="5min"))
+        times += [day + pd.Timedelta(hours=close_h) + k * audit.BAR for k in range(6)]    # after the close
+        for t in times:
+            o = price
+            price *= np.exp(rng.normal(0, 0.001))
+            after = (t - day) >= pd.Timedelta(hours=close_h)
+            pre = (t - day) < pd.Timedelta(hours=9, minutes=30)
+            h = max(o, price) * (1.05 if after else 1.0005)                 # thin after-close prints: wide range
+            lo = min(o, price) * 0.9995
+            rows.append((t, o, h, lo, price, 50.0 if (after or pre) else 1000.0))
+    df = pd.DataFrame(rows, columns=["t", "open", "high", "low", "close", "volume"])
+    df["trade_count"], df["vwap"] = 10.0, (df["high"] + df["low"] + df["close"]) / 3
+    tod = df["t"] - df["t"].dt.normalize()
+    cache = df[(tod >= pd.Timedelta(hours=9, minutes=30)) & (tod < pd.Timedelta(hours=16))].copy()
+    if symbol == "S0":                                                       # one impossible bar
+        cache.loc[cache.index[10 * 78 + 5], "low"] = 0.0
+    idx = pd.MultiIndex.from_arrays([np.full(len(cache), symbol), pd.DatetimeIndex(cache["t"]).tz_localize(audit.EASTERN)],
+                                    names=["symbol", "timestamp"])
+    return cache.drop(columns="t").set_index(idx), df.assign(symbol=symbol)
+
+
+def vendor_daily(full: pd.DataFrame) -> pd.DataFrame:
+    """Alpaca's rules: open/high/low/close from the regular session only, volume from the whole day."""
+    full = full.copy()
+    day = full["t"].dt.normalize()
+    tod = full["t"] - day
+    close = np.where(day.isin(nyse.HALF_DAYS), pd.Timedelta(hours=13).to_timedelta64(), pd.Timedelta(hours=16).to_timedelta64())
+    rth = (tod >= pd.Timedelta(hours=9, minutes=30)) & (tod.to_numpy() < close)
+    g, gv = full[rth].groupby(["symbol", day[rth]]), full.groupby(["symbol", day])
+    out = pd.DataFrame({"open": g["open"].first(), "high": g["high"].max(), "low": g["low"].min(),
+                        "close": g["close"].last(), "volume": gv["volume"].sum(), "trade_count": 1.0, "vwap": 1.0})
+    out.index.names = ["symbol", "date"]
+    return out.reset_index()
+
+
+def scale_before(df, symbol, day, factor):
+    df = df.copy()
+    sel = (df["symbol"] == symbol) & (df["date"] < day)
+    df.loc[sel, ["open", "high", "low", "close"]] *= factor
+    return df
+
+
+@pytest.fixture(scope="module")
+def made(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("audit")
+    rng = np.random.default_rng(0)
+    fulls = []
+    for sym in SYMBOLS:
+        cache, full = build(sym, rng)
+        fulls.append(full)
+        for feed in ("sip", "iex"):
+            path = tmp / feed / "5Min" / f"{sym}.parquet"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            c = cache.copy()
+            if feed == "iex" and sym == "S1":
+                c.loc[c.index[3 * 78 + 2], "low"] = 0.0                     # an IEX zero price
+            c.to_parquet(path)
+            path.with_suffix(".meta.json").write_text(json.dumps({"start": "2024-10-01", "end": "2024-12-31",
+                                                                   "feed": feed, "adjustment": "split"}))
+    full = pd.concat(fulls, ignore_index=True)
+    split = vendor_daily(full)
+    ex2, spin4 = DAYS[EVENTS["S2"][0]], DAYS[EVENTS["S4"][0]]
+    prev2 = split[(split["symbol"] == "S2") & (split["date"] < ex2)]["close"].iloc[-1]
+    divs = scale_before(split, "S2", ex2, 0.5)
+    every = scale_before(divs, "S4", spin4, np.exp(EVENTS["S4"][1]))
+    nomap = split[~((split["symbol"] == "S5") & (split["date"] < DAYS[10]))]
+    ref = tmp / "ref"
+    (ref / "daily").mkdir(parents=True)
+    for tag, df in {"raw": split, "split": split, "split+dividend": divs, "all": every, "split_nomap": nomap}.items():
+        df.to_parquet(ref / "daily" / f"daily_sip_{tag}.parquet")
+    ca = pd.DataFrame([
+        {"kind": "name_changes", "id": "1", "old_symbol": "S1", "new_symbol": "S1X", "process_date": str(DAYS[GAP.start].date())},
+        # S2 traded as OLD2 at the time: its dividend is recorded under the old ticker
+        {"kind": "cash_dividends", "id": "2", "symbol": "OLD2", "rate": prev2 * 0.5, "special": True, "ex_date": str(ex2.date())},
+        {"kind": "name_changes", "id": "6", "old_symbol": "OLD2", "new_symbol": "S2", "process_date": str(DAYS[50].date())},
+        {"kind": "spin_offs", "id": "3", "source_symbol": "S4", "new_symbol": "S4N", "ex_date": str(spin4.date())},
+        {"kind": "cash_dividends", "id": "4", "symbol": "S3", "rate": 0.1, "special": False,
+         "ex_date": str(DAYS[EVENTS["S3"][0] - 3].date())},
+        {"kind": "name_changes", "id": "5", "old_symbol": "OLD5", "new_symbol": "S5", "process_date": str(DAYS[10].date())},
+    ])
+    ca.to_parquet(ref / "corporate_actions.parquet")
+    sample_days = [pd.Timestamp("2024-11-29"), DAYS[5]]
+    ext = full[(full["symbol"] == "S5") & full["t"].dt.normalize().isin(sample_days)].copy()
+    ext["t"] = pd.DatetimeIndex(ext["t"]).tz_localize(audit.EASTERN).tz_convert("UTC")
+    (ref / "sample").mkdir()
+    ext[["symbol", "t", "open", "high", "low", "close", "volume", "trade_count", "vwap"]].to_parquet(ref / "sample" / "ext_5min.parquet")
+    s5 = split[split["symbol"] == "S5"]
+    auctions = pd.concat([s5.assign(side="open", condition="Q", price=s5["open"]),
+                          s5.assign(side="close", condition="M", price=s5["close"])])
+    auctions = auctions.assign(size=1, exchange="N", t=pd.Timestamp("2024-01-01", tz="UTC"))[
+        ["symbol", "date", "side", "condition", "price", "size", "t", "exchange"]]
+    auctions.to_parquet(ref / "sample" / "auctions.parquet")
+    pd.DataFrame({"symbol": SYMBOLS, "name": "x", "sector": "x"}).to_csv(tmp / "u.csv", index=False)
+    return tmp
+
+
+@pytest.fixture(scope="module")
+def outputs(made):
+    import data_audit_v2 as script
+    out = made / "out"
+    argv = sys.argv
+    sys.argv = ["data_audit_v2.py", "--sip", str(made / "sip"), "--iex", str(made / "iex"), "--universe",
+                str(made / "u.csv"), "--reference", str(made / "ref"), "--out", str(out), "--start", "2024-10-01"]
+    try:
+        assert script.main() == 0
+    finally:
+        sys.argv = argv
+    return out
+
+
+def test_every_planted_move_gets_its_class(outputs):
+    moves = pd.read_csv(outputs / "large_moves.csv", parse_dates=["date"])
+    cls = {(r.symbol, r.kind): r["class"] for _, r in moves.iterrows()}
+    assert cls[("S2", "overnight")] == "cash distribution"
+    assert cls[("S4", "overnight")] == "spin-off"
+    assert cls[("S3", "overnight")] == "market move (no corporate action found)"   # kept, despite the dividend 3 days before
+    assert cls[("S1", "overnight")] == "identity change (after a long gap)"
+    s2 = moves[moves["symbol"] == "S2"].iloc[0]
+    assert "removed by split+dividend: True" in s2["reason"]
+    assert len(moves) == 4
+
+
+def test_the_reused_ticker_and_the_mapping_splice(outputs):
+    gaps = pd.read_csv(outputs / "gaps.csv")
+    s1 = gaps[gaps["symbol"] == "S1"].iloc[0]
+    assert s1["sessions"] == len(GAP) and s1["class"] == "ticker reused by a different issuer"
+    splices = pd.read_csv(outputs / "symbol_mapping_splices.csv")
+    assert splices.set_index("symbol").loc["S5", "mapped_only_days"] == 10
+    unresolved = pd.read_csv(outputs / "unresolved.csv")
+    assert set(unresolved["kind"]) == {"impossible bar values (cause unknown)"}
+    assert unresolved["symbol"].tolist() == ["S0"]
+
+
+def test_impossible_values_are_located(outputs):
+    bad = pd.read_csv(outputs / "invalid_bars_sip.csv")
+    assert len(bad) == 1 and bad["symbol"].iloc[0] == "S0" and "zero or negative price" in bad["reason"].iloc[0]
+    ratios = pd.read_csv(outputs / "first_audit_nonfinite_ratios.csv")
+    reasons = dict(zip(ratios["symbol"], ratios["reason"]))
+    assert "sip: zero or negative price" in reasons["S0"] and reasons["S1"] == "iex: zero or negative price"
+    assert len(pd.read_csv(outputs / "nonfinite_sessions_sip.csv")) == 0   # the rebuild leaves the bad bar out
+
+
+def test_half_days_end_at_13_and_the_first_audits_rule_missed_them(outputs):
+    cov = pd.read_csv(outputs / "coverage_by_year.csv")
+    half = cov[cov["day_type"] == "half"].iloc[0]
+    assert half["sessions"] == 2 and half["missing_close"] == 0
+    assert half["first_audit_missing_close"] == 2 * len(SYMBOLS) - 1       # S1 is in its gap on one of them
+    days = pd.read_csv(outputs / "half_days.csv")
+    assert (days["with_bars_after_13"] == days["symbols"]).all()
+
+
+def test_the_vendor_session_definition_is_found(outputs):
+    d = pd.read_csv(outputs / "session_definitions.csv").set_index(["day_type", "definition"])
+    assert d.loc[("half", "calendar"), ["open_match", "high_match", "low_match", "close_match"]].eq(1).all()
+    assert d.loc[("half", "clock"), "high_match"] < 1                        # the after-13:00 prints widen it
+    assert d.loc[("full", "whole_day"), "volume_exact_share"] == 1           # volume counts extended hours
+    assert d.loc[("full", "calendar"), "volume_exact_share"] == 0
+    basis = pd.read_csv(outputs / "vendor_basis.csv")
+    assert (basis["basis"] == "same").all()
+    overall = pd.read_csv(outputs / "vendor_overall.csv").set_index("day_type")
+    assert overall.loc["half", "high_match"] == 1 and overall.loc["half", "high_match_clock_rebuild"] < 1
+
+
+def test_sessions_table_covers_every_symbol_and_session(outputs):
+    s = pd.read_parquet(outputs / "sessions.parquet")
+    assert len(s) == len(SYMBOLS) * len(DAYS)
+    assert set(s["status"]) <= {"ok", "sparse", "no_bars", "before_first_bar", "after_last_bar"}
+    s1 = s[s["symbol"] == "S1"].reset_index(drop=True)
+    assert (s1.loc[list(GAP), "status"] == "no_bars").all()
+    assert s1.loc[GAP.stop, "gap_sessions"] == len(GAP) + 1                   # the return spans the gap, and says so
+    assert s1.loc[GAP.stop, "segment"] == 1 and s1.loc[0, "segment"] == 0
+    assert s["dv_trailing63"].notna().any()
+    report = (outputs / "report.md").read_text()
+    for section in ("## 1. Calendar", "## 2. Half-day", "## 3. Dollar volume", "## 4. Impossible", "## 5. Vendor",
+                    "## 6. Security identity", "## Unresolved"):
+        assert section in report

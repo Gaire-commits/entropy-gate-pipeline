@@ -1335,6 +1335,146 @@ input to the trees changes nothing measurable on the headline feed. Note: the pl
 comparison above is the one to cite. The gate-split cells in that table are 18 comparisons with no correction (one
 `momentum_day` cell reads +1.82 [+0.69, +2.90], what chance gives at this count) and are not a result.
 
+## Data audit for the volatility question (part 1 run 2026-10-27; part 2 built 2026-10-28, not yet run)
+
+The question from here on (fixed 2026-10-27): **does permutation entropy of daily returns improve next-day
+volatility forecasts beyond a volatility-history (HAR-style) baseline?** A positive or a null answer both count;
+the evidence standard is one registered PE hypothesis, nested comparison on identical folds (Clark-West), PE
+settings fixed in advance. Before any fitting, a read-only audit of the data. Part 1 is `scripts/data_audit.py`
+(notebook section 34). Part 2 is `scripts/fetch_reference.py` and `scripts/data_audit_v2.py` (sections 35-36).
+Below, measured results, interpretations and open questions are kept apart.
+
+### Measured (part 1, run 2026-10-27, SIP cache of 503 stocks, IEX cache of 503)
+
+- **Coverage.** 2,709 sessions with bars for at least half the stocks, 2016-01-04 to **2026-10-12, the common end**
+  (one stock also has 2026-10-13). Sessions per year: 252, 251, 251, 252, 253, 252, 251, 250, 252, 250, and 195 in
+  2026. Each equals the NYSE calendar (`src/nyse.py`, checked in `tests/test_nyse.py`). Stocks with data: 463 in
+  2016, rising to 503 in 2026. 462 start in the first week, 40 start more than a year late, and none end before the
+  cache end. Stock-days with at least 90% of their 5-minute bars: 1,277,373 of 1,310,317 (97.5%).
+- **Bars.** 0 bars with inconsistent open, high, low and close in any year. 0 zero-volume days, because a day with
+  no trade is absent, not zero.
+- **Missing sessions.** The median stock misses 0 sessions inside its span, and the 90th percentile misses 1.
+  Five stocks have runs of 10 or more: Q 2,001, DOW 396, SMCI 349, EXE 156, IR 89.
+- **Large moves.** 175 stock-days across 97 stocks have an overnight or in-session log move beyond 0.25. 13 of
+  them sit within 4% of a split ratio:
+  - 11 at a ratio of 1.5, among them APA, DVN, EOG and EXE on 2020-03-09 and CNC on 2025-07-02.
+  - HON on 2026-06-29 at 2.0.
+  - KDP on 2018-07-10 at 6.0, a log move of −1.80.
+- **Variance parts** (yearly means over stock-days with at least 90% of bars):
+  - The overnight gap is 28-41% of overnight-plus-Parkinson variance.
+  - Parkinson variance is close to open-to-close variance.
+  - Mean Parkinson variance by year: 2.40, 1.41, 2.58, 2.09, 7.45, 2.73, 4.22, 2.57, 2.47, 3.60 and 4.23 (×10⁻⁴).
+- **SIP against IEX** on 749,395 common stock-days (2020-07-27 to 2026-10-13):
+  - Median absolute open difference 15.6 bp, close 2.2 bp.
+  - IEX's high is never above SIP's and its low never below.
+  - IEX volume is 4.9% of SIP's, and IEX fills 96% of slots on the median day.
+  - Median IEX/SIP Parkinson ratio 0.89; the range differs by more than 10% on 31% of days.
+  - The mean ratio printed blank (not finite).
+- **Close bars and early closes.** Stock-days missing the session's last bar, by year: 401, 934, 1,715, 1,900, 911,
+  992, 1,086, 873, 1,341, 1,236, and 5 in 2026. The first audit's early-close flag fired 0-657 times a year.
+
+### Interpretations (each is tested in part 2; none is verified yet)
+
+1. **Half-days are mostly treated as full sessions.**
+   - The cache keeps bars by clock time, 09:30-16:00 ([scripts/fetch_data.py](scripts/fetch_data.py)), so
+     extended-hours prints after a 13:00 close stay in.
+   - The first audit's rule calls a day early only when nothing prints after 13:00.
+   - Missing close bars track the number of half-days: 2017 had 2 (934 missing), 2020 had 2 (911), 2024 had 3
+     (1,341), and 2026 has had none (5).
+   - Alpaca's documentation says daily bars leave extended-hours trades out of the open, high, low and close but
+     count their volume, while minute bars include them.
+2. **The 2026 "coverage change" is most likely the absence of half-days** (the first of 2026 is 2026-11-27).
+3. **Ticker identity.**
+   - Q and DOW look like two issuers under one ticker: an earlier company's bars, a long gap, then a later company.
+   - SMCI and EXE look like delisting or over-the-counter periods.
+   - Alpaca's default symbol mapping (`asof`, on by default) returns an issuer's earlier tickers under today's
+     symbol, so EXE's pre-2024 history is Chesapeake's.
+4. **Distributions, not splits.**
+   - No stock split appears unadjusted.
+   - KDP on 2018-07-10 matches the special distribution at the Keurig Dr Pepper merger, PNR on 2018-05-01 the
+     nVent spin-off, and HON in 2026 looks like a spin-off. All are from memory and unchecked.
+   - Split-only adjustment leaves distributions as price drops. KDP alone is about a fifth of 2018's mean squared
+     overnight gap.
+5. **The blank mean ratio** means at least one zero or negative price in SIP or IEX.
+
+### Rules agreed for what follows (2026-10-28)
+
+- **No blanket exclusions.** The 175 large-move days are not excluded wholesale, and identity is not split
+  automatically at long gaps. Each case is classified on evidence, and genuine extreme events stay in the data.
+- **Half-days by the calendar.** They are handled with the exchange calendar, without silently compressing the
+  return timeline: an overnight return over a missing session says how many sessions it spans.
+- **A separate loader** for the volatility project, with rules fixed only after part 2. It must enforce causal
+  eligibility, keep missingness reasons, and satisfy both eligibility and feature warm-up.
+- **Before any fitting:** the exact candidate development, validation and test dates, the eligible sample sizes,
+  and a precise definition of the variance target and the overnight adjustment.
+
+### Prior exposure (checked against the records, 2026-10-28)
+
+**This repo:**
+- E5-E12 used all of 2016-01-04 to 2026-10 (E11 on mid caps).
+- The walk-forward sweeps scored every quarter from 2018-04-06.
+- E1 used volatility as a trading selector from 2020-07-28.
+- E6 compared 5-minute permutation entropy with volatility.
+
+**HEAT** (`~/Transfer-entropy-`, GitHub `Gaire-commits/Transfer-entropy-`; dates from `configs/heat_v1.yaml` and
+`heat/dataset.py`, `split_by_date`, which drops one embargo day before validation and before test):
+
+| HEAT1 role | Days | Use |
+|---|---|---|
+| Train | 2016-01-04 to 2021-12-31 | Fitting |
+| Embargo | 2022-01-03 | Not used for fitting or scoring |
+| Validation | 2022-01-04 to 2023-12-29 | Early stopping; hyperparameter tuning on 2026-10-22 |
+| Embargo | 2024-01-02 | Not scored; its bars feed later monthly peer tables |
+| Test | 2024-01-03 to 2026-10-12 | Scored once, 2026-10-22 (3,290,308 moments) |
+| Check runs | Test 2021-01-05 to 2021-12-31 (train to 2019, validate on 2020) | Scored repeatedly |
+
+- **The test's last day is inferred.** The run notebook records only "scored days: after 2023-12-31". The cache
+  ended 2026-10-12 for 502 of 503 stocks, and HEAT needs 20 stocks per moment.
+- **HEAT2** (registered 2026-10-23) uses the same split. The repo does not record whether its test has been scored.
+- **HEAT's README contradicts itself.** Two passages say HEAT2 superseded HEAT1 "before either has scored the test
+  days". Its results section and `configs/heat_v2.yaml` say HEAT1 scored them on 2026-10-22, and the registered
+  run is the evidence.
+
+**Consequence:**
+- No part of 2016-01-04 to 2026-10-12 is unseen. Every historical window for the volatility specification is
+  **reserved for this specification but previously exposed through related research**.
+- 2026-10-12 is the cache endpoint, not the start of an untouched confirmation period. Such a period, if used,
+  starts when this specification is registered.
+
+### Part 2 (built 2026-10-28, not yet run)
+
+**`scripts/fetch_reference.py` (notebook section 35)** fetches from Alpaca's REST API directly, because alpaca-py
+cannot send combined adjustments:
+- SIP daily bars for the 503 stocks under `raw`, `split`, `split,dividend`, `all`, and `split` with symbol mapping
+  off.
+- Corporate actions from 2015 for these stocks and the older tickers they were renamed from.
+- A seeded sample of extended-hours 5-minute bars, auction prints and trades at the open and close.
+- `manifest.json` with every request setting, the retrieval time and a SHA-256 per file.
+
+**`scripts/data_audit_v2.py` (section 36)**:
+- Rebuilds sessions on the NYSE calendar and reports coverage by year and month, with the 2026 change.
+- Checks half-day timestamps.
+- Computes dollar volume, with a trailing past-only median per stock-session.
+- Locates every impossible bar and every non-finite ratio, including the first audit's blank one.
+- Compares vendor daily bars with the rebuilt sessions after checking that both use the same adjustment basis,
+  finds which session definition the vendor uses, and checks auction prints.
+- Classifies every long gap and every move over 0.25 against the corporate-action records and the adjustment
+  settings: identity change, unadjusted split, cash distribution, spin-off, genuine market move (kept), or
+  unresolved (listed apart).
+
+It writes `sessions.parquet`, every stock-session with its status and the reason it is unusable. That is the
+base for the loader. The tests plant every case on synthetic bars.
+
+### Open questions (as of 2026-10-28)
+
+- Who issued the Q, DOW and IR segments, and why the SMCI and EXE gaps exist.
+- How KDP, PNR and HON appear under each adjustment setting.
+- Which price made the first audit's mean ratio non-finite.
+- Whether Alpaca's daily open and close are the auction prints.
+- Whether HEAT2's test has been scored.
+- **Drive has not received files written from Colab since about 2026-10-14** (folders appear, files do not; HEAT
+  logged the same). Results are preserved by zip downloads until this is fixed (HANDOVER.md).
+
 ## Advisor feedback and response (September 2026)
 
 The feedback asked for:
@@ -1417,6 +1557,8 @@ The response so far:
 | 2026-10-22 | Entropy ablation section: every with/without-entropy comparison consolidated in one table, no new run |
 | 2026-10-25 | Entropy-free SIP baseline (`sip_pe_free`, section 32) built and pre-registered; not yet run |
 | 2026-10-27 | Entropy-free SIP baseline run: no model beats cost (best gross +0.30, net −1.70). `gbm` against `gbm_ent` on identical rows: entropy adds nothing (−0.04 [−0.23, +0.17] gross bps) |
+| 2026-10-27 | New question: does permutation entropy of daily returns improve next-day volatility forecasts beyond HAR? Data audit part 1 run (section 34): 2,709 sessions to 2026-10-12, 97.5% of stock-days usable, half-days mostly treated as full days, 5 tickers with long gaps, 175 large moves |
+| 2026-10-28 | Prior exposure checked against HEAT's records: HEAT1 scored 2024-01-03 to 2026-10-12 on 2026-10-22 and tuned on 2022-01-04 to 2023-12-29. Data audit part 2 built (Alpaca reference fetch with a manifest, calendar-aware sessions, identity and corporate actions); not yet run |
 
 ## Next steps
 

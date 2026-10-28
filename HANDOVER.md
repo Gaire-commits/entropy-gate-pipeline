@@ -1,6 +1,7 @@
 # Handover
 
-Updated 2026-10-14 (after E12). A snapshot to restart work from, for Kshitiz or for a new Claude session.
+Updated 2026-10-28 (data audit for the volatility question). A snapshot to restart work from, for Kshitiz or
+for a new Claude session.
 [RESULTS.md](RESULTS.md) is the full record of results and [README.md](README.md) explains how
 everything works; this file is the short version, plus what is unfinished.
 
@@ -11,17 +12,25 @@ predictable periods in 5-minute price bars well enough to trade them after costs
 (rules, logistic regression, gradient-boosted trees, four deep architectures, versions with entropy
 inputs), an RL decision engine and an online RL agent, on SPY, sector ETFs, the S&P 500, cross-asset ETFs
 and a Nasdaq-100 hold-out. Nothing beat costs and entropy added nothing. On 2026-10-13 a control inside the
-lead-lag test turned up the first real pattern, a short-term reversal. The research now builds on that
-pattern and is judged on whether structure exists and when it is stronger, not on whether it pays.
+lead-lag test turned up the first real pattern, a short-term reversal. The research then built on that
+pattern and was judged on whether structure exists and when it is stronger, not on whether it pays.
+
+**Since 2026-10-27 the question is volatility:** does permutation entropy of daily returns improve next-day
+volatility forecasts beyond a volatility-history (HAR-style) baseline? A precise null counts as success. The
+work is at the data-audit stage: part 1 is done, part 2 is built and waits for a Colab run (sections 35-36).
+Nothing has been fitted. RESULTS.md, "Data audit for the volatility question", has the measured results, the
+interpretations, the open questions and the prior exposure of every date.
 
 ## Where everything is
 
 | What | Where |
 |---|---|
-| Code | `~/entropy-gate-pipeline`, GitHub `Gaire-commits/entropy-gate-pipeline` (private), branch `main` |
-| Tests | 348 pass (`python3 -m pytest -q`, about 3 min). `tests/test_frozen.py` fails if a pre-registered config is edited |
+| Code | `~/entropy-gate-pipeline`, GitHub `Gaire-commits/entropy-gate-pipeline` (public), branch `main` |
+| HEAT (transfer entropy) | `~/Transfer-entropy-`, GitHub `Gaire-commits/Transfer-entropy-`; outputs in Drive `.../outputs/heat_v1`, `heat_v2`. Its scored dates are in RESULTS.md (prior exposure) |
+| Tests | 434 pass (`python3 -m pytest -q`, about 2 min, with the parked `tests/test_folding.py` present). `tests/test_frozen.py` fails if a pre-registered config is edited |
 | Bars | Google Drive, `My Drive/entropy-gate-pipeline-data/data`. `bars/` is IEX (from July 2020); `bars_sip/` is SIP (503 stocks, 2016-01-04 to 2026-10-12, 98–99.7% of slots filled). Never committed |
 | Outputs | Drive, `.../outputs/<experiment>/`. Claude reads the `.md` reports through the Google Drive connector |
+| **Drive problem** | Since about 2026-10-14 Drive has received the folders Colab creates but none of the files (HEAT's runs too). Until fixed, every result is also zipped and downloaded to the Mac (`src/colab.py`: `download_results`, a time-limited `sync_drive`, and `drive_status`, which reports whether `/content/drive` is a real mount and Drive's free space). Check Drive storage first: a full Drive accepts folders but refuses files |
 | Runner | `notebooks/colab.ipynb` on Colab Pro. Sections 1–3 mount Drive, pull the code and link `data/` and `outputs/` |
 
 **Colab runtime:** CPU with High-RAM for everything on the S&P 500. A GPU only for the deep models.
@@ -51,6 +60,10 @@ feeds must never share a cache folder, and the fetch refuses to overwrite one wi
 | 31 | E12 correlated peers |
 | 32 | Entropy-free SIP baseline (run 2026-10-27: no model beats cost) |
 | 33 | `gbm_ent` on SIP, paired with section 32 by `scripts/entropy_effect.py` (run 2026-10-27: entropy adds nothing) |
+| 34 | Data audit part 1 (run 2026-10-27; its files never reached Drive, see the Drive problem) |
+| 34b | Preserve: zip and download results, time-limited Drive flush, Drive status |
+| 35 | Reference data from Alpaca: daily bars under five adjustment/mapping settings, corporate actions, a session sample, manifest (not yet run) |
+| 36 | Data audit part 2 (not yet run) |
 | 9 | All results (old summaries only) |
 
 Do not use "Run all": it reruns every old section.
@@ -105,6 +118,18 @@ Do not use "Run all": it reruns every old section.
 
 ## Unfinished
 
+0. **The volatility question, in order** (nothing fitted yet):
+   1. Run sections 34b (preserve part 1, if the runtime still has it), 35 (reference fetch) and 36 (audit part
+      2). Each ends by downloading a zip to the Mac.
+   2. Record part 2 in RESULTS.md: measured, interpreted, unresolved, kept apart.
+   3. Fix the volatility loader's rules from part 2's findings. It must enforce causal eligibility, keep
+      missingness reasons (`sessions.parquet` has them), satisfy eligibility and feature warm-up, handle
+      half-days by the calendar without compressing the timeline, and never blanket-exclude large moves or
+      split identity at gaps without evidence.
+   4. Before any fitting, return: exact candidate development, validation and test dates; eligible sample sizes;
+      the precise variance target and overnight adjustment. Describe the history as reserved for this
+      specification but previously exposed (RESULTS.md, prior exposure).
+   5. Open: whether HEAT2's test has been scored; why Drive refuses files.
 1. **The forward test ([LIVE_PLAN.md](LIVE_PLAN.md)).** Freeze the rules, then score every new trading day by
    a daily AWS job (no orders). Done: the plan, E12 (the correlated-peers arm is dropped). Next: section 30's
    length calculation (its first Colab run wrote nothing; the script passes its end-to-end test), then the
@@ -171,6 +196,11 @@ Do not use "Run all": it reruns every old section.
 | `src/leadlag.py` | E5: sector lead-lag with a shuffled-sector control |
 | `src/reversal.py` | E6–E8: the reversal by state, and as a slope |
 | `src/ibkr.py`, `src/ibkr_capture.py` | Local market-data recording |
+| `src/nyse.py` | NYSE calendar 2016-2026: closures and 1:00 pm half-days (session counts tested against the cache) |
+| `src/alpaca_rest.py` | Direct REST calls for reference data (combined adjustments, symbol mapping off, auctions, corporate actions), keys never logged |
+| `src/audit.py` | Data audit part 2: calendar-aware sessions, impossible values, dollar volume, vendor comparison, identity and corporate actions |
+| `src/colab.py` | Drive status, time-limited flush, zip download of results |
+| `scripts/data_audit.py`, `scripts/fetch_reference.py`, `scripts/data_audit_v2.py` | Data audit part 1; reference fetch with manifest; data audit part 2 |
 
 Each script's docstring gives its usage. Experiments on the reversal: `scripts/leadlag.py`,
 `scripts/reversal.py`, `scripts/reversal_slope.py`.
