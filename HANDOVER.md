@@ -209,6 +209,7 @@ Do not use "Run all": it reruns every old section.
 | `src/reversal.py` | E6–E8: the reversal by state, and as a slope |
 | `src/ibkr.py`, `src/ibkr_capture.py` | Local market-data recording |
 | `src/nyse.py` | NYSE calendar 2016-2026: closures and 1:00 pm half-days (session counts tested against the cache) |
+| `src/portfolio.py`, `notebooks/portfolio_tool.ipynb` | Separate notebook: a weekly long-only portfolio from a ridge forecast on daily returns, then what PE adds; costs, benchmarks, look-ahead check, hold-out locked by default (RESULTS.md, "Portfolio tool") |
 | `src/alpaca_rest.py` | Direct REST calls for reference data (combined adjustments, symbol mapping off, auctions, corporate actions), keys never logged |
 | `src/audit.py` | Data audit part 2: calendar-aware sessions, impossible values, dollar volume, vendor comparison, identity and corporate actions |
 | `src/audit_followup.py` | Follow-up tables: vendor against cache ranges and closes, truncated days, adjustment steps against records, evidence behind each large move |

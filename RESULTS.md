@@ -1758,6 +1758,25 @@ V_id(t) = rho(t)                              intraday only, a sensitivity targe
 - **Drive has not received files written from Colab since about 2026-10-14** (folders appear, files do not; HEAT logged the same). Results
   are preserved by zip downloads until this is fixed (HANDOVER.md).
 
+## Portfolio tool: does PE help a daily-return portfolio? (run 2026-11-02, hold-out not scored)
+
+`notebooks/portfolio_tool.ipynb` (code `src/portfolio.py`, tests `tests/test_portfolio.py`): a separate question from the volatility project, on returns rather than variance. Weekly long-only book of the best tenth of eligible stocks by a ridge forecast, filled at the next session's official close, at 5 bp one-way plus square-root impact on $10M. Same rows, folds and rules for `base`, `base_pe` (rank of PE: m=3, delay 1, 63 patterns) and `base_pe_x` (three interactions fixed in advance). The rule was written down before the run.
+
+**Measured** (251 decisions, 2019-01-04 to 2023-12-21, on the real data on this Mac). SPY and BIL were not available there (no keys), so these Sharpe ratios are on raw returns and there is no market line; that path was run only on stand-in data. The notebook on Colab adds both.
+
+| Validation, 2022-01-04 to 2024-01-02 | Net return, annual | Sharpe | Max drawdown | One-way turnover, per year | IC (t) |
+|---|---:|---:|---:|---:|---:|
+| base | -0.6% | 0.09 | -28.0% | 30.2x | -0.013 (-0.67) |
+| base_pe | +0.9% | 0.16 | -27.6% | 30.4x | -0.013 (-0.65) |
+| base_pe_x | -0.5% | 0.10 | -29.1% | 30.1x | -0.012 (-0.62) |
+| equal-weight | +4.9% | 0.34 | -20.4% | 0.7x | |
+
+- PE against `base`, validation: IC gap +0.0004 [-0.0001, +0.0008], Clark-West t 1.17, net-return gap +1.4% a year [-0.2%, +3.0%]. Interactions: IC gap +0.0011 [-0.0007, +0.0028], Clark-West t 0.17, net gap 0.0% [-3.9%, +4.1%]. Development (2019-2021) shows the same: neither passes the rule on either count in either window.
+- All of 2019-2023: `base` +8.4% a year net, equal-weight +18.7%. Costs took 34.8% of capital over five years. Before costs `base` beats equal-weight in validation (+7.2% against +5.0%), with a slightly negative IC and higher volatility (24% against 20%).
+- Checks: scrambling every price after a date changes nothing a decision on that date sees (features, eligibility, forecast). The tests recover a planted signal and find none in noise.
+
+**Interpretation.** With these features, at this horizon, the forecast shows no skill out of sample, so the book loses to equal-weight after costs. PE adds nothing the rule can distinguish from zero. The survivor-biased universe flatters every absolute return here. The hold-out (2024-01-03 on) stays unscored, and it overlaps the volatility project's reserved test window. This run does add exposure of PE on 2019-2023 for returns, not for next-day variance.
+
 ## Advisor feedback and response (September 2026)
 
 The feedback asked for:
@@ -1846,6 +1865,7 @@ The response so far:
 | 2026-10-28 | Volatility panel built (`src/volpanel.py`, `scripts/vol_sample.py`): the variance target, the rules and candidate windows with their eligible stock-days. Nothing registered, nothing fitted |
 | 2026-10-28 | Auction and trade check fetched and run (rerun of sections 35-36): the vendor's close is the official close (99.8% of symbol-days, 30 of 30 at trade level), the cache's is not (63.5%); the vendor's open is the opening print wherever the trade-level sample can say, with exceptions where a regular trade came first. The comparison had a flaw (split-adjusted prices rounded to the cent), so the full-sample open rates are lower bounds; the code now compares raw prices and the rerun is pending |
 | 2026-10-28 | Open gap on raw prices (section 38): the vendor's close is the official close (99.99%); its open equals the listing exchange's opening print on 74.2% of symbol-days, is more than 25 bp away on 5.4%, and up to 13% away on stress days (March 2020). It is 7% of the variance of an approximate V. Proposed: the official open as O, which needs the universe's auction prints |
+| 2026-11-02 | Portfolio tool built (`notebooks/portfolio_tool.ipynb`) and run with the hold-out locked: no forecast skill out of sample, PE and interactions add nothing the rule can tell from zero, and the weekly book loses to equal-weight after costs (validation: -0.6% a year against +4.9%) |
 
 ## Next steps
 
