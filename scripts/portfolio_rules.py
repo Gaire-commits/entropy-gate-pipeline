@@ -29,7 +29,8 @@ def load_market(reference, cfg: pf.Config) -> pf.Market:
     actions = audit.normalize_actions(pd.read_parquet(f"{reference}/corporate_actions.parquet"))
     universe = pd.read_csv(ROOT / "universe" / "sp500.csv")
     registry = volpanel.load_registry(ROOT / "registry" / "vol_registry.csv")
-    return pf.build_market(daily["raw"], daily["split"], daily["all"], actions, registry, universe, until=pf.lock_date(cfg))
+    joined = pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv")
+    return pf.build_market(daily["raw"], daily["split"], daily["all"], actions, registry, universe, until=pf.lock_date(cfg), joined=joined)
 
 
 def search(m: pf.Market, doc: dict) -> pd.DataFrame:
@@ -38,7 +39,7 @@ def search(m: pf.Market, doc: dict) -> pd.DataFrame:
     base = replace(pf.Config(sector_cap=doc["fixed"]["sector_cap"], execution=doc["fixed"]["execution"]), **doc["costs"])
     rows = []
     for cadence in grid["cadence_sessions"]:
-        cfg = replace(base, rebalance_every=cadence, horizon=cadence)
+        cfg = replace(base, rebalance_every=cadence, horizon=cadence, tranches=grid["tranches_by_cadence"][cadence])
         feats, eligible = pf.build_features(m, cfg)
         target = pf.forward_returns(m, cfg)
         dates = pf.decision_dates(m.close.index, cfg)
@@ -49,7 +50,7 @@ def search(m: pf.Market, doc: dict) -> pd.DataFrame:
         for top, mult in itertools.product(grid["top_frac"], grid["hold_multiple"]):
             rule = replace(cfg, top_frac=top, hold_frac=top * mult)
             book = pf.simulate(pf.portfolio_targets(forecasts, m, rule), m, rule, end)
-            row = {"cadence": cadence, "top_frac": top, "hold_frac": top * mult}
+            row = {"cadence": cadence, "tranches": cfg.tranches, "top_frac": top, "hold_frac": top * mult}
             for name, (a, b) in spans.items():
                 d = book.loc[a:b]
                 active = d["net"] - ew["net"].reindex(d.index).fillna(0.0)
@@ -72,7 +73,7 @@ def choose(table: pd.DataFrame, tie: float = 0.05) -> pd.Series:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--reference", default="data/reference")
-    ap.add_argument("--protocol", default=str(ROOT / "protocols" / "portfolio_rule_search.yaml"))
+    ap.add_argument("--protocol", default=str(ROOT / "protocols" / "portfolio_rule_search_v2.yaml"))
     args = ap.parse_args()
     with open(args.protocol) as f:
         doc = yaml.safe_load(f)
@@ -83,7 +84,7 @@ def main() -> int:
     pd.set_option("display.max_columns", 30)
     print(table.round(4).to_string(index=False))
     pick = choose(table)
-    print(f"\nchosen by the rule: every {int(pick['cadence'])} sessions, best {pick['top_frac']:.0%}, keep while in the best {pick['hold_frac']:.0%}")
+    print(f"\nchosen by the rule: hold {int(pick['cadence'])} sessions in {int(pick['tranches'])} staggered tranche(s), best {pick['top_frac']:.0%}, keep while in the best {pick['hold_frac']:.0%}")
     print(f"score {pick['score']:.3f} (information ratio against equal-weight: development {pick['ir_dev']:.3f}, validation {pick['ir_val']:.3f}); this is the best of {len(table)}")
     return 0
 

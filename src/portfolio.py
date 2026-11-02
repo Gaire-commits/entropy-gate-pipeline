@@ -26,8 +26,9 @@ from src import volpanel
 @dataclass(frozen=True)
 class Config:
     # the portfolio
-    rebalance_every: int = 5        # sessions between decisions
+    rebalance_every: int = 5        # sessions each tranche of the book is held
     horizon: int = 5                # sessions the forecast target spans
+    tranches: int = 1               # staggered sub-books, so no single calendar phase decides the result
     top_frac: float = 0.10          # buy the best tenth of eligible stocks, equally weighted
     hold_frac: float = 0.20         # keep a holding while it stays in the best fifth (cuts turnover)
     sector_cap: float = 0.30        # no sector above this share of the names held
@@ -80,6 +81,7 @@ class Market:
     event: pd.DataFrame            # sessions whose return is mechanical or not trustworthy: return set to zero
     sector: pd.Series
     truncated: pd.DatetimeIndex = field(default_factory=lambda: pd.DatetimeIndex([]))
+    member: pd.DataFrame | None = None   # in the index by then; empty means no join dates were given
 
 
 def lock_date(cfg: Config, score_holdout: bool = False) -> pd.Timestamp:
@@ -87,11 +89,18 @@ def lock_date(cfg: Config, score_holdout: bool = False) -> pd.Timestamp:
     return pd.Timestamp(cfg.holdout_end) if score_holdout else pd.Timestamp(cfg.holdout_start) - pd.Timedelta(days=1)
 
 
+def load_joined(path) -> pd.Series:
+    """Each symbol's S&P 500 join date (registry/sp500_join_dates.csv); a blank means no date is known."""
+    j = pd.read_csv(path)
+    return pd.Series(pd.to_datetime(j["date_added"]).to_numpy(), index=j["symbol"], name="joined")
+
+
 def build_market(raw: pd.DataFrame, split: pd.DataFrame, adj: pd.DataFrame, actions: pd.DataFrame, registry: pd.DataFrame,
-                 universe: pd.DataFrame, until: pd.Timestamp | None = None) -> Market:
+                 universe: pd.DataFrame, until: pd.Timestamp | None = None, joined: pd.Series | None = None) -> Market:
     """The panel from the vendor's daily bars, with the rules the data audit settled on: placeholder bars do not count,
     the vendor's truncated days hold no usable price, and corporate-action sessions are marked (src/volpanel.py). Nothing
-    after `until` is loaded, so a locked period is not merely unscored but absent."""
+    after `until` is loaded, so a locked period is not merely unscored but absent. With `joined`, a stock counts as in the
+    universe only from its index-join date, which removes the run-up into the index; companies since removed stay absent."""
     def dated(f):
         f = f[f["symbol"].isin(universe["symbol"])].copy()
         f["date"] = pd.to_datetime(f["date"]).dt.normalize()
@@ -116,8 +125,12 @@ def build_market(raw: pd.DataFrame, split: pd.DataFrame, adj: pd.DataFrame, acti
         if s in event.columns and d in event.index:
             event.loc[d, s] = True
     sector = universe.set_index("symbol")["sector"].reindex(close.columns).fillna("Unknown")
+    member = None
+    if joined is not None:
+        join = joined.reindex(close.columns)
+        member = pd.DataFrame({s: (cal >= join[s]) if pd.notna(join[s]) else np.ones(len(cal), dtype=bool) for s in close.columns}, index=cal)
     return Market(close=close, open=wide("open").where(real), raw_close=wide("raw_close").where(real),
-                  dollar_volume=dv.where(real), real=real, event=event, sector=sector, truncated=truncated)
+                  dollar_volume=dv.where(real), real=real, event=event, sector=sector, truncated=truncated, member=member)
 
 
 def clean_returns(m: Market) -> pd.DataFrame:
@@ -220,6 +233,8 @@ def build_features(m: Market, cfg: Config) -> tuple[dict[str, pd.DataFrame], pd.
     coverage = m.real.rolling(252, min_periods=252).mean()
     eligible = pd.DataFrame(have, index=m.close.index, columns=m.close.columns) & m.real \
         & (m.raw_close >= cfg.min_raw_close) & (adv63(m) >= cfg.min_dollar_volume) & (coverage >= cfg.min_coverage)
+    if m.member is not None:
+        eligible = eligible & m.member
 
     clip = lambda f: f.clip(-4, 4).where(eligible)  # noqa: E731
     feats = {
@@ -283,10 +298,17 @@ def _stack(feats: dict, names: list[str], day: pd.Timestamp, mask: pd.Series) ->
     return np.column_stack([feats[n].loc[day, idx].to_numpy(dtype=float) for n in names]), idx
 
 
+def step(cfg: Config) -> int:
+    """Sessions between decisions: one tranche turns over each time."""
+    if cfg.rebalance_every % cfg.tranches:
+        raise ValueError(f"{cfg.tranches} tranches do not divide a {cfg.rebalance_every}-session holding period evenly")
+    return cfg.rebalance_every // cfg.tranches
+
+
 def decision_dates(index: pd.DatetimeIndex, cfg: Config, score_holdout: bool = False) -> pd.DatetimeIndex:
-    """Dates with a decision: every `rebalance_every` sessions once `min_train_sessions` of usable history exist, and only
-    where the decision's whole target is realized by the lock."""
-    at = np.arange(252 + cfg.min_train_sessions, len(index) - 1 - cfg.horizon, cfg.rebalance_every)
+    """Dates with a decision: every step() sessions once `min_train_sessions` of usable history exist, and only where the
+    decision's whole target is realized by the lock."""
+    at = np.arange(252 + cfg.min_train_sessions, len(index) - 1 - cfg.horizon, step(cfg))
     return index[at[index[at + 1 + cfg.horizon] <= lock_date(cfg, score_holdout)]]
 
 
@@ -464,11 +486,44 @@ def simulate(targets: dict[pd.Timestamp, dict[str, float]], m: Market, cfg: Conf
                                        "top_contribution"]).set_index("date")
 
 
+def tranche_targets(forecasts: pd.DataFrame, m: Market, cfg: Config) -> list[dict]:
+    """Each staggered sub-book's own decisions: tranche k takes every cfg.tranches-th decision, starting at the k-th, and
+    equal-weights its names, given what that tranche held before."""
+    out = [{} for _ in range(cfg.tranches)]
+    held = [set() for _ in range(cfg.tranches)]
+    for n, (day, f) in enumerate(forecasts.iterrows()):
+        k = n % cfg.tranches
+        names = choose_names(f, held[k], m.sector, cfg)
+        if names:
+            out[k][day] = {s: 1.0 / len(names) for s in names}
+            held[k] = set(names)
+    return out
+
+
+def portfolio_targets(forecasts: pd.DataFrame, m: Market, cfg: Config) -> dict:
+    """The whole book at each decision: an equal share in each tranche that has started, each holding its latest names."""
+    per = tranche_targets(forecasts, m, cfg)
+    latest, out = [None] * cfg.tranches, {}
+    for day in forecasts.index:
+        for k in range(cfg.tranches):
+            if day in per[k]:
+                latest[k] = per[k][day]
+        live = [w for w in latest if w]
+        if live:
+            total: dict[str, float] = {}
+            for w in live:
+                for s, x in w.items():
+                    total[s] = total.get(s, 0.0) + x / len(live)
+            out[day] = total
+    return out
+
+
 def reconcile_target(targets: dict, m: Market, cfg: Config, end: pd.Timestamp | None = None) -> pd.DataFrame:
-    """Does the forecast target equal what the book earns? For each decision: the book's gross return from its fill to the next
-    fill, run through simulate(), against the same weights on forward_returns(), and against the target an execution one
-    session earlier would have needed (`unlagged`). `target` is empty where a name could not fill."""
-    free = replace(cfg, cost_bps=0.0, impact=0.0)
+    """Does the forecast target equal what a sub-book earns? `targets` is one tranche's decisions, held `horizon` sessions
+    apart. For each: its gross return from its fill to the next fill, run through simulate(), against the same weights on
+    forward_returns(), and against the target an execution one session earlier would have needed (`unlagged`). `target` is
+    empty where a name could not fill."""
+    free = replace(cfg, cost_bps=0.0, impact=0.0, rebalance_every=cfg.horizon, tranches=1)
     daily = simulate(targets, m, free, end)
     fwd = forward_returns(m, cfg)
     growth = (1.0 + asset_returns(m, cfg.execution)).cumprod()
@@ -485,17 +540,6 @@ def reconcile_target(targets: dict, m: Market, cfg: Config, end: pd.Timestamp | 
                      "unlagged": float(w @ (growth.iloc[b - 1][names].to_numpy() / growth.iloc[a - 1][names].to_numpy() - 1.0))})
     out = pd.DataFrame(rows)
     out["gap"] = out["book"] - out["target"]
-    return out
-
-
-def portfolio_targets(forecasts: pd.DataFrame, m: Market, cfg: Config) -> dict:
-    """Equal weights on the chosen names at each decision, given what was held before it."""
-    out, held = {}, set()
-    for day, f in forecasts.iterrows():
-        names = choose_names(f, held, m.sector, cfg)
-        if names:
-            out[day] = {s: 1.0 / len(names) for s in names}
-            held = set(names)
     return out
 
 
@@ -653,7 +697,7 @@ def perturbed_after(m: Market, day: pd.Timestamp, seed: int = 1) -> Market:
     shock = pd.DataFrame(np.exp(rng.normal(0, 0.2, m.close.shape)), index=m.close.index, columns=m.close.columns)
     shock[m.close.index <= day] = 1.0
     return Market(close=m.close * shock, open=m.open * shock, raw_close=m.raw_close * shock, dollar_volume=m.dollar_volume * shock ** 3,
-                  real=m.real, event=m.event, sector=m.sector, truncated=m.truncated)
+                  real=m.real, event=m.event, sector=m.sector, truncated=m.truncated, member=m.member)
 
 
 def no_lookahead_check(m: Market, cfg: Config, day: pd.Timestamp) -> dict:

@@ -346,9 +346,54 @@ def test_the_rule_search_applies_its_stated_rule():
     assert script.choose(table)["turn_val"] == 5.0                               # tied within 0.05: the lower turnover
     assert script.choose(pd.DataFrame({"score": [0.30, 0.10], "turn_val": [20.0, 1.0]}))["turn_val"] == 20.0
     m, _ = market(n_days=1000, n_syms=60)
-    doc = {"grid": {"cadence_sessions": [5, 10], "top_frac": [0.2], "hold_multiple": [1.0, 2.0]},
+    doc = {"grid": {"cadence_sessions": [5, 10], "tranches_by_cadence": {5: 1, 10: 2}, "top_frac": [0.2], "hold_multiple": [1.0, 2.0]},
            "windows": {"development": ["2021-12-15", "2022-04-30"], "validation": ["2022-05-01", "2022-10-20"]},
            "costs": {"cost_bps": 5.0, "impact": 1.0, "aum": 1e7}, "fixed": {"sector_cap": 1.0, "execution": "next_close", "model": "base"}}
     out = script.search(m, doc)
     assert len(out) == 4 and out["score"].is_monotonic_decreasing
     assert (out["score"] == out[["ir_dev", "ir_val"]].min(axis=1)).all()
+
+
+def test_staggered_tranches_share_the_book_and_each_earns_its_own_target():
+    m, _ = market(signal=0.001)
+    cfg = replace(CFG, rebalance_every=21, horizon=21, tranches=3, top_frac=0.2, hold_frac=0.2, sector_cap=1.0)
+    assert pf.step(cfg) == 7
+    with pytest.raises(ValueError):
+        pf.step(replace(cfg, tranches=2))
+    feats, elig = pf.build_features(m, cfg)
+    target = pf.forward_returns(m, cfg)
+    dates = pf.decision_dates(m.close.index, cfg, score_holdout=True)
+    assert (np.diff([m.close.index.get_loc(d) for d in dates]) == 7).all()
+    forecasts, _ = pf.walk_forward(feats, elig, target, pf.MODELS["base"], dates, cfg)
+    per = pf.tranche_targets(forecasts, m, cfg)
+    book = pf.portfolio_targets(forecasts, m, cfg)
+    assert all(sum(w.values()) == pytest.approx(1.0) for w in book.values())
+    for k, tr in enumerate(per):
+        assert list(tr) == list(forecasts.index[k::3])                           # each tranche every third decision
+        check = pf.reconcile_target(tr, m, cfg)
+        assert len(check) >= 2 and check["gap"].abs().max() < 1e-12
+    # after all three have started, the book holds all three tranches' names in equal thirds
+    day = forecasts.index[2]
+    expected = {}
+    for tr in per:
+        latest = tr[max(d for d in tr if d <= day)]
+        for s, x in latest.items():
+            expected[s] = expected.get(s, 0.0) + x / 3
+    assert book[day] == pytest.approx(expected)
+
+
+def test_a_stock_is_not_eligible_before_it_joined_the_index():
+    m, _ = market(n_days=420, n_syms=60)
+    days = m.close.index
+    member = pd.DataFrame(True, index=days, columns=m.close.columns)
+    member["S000"] = days >= days[400]
+    mk = pf.Market(m.close, m.open, m.raw_close, m.dollar_volume, m.real, m.event, m.sector, member=member)
+    _, plain = pf.build_features(m, CFG)
+    _, filtered = pf.build_features(mk, CFG)
+    assert plain.loc[days[399], "S000"] and not filtered.loc[days[399], "S000"] and filtered.loc[days[400], "S000"]
+    assert filtered["S001"].equals(plain["S001"])
+    actions = pd.DataFrame(columns=["kind", "symbol", "when", "source_symbol", "old_symbol", "new_symbol"])
+    registry = pd.DataFrame(columns=["symbol", "date", "effect", "kind"])
+    bars = pd.DataFrame([{"symbol": s, "date": d, "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5, "volume": 1e6, "trade_count": 100.0} for s in ("AAA", "BBB") for d in days[:30]])
+    built = pf.build_market(bars, bars, bars, actions, registry, pd.DataFrame({"symbol": ["AAA", "BBB"], "sector": ["X", "Y"]}), joined=pd.Series({"AAA": days[10], "BBB": pd.NaT}))
+    assert not built.member.loc[days[9], "AAA"] and built.member.loc[days[10], "AAA"] and built.member["BBB"].all()

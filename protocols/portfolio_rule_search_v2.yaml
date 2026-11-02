@@ -1,0 +1,33 @@
+# Amends protocols/portfolio_rule_search.yaml. Written and committed after that search ran and before this one runs.
+#
+# DISCLOSURE. The first search picked: every 21 sessions, best 20%, no buffer (information ratio against equal-weight 0.58 in
+# development, 0.34 in validation). Its table was seen before this file was written, so these changes are post hoc. Two checks
+# on it, on development and validation only, led to them:
+#   1. The calendar phase. The same rule with decisions started 5, 10 or 15 sessions later gave development information ratios
+#      of 0.07, -0.06 and -0.15. The pick's edge rested largely on which dates it happened to trade.
+#   2. Survivorship. Keeping each stock only from its index-join date cut equal-weight's development return from 28.8% to 25.9%
+#      a year. The IC did not change.
+# Neither change was chosen because it improved a result: staggering lowers the pick's information ratio in the phases
+# where it was luckiest, and the join-date rule lowers every absolute return.
+#
+# WHAT CHANGED. (a) The book is staggered: an equal share in each tranche, each holding for the full period, one tranche turning
+# over per decision, so no single calendar phase decides the result. (b) A stock is eligible only from its index-join date
+# (registry/sp500_join_dates.csv), which removes the run-up into the index; companies removed since remain absent.
+#
+# WHAT DID NOT. The grid, the costs, the selection rule and the windows. Candidates seen across both searches: 24.
+windows:
+  development: ["2019-01-04", "2022-01-03"]
+  validation: ["2022-01-04", "2024-01-02"]
+costs:
+  cost_bps: 5.0
+  impact: 1.0
+  aum: 10000000.0
+grid:
+  cadence_sessions: [5, 10, 21]
+  tranches_by_cadence: {5: 1, 10: 2, 21: 3}
+  top_frac: [0.10, 0.20]
+  hold_multiple: [1.0, 2.0]
+fixed:
+  sector_cap: 0.30
+  execution: next_close
+  model: base
