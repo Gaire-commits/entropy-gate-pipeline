@@ -28,7 +28,7 @@ variance target, the candidate windows with their sample sizes, and the prior ex
 |---|---|
 | Code | `~/entropy-gate-pipeline`, GitHub `Gaire-commits/entropy-gate-pipeline` (public), branch `main` |
 | HEAT (transfer entropy) | `~/Transfer-entropy-`, GitHub `Gaire-commits/Transfer-entropy-`; outputs in Drive `.../outputs/heat_v1`, `heat_v2`. Its scored dates are in RESULTS.md (prior exposure) |
-| Tests | 460 pass (`python3 -m pytest -q`, about 4 min, with the parked `tests/test_folding.py` present). `tests/test_frozen.py` fails if a pre-registered config is edited |
+| Tests | 481 pass (`python3 -m pytest -q`, about 4 min, with the parked `tests/test_folding.py` present). `tests/test_frozen.py` fails if a pre-registered config is edited |
 | Bars | Google Drive, `My Drive/entropy-gate-pipeline-data/data`. `bars/` is IEX (from July 2020); `bars_sip/` is SIP (503 stocks, 2016-01-04 to 2026-10-12, 98–99.7% of slots filled). Never committed |
 | Outputs | Drive, `.../outputs/<experiment>/`. Claude reads the `.md` reports through the Google Drive connector |
 | **Drive problem** | Since about 2026-10-14 Drive has received the folders Colab creates but none of the files (HEAT's runs too). Until fixed, every result is also zipped and downloaded to the Mac (`src/colab.py`: `download_results`; `drive_status` reports whether `/content/drive` is a real mount and Drive's free space; `ensure_drive` remounts before a section). Flushing unmounts Drive and breaks the `data/` and `outputs/` links, so `sync_drive` is for the end of a session only (it crashed section 36 on 2026-10-28 when run between sections). Check Drive storage first: a full Drive accepts folders but refuses files |
