@@ -151,9 +151,12 @@ def event_sessions(actions: pd.DataFrame, v: pd.DataFrame, registry: pd.DataFram
 
 
 def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFrame, registry: pd.DataFrame,
-                symbols: list[str], rules: Rules = Rules(), start="2016-01-04", end="2026-10-12") -> pd.DataFrame:
+                symbols: list[str], rules: Rules = Rules(), start="2016-01-04", end="2026-10-12",
+                official: pd.DataFrame | None = None) -> pd.DataFrame:
     """The panel: every symbol on every NYSE session from `start` to `end`, with V, V_id, the close-to-close return, and the
-    reason each is missing. `vendor` is vendor_frame(...); `sessions` the audit's sessions.parquet."""
+    reason each is missing. `vendor` is vendor_frame(...); `sessions` the audit's sessions.parquet. With `official`
+    (src/official.py), the overnight return runs to the listing exchange's official open where it printed one, and to the
+    vendor's open, flagged in `open_source`, where it did not. The gap is measured on raw prices, so the correction is exact."""
     cal = nyse.sessions(start, end)
     p = pd.MultiIndex.from_product([sorted(symbols), cal], names=["symbol", "date"]).to_frame(index=False)
     p["half_day"] = np.asarray(nyse.is_half_day(p["date"]))
@@ -204,6 +207,12 @@ def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFr
     p["reason"] = np.select(range_conds + night_conds, RANGE_REASONS + OVERNIGHT_REASONS, "")
     p["rho"] = np.where(p["reason_id"] == "", PARKINSON * lr_v ** 2, np.nan)
     p["r_on"] = np.where(p["reason"] == "", np.log(p["open"] / p["prev_close"]), np.nan)
+    p["open_source"] = "vendor"
+    if official is not None:
+        gap = official[["symbol", "date", "open_gap_bp"]].dropna()
+        p = p.merge(gap, on=["symbol", "date"], how="left")
+        p["open_source"] = np.where(p["open_gap_bp"].notna(), "official", "vendor")
+        p["r_on"] = p["r_on"] - p["open_gap_bp"].fillna(0.0) / 1e4
     p["V"] = p["r_on"] ** 2 + p["rho"]
     ret_ok = p["in_span"] & p["bar_ok"] & ~p["trunc"] & p["prev_ok"] & ~p["prev_trunc"] & ~p["is_break"] & ~p["event"]
     p["ret"] = np.where(ret_ok, np.log(p["close"] / p["prev_close"]), np.nan)
@@ -211,10 +220,11 @@ def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFr
     return p
 
 
-def add_eligibility(p: pd.DataFrame, rules: Rules, warmup: int) -> pd.DataFrame:
+def add_eligibility(p: pd.DataFrame, rules: Rules, warmup: int, joined: pd.Series | None = None) -> pd.DataFrame:
     """Causal eligibility of the forecast origin t (the target is the session t+1). Everything but `target_ok` is known at
     the close of t. `warmup` is the window, in sessions, that must hold valid values for the longest feature (the
-    permutation-entropy window plus its embedding); the HAR lags are the daily value and the weekly and monthly counts."""
+    permutation-entropy window plus its embedding); the HAR lags are the daily value and the weekly and monthly counts.
+    With `joined` (symbol to index-join date), an origin before the stock joined is not eligible."""
     p = p.copy()
     key = [p["symbol"], p["segment"]]                       # windows never cross an identity change
 
@@ -232,7 +242,8 @@ def add_eligibility(p: pd.DataFrame, rules: Rules, warmup: int) -> pd.DataFrame:
     p["V_id_next"], p["target_half_day"] = g["rho"].shift(-1), g["half_day"].shift(-1)
     p["target_in_span"] = g["in_span"].shift(-1).eq(True)
     p["target_ok"] = p["V_next"].notna()
-    p["eligible"] = p["target_ok"] & p["liq_ok"] & p["lag_ok"] & p["week_ok"] & p["month_ok"] & p["warm_ok"]
+    p["member_ok"] = True if joined is None else ~(p["date"] < p["symbol"].map(joined))     # no date known: a member
+    p["eligible"] = p["target_ok"] & p["liq_ok"] & p["lag_ok"] & p["week_ok"] & p["month_ok"] & p["warm_ok"] & p["member_ok"]
     return p
 
 

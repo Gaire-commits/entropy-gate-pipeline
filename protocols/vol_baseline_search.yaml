@@ -1,0 +1,25 @@
+# Choosing the volatility baseline, on development and validation only, with no permutation entropy anywhere. Written and
+# committed before this search ran.
+#
+# THE TARGET. V = r_on^2 + rho: the overnight gap explicit, plus the Parkinson range (RESULTS.md, "The volatility panel"). Its logarithm
+# is what the registered comparison scores; a variance of exactly zero is floored at (1 bp)^2. Half-day targets are left out of fitting and
+# scoring, and half-days stay in the inputs. An origin before the stock's index-join date is not eligible.
+#
+# THE OPEN. The registered target uses the listing exchange's official open. Those prints for all stocks need Alpaca keys, which are not on
+# the machine this search runs on, so this search uses the vendor's open. The form chosen here stands either way. The validation gate is
+# rerun on the official open before the comparison (protocols/volatility_v1.yaml); if it fails there, the comparison does not run.
+#
+# THE CANDIDATES, all pooled over stocks unless named, refit every 21 sessions on every realized row:
+#   log_har            log V(t+1) on log V(t), log of the 5-session mean, log of the 22-session mean
+#   log_har_long       the same plus the stock's own mean log V over the last 252 sessions (at least 63)
+#   log_har_per_stock  the first, fitted per stock where it has at least 126 rows
+#   level_har          V(t+1) on V(t) and the 5- and 22-session means, in levels
+#
+# THE RULE. Lowest mean QLIKE on the development window (robust to a noisy variance proxy, and comparable across log and level models). A
+# candidate within 0.5% of the best counts as tied, and the tie goes to the simplest, in the order above. Then the gate: on validation, the chosen
+# baseline's QLIKE and squared log error must each be lower than those of the monthly mean carried forward, with the 95% block-bootstrap
+# interval of the gap below zero. If it fails, the comparison is not run on it.
+#
+# Nothing after 2024-01-02 is loaded.
+candidates: [log_har, log_har_long, log_har_per_stock, level_har]
+tie: 0.005
