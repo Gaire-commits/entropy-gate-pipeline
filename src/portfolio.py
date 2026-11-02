@@ -14,7 +14,7 @@ advance). notebooks/portfolio_tool.ipynb runs them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -52,6 +52,7 @@ class Config:
     # the windows: decision dates. The last is not scored unless asked for
     validation_start: str = "2022-01-04"
     holdout_start: str = "2024-01-03"
+    holdout_end: str = "2026-10-12"
     seed: int = 0
 
 
@@ -81,14 +82,20 @@ class Market:
     truncated: pd.DatetimeIndex = field(default_factory=lambda: pd.DatetimeIndex([]))
 
 
+def lock_date(cfg: Config, score_holdout: bool = False) -> pd.Timestamp:
+    """The last calendar date any price may come from: the hold-out's last day if it is being scored, else the day before it."""
+    return pd.Timestamp(cfg.holdout_end) if score_holdout else pd.Timestamp(cfg.holdout_start) - pd.Timedelta(days=1)
+
+
 def build_market(raw: pd.DataFrame, split: pd.DataFrame, adj: pd.DataFrame, actions: pd.DataFrame, registry: pd.DataFrame,
-                 universe: pd.DataFrame) -> Market:
+                 universe: pd.DataFrame, until: pd.Timestamp | None = None) -> Market:
     """The panel from the vendor's daily bars, with the rules the data audit settled on: placeholder bars do not count,
-    the vendor's truncated days hold no usable price, and corporate-action sessions are marked (src/volpanel.py)."""
+    the vendor's truncated days hold no usable price, and corporate-action sessions are marked (src/volpanel.py). Nothing
+    after `until` is loaded, so a locked period is not merely unscored but absent."""
     def dated(f):
         f = f[f["symbol"].isin(universe["symbol"])].copy()
         f["date"] = pd.to_datetime(f["date"]).dt.normalize()
-        return f
+        return f if until is None else f[f["date"] <= until]
     raw, split, adj = dated(raw), dated(split), dated(adj)
     v = volpanel.vendor_frame(raw, split, adj)
     rules = volpanel.Rules()
@@ -242,9 +249,11 @@ def build_features(m: Market, cfg: Config) -> tuple[dict[str, pd.DataFrame], pd.
 
 def forward_returns(m: Market, cfg: Config) -> pd.DataFrame:
     """The return from the execution price at t+1 to the one at t+1+horizon: what a decision at t can actually earn. It is
-    realized at session index t+1+horizon, which is what purge_end() guards."""
+    realized at session index t+1+horizon, which is what purge_end() guards. Empty where either end has no real bar, since
+    no fill can happen there and the book would not earn it. reconcile_target() checks this against the book itself."""
     growth = (1.0 + asset_returns(m, cfg.execution)).cumprod()
-    return growth.shift(-(1 + cfg.horizon)) / growth.shift(-1) - 1.0
+    fillable = m.real.shift(-1, fill_value=False) & m.real.shift(-(1 + cfg.horizon), fill_value=False)
+    return (growth.shift(-(1 + cfg.horizon)) / growth.shift(-1) - 1.0).where(fillable)
 
 
 def purge_end(refit_index: int, cfg: Config) -> int:
@@ -275,18 +284,15 @@ def _stack(feats: dict, names: list[str], day: pd.Timestamp, mask: pd.Series) ->
 
 
 def decision_dates(index: pd.DatetimeIndex, cfg: Config, score_holdout: bool = False) -> pd.DatetimeIndex:
-    """Dates with a decision: every `rebalance_every` sessions once `min_train_sessions` of usable history exist. Unless the
-    hold-out is being scored, a decision's whole target must be realized before the hold-out starts."""
-    at = np.arange(252 + cfg.min_train_sessions, len(index) - 1, cfg.rebalance_every)
-    if score_holdout:
-        return index[at]
-    at = at[at + 1 + cfg.horizon < len(index)]
-    return index[at[index[at + 1 + cfg.horizon] < pd.Timestamp(cfg.holdout_start)]]
+    """Dates with a decision: every `rebalance_every` sessions once `min_train_sessions` of usable history exist, and only
+    where the decision's whole target is realized by the lock."""
+    at = np.arange(252 + cfg.min_train_sessions, len(index) - 1 - cfg.horizon, cfg.rebalance_every)
+    return index[at[index[at + 1 + cfg.horizon] <= lock_date(cfg, score_holdout)]]
 
 
 def scored_end(index: pd.DatetimeIndex, cfg: Config, score_holdout: bool = False) -> pd.Timestamp:
     """The last session whose returns may be scored."""
-    return index[-1] if score_holdout else index[index < pd.Timestamp(cfg.holdout_start)][-1]
+    return index[index <= lock_date(cfg, score_holdout)][-1]
 
 
 def walk_forward(feats: dict, eligible: pd.DataFrame, target: pd.DataFrame, names: list[str], dates: pd.DatetimeIndex,
@@ -406,7 +412,7 @@ def simulate(targets: dict[pd.Timestamp, dict[str, float]], m: Market, cfg: Conf
     execution price; before trading, the holdings have drifted with prices. A stock with no real bar that session cannot
     be traded and stays at its drifted weight. Cost on each stock: (cost_bps + square-root impact) on the amount traded.
     Nothing after `end` is earned. Returns per session: gross and net return, turnover (half the absolute trades), cost,
-    holdings count, and the largest trade as a share of a stock's daily dollar volume."""
+    holdings count, the largest trade as a share of a stock's daily dollar volume, and the stock that moved the book most."""
     r = asset_returns(m, cfg.execution)
     index, columns = r.index, r.columns
     pos = {s: k for k, s in enumerate(columns)}
@@ -419,11 +425,13 @@ def simulate(targets: dict[pd.Timestamp, dict[str, float]], m: Market, cfg: Conf
         if i + 1 < len(index):
             by_exec[i + 1] = (i, weights)
     if not by_exec:
-        return pd.DataFrame(columns=["gross", "net", "turnover", "cost", "names", "max_participation"], dtype=float)
+        return pd.DataFrame(columns=["gross", "net", "turnover", "cost", "names", "max_participation", "top_symbol", "top_contribution"], dtype=float)
     first, last = min(by_exec), len(index) if end is None else index.searchsorted(end, side="right")
     w, nav, rows = np.zeros(len(columns)), 1.0, []
     for d in range(first, last):
-        gross = float(np.nansum(w * R[d]))
+        moves = w * R[d]
+        top = int(np.argmax(np.abs(moves)))
+        gross = float(np.nansum(moves))
         if gross > -1:
             w = w * (1.0 + R[d]) / (1.0 + gross)
         turnover = cost = participation = 0.0
@@ -451,8 +459,33 @@ def simulate(targets: dict[pd.Timestamp, dict[str, float]], m: Market, cfg: Conf
             w = new
         net = (1.0 + gross) * (1.0 - cost) - 1.0
         nav *= 1.0 + net
-        rows.append((index[d], gross, net, turnover, cost, int((w > 0).sum()), participation))
-    return pd.DataFrame(rows, columns=["date", "gross", "net", "turnover", "cost", "names", "max_participation"]).set_index("date")
+        rows.append((index[d], gross, net, turnover, cost, int((w > 0).sum()), participation, columns[top], float(moves[top])))
+    return pd.DataFrame(rows, columns=["date", "gross", "net", "turnover", "cost", "names", "max_participation", "top_symbol",
+                                       "top_contribution"]).set_index("date")
+
+
+def reconcile_target(targets: dict, m: Market, cfg: Config, end: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Does the forecast target equal what the book earns? For each decision: the book's gross return from its fill to the next
+    fill, run through simulate(), against the same weights on forward_returns(), and against the target an execution one
+    session earlier would have needed (`unlagged`). `target` is empty where a name could not fill."""
+    free = replace(cfg, cost_bps=0.0, impact=0.0)
+    daily = simulate(targets, m, free, end)
+    fwd = forward_returns(m, cfg)
+    growth = (1.0 + asset_returns(m, cfg.execution)).cumprod()
+    index, rows = m.close.index, []
+    for day in sorted(targets):
+        i = index.get_loc(day)
+        a, b = i + 1, i + 1 + cfg.horizon
+        if b >= len(index) or index[b] not in daily.index:
+            continue
+        names = list(targets[day])
+        w = np.array([targets[day][s] for s in names])
+        book = float((1.0 + daily.loc[index[a + 1]:index[b], "gross"]).prod() - 1.0)
+        rows.append({"decision": day, "fill": index[a], "next_fill": index[b], "book": book, "target": float(w @ fwd.loc[day, names].to_numpy(dtype=float)),
+                     "unlagged": float(w @ (growth.iloc[b - 1][names].to_numpy() / growth.iloc[a - 1][names].to_numpy() - 1.0))})
+    out = pd.DataFrame(rows)
+    out["gap"] = out["book"] - out["target"]
+    return out
 
 
 def portfolio_targets(forecasts: pd.DataFrame, m: Market, cfg: Config) -> dict:
@@ -564,12 +597,29 @@ def resimulate(result: dict, m: Market, cfg: Config) -> pd.DataFrame:
     return simulate(portfolio_targets(result["forecasts"], m, cfg), m, cfg, result["end"])
 
 
-def benchmark_returns(bars: pd.DataFrame, symbol: str, execution: str = "next_close") -> pd.Series:
-    """A benchmark's daily total return (`all`-adjusted bars), between the same execution prices as the portfolios."""
+def benchmark_returns(bars: pd.DataFrame, symbol: str, execution: str = "next_close", truncated: pd.DatetimeIndex | None = None) -> pd.Series:
+    """A benchmark's daily total return (`all`-adjusted bars), between the same execution prices as the portfolios. On the
+    vendor's truncated days it has no usable price either, so it earns zero there and the whole move the next session."""
     b = bars[bars["symbol"] == symbol].copy()
     b["date"] = pd.to_datetime(b["date"]).dt.normalize()
     price = b.set_index("date").sort_index()[{"next_close": "close", "next_open": "open"}[execution]]
+    if truncated is not None and len(truncated):
+        price = price.where(~price.index.isin(truncated)).ffill()
     return price.pct_change().dropna().rename(symbol)
+
+
+def abdi_ranaldo(raw: pd.DataFrame) -> pd.DataFrame:
+    """Each stock-month's bid-ask spread estimated from daily closes, highs and lows (Abdi and Ranaldo 2017), as a share of
+    the price: the square root of 4 x the mean of (c_t - m_t)(c_t - m_{t+1}), with m the mid-range, floored at zero."""
+    r = raw[(raw["volume"] > 0) & (raw["trade_count"] > 0)].copy()
+    r["date"] = pd.to_datetime(r["date"]).dt.normalize()
+    r = r.sort_values(["symbol", "date"])
+    c, mid = np.log(r["close"]), (np.log(r["high"]) + np.log(r["low"])) / 2.0
+    r["s2"] = 4.0 * (c - mid) * (c - mid.groupby(r["symbol"]).shift(-1))
+    month = r["date"].dt.to_period("M")
+    out = r.groupby(["symbol", month])["s2"].agg(["mean", "count"]).reset_index()
+    out["spread"] = np.sqrt(out["mean"].clip(lower=0.0))
+    return out[out["count"] >= 15].rename(columns={"date": "month"})[["symbol", "month", "spread"]]
 
 
 def scorecard(series: dict, rf: pd.Series | None, cfg: Config, ics: dict | None = None) -> pd.DataFrame:
@@ -618,6 +668,27 @@ def no_lookahead_check(m: Market, cfg: Config, day: pd.Timestamp) -> dict:
     pb, _ = walk_forward(fb, eb, forward_returns(other, cfg), MODELS["base_pe_x"], dates, cfg)
     same["forecast"] = bool(np.allclose(pa.to_numpy(), pb.to_numpy(), equal_nan=True, atol=1e-12))
     return same
+
+
+def load_protocol(path) -> tuple[Config, dict]:
+    """A frozen protocol file: the settings it fixes as a Config, and the whole document."""
+    import yaml
+    with open(path) as f:
+        doc = yaml.safe_load(f)
+    return Config(**doc["rules"]), doc
+
+
+def check_benchmarks(bars: pd.DataFrame, reference: dict, truncated: pd.DatetimeIndex | None = None, tolerance: float = 0.005) -> pd.DataFrame:
+    """A benchmark's calendar-year total returns against independently recorded ones (`reference`: symbol to year to return)."""
+    rows = []
+    for symbol, years in reference.items():
+        r = benchmark_returns(bars, symbol, truncated=truncated)
+        got = (1.0 + r).groupby(r.index.year).prod() - 1.0
+        for year, ref in years.items():
+            rows.append({"symbol": symbol, "year": int(year), "this_series": float(got.get(int(year), np.nan)), "reference": float(ref)})
+    out = pd.DataFrame(rows)
+    out["ok"] = (out["this_series"] - out["reference"]).abs() <= tolerance
+    return out
 
 
 def fetch_benchmarks(path, start: str, end: str, symbols=("SPY", "BIL"), client=None) -> pd.DataFrame:

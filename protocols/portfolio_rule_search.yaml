@@ -1,0 +1,35 @@
+# Finalizing the portfolio's rules on development and validation only. Written and committed before this search ran.
+#
+# DISCLOSURE. One setting (weekly, best 10%, hold while in the best 20%) was already run on these windows on 2026-11-02, with
+# and without permutation entropy (RESULTS.md, "Portfolio tool"). That result was known when this grid was written.
+#
+# WHAT IS SEARCHED: the rebalance cadence (the forecast horizon moves with it, so the target always matches the holding
+# period), how many names are held, and whether a holding is kept while it stays in a wider zone. Nothing else: not the
+# features, the model, the sector cap, the weights or the execution.
+#
+# ONLY THE PE-FREE MODEL IS SEARCHED, so no rule can be chosen for how it treats permutation entropy.
+#
+# COSTS are fixed first, from evidence on trading costs rather than from any strategy's results: `costs` below.
+#
+# THE SELECTION RULE. For each candidate, its net information ratio against the equal-weight benchmark (same cadence, same
+# costs; annualized mean over standard deviation of the daily active return), separately on development and validation.
+# Score = the lower of the two, so a rule must hold up in both. The highest score wins; any candidate within 0.05 of it
+# counts as tied, and the tie goes to the lowest one-way turnover in validation. All candidates are reported. The count (12)
+# is disclosed with the result, because the best of 12 is flattered by selection.
+#
+# The hold-out is not loaded: nothing after 2024-01-02 enters this search.
+windows:
+  development: ["2019-01-04", "2022-01-03"]
+  validation: ["2022-01-04", "2024-01-02"]
+costs:
+  cost_bps: 5.0
+  impact: 1.0
+  aum: 10000000.0
+grid:
+  cadence_sessions: [5, 10, 21]
+  top_frac: [0.10, 0.20]
+  hold_multiple: [1.0, 2.0]     # the keep zone as a multiple of top_frac; 1.0 means no buffer
+fixed:
+  sector_cap: 0.30
+  execution: next_close
+  model: base

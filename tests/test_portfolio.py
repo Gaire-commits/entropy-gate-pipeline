@@ -75,7 +75,8 @@ def test_the_holdout_is_not_scored_unless_asked():
     start = pd.Timestamp(cfg.holdout_start)
     assert index[index.get_loc(locked[-1]) + 1 + cfg.horizon] < start     # the last target is realized before the lock
     assert pf.scored_end(index, cfg) < start
-    assert pf.decision_dates(index, cfg, score_holdout=True)[-1] > start
+    scored = pf.decision_dates(index, cfg, score_holdout=True)
+    assert scored[-1] > start and index[index.get_loc(scored[-1]) + 1 + cfg.horizon] <= index[-1]
     assert pf.scored_end(index, cfg, score_holdout=True) == index[-1]
 
 
@@ -273,3 +274,81 @@ def test_benchmarks_are_fetched_once_and_scored_on_the_portfolios_dates(tmp_path
     assert card.loc[card["portfolio"] == "market", "turnover_ann"].isna().all()
     assert card.loc[(card["portfolio"] == "book") & (card["window"] == "all scored"), "ic_mean"].iloc[0] == pytest.approx(0.02)
     assert card[card["window"] == "all scored"]["from"].nunique() == 1        # both on the book's dates
+
+
+def test_the_forecast_target_is_what_the_book_earns_after_a_next_close_fill():
+    m, _ = market(signal=0.001)
+    cfg = replace(CFG, top_frac=0.2, hold_frac=0.2, rebalance_every=5, horizon=5)
+    feats, elig = pf.build_features(m, cfg)
+    target = pf.forward_returns(m, cfg)
+    dates = pf.decision_dates(m.close.index, cfg, score_holdout=True)
+    forecasts, _ = pf.walk_forward(feats, elig, target, pf.MODELS["base"], dates, cfg)
+    check = pf.reconcile_target(pf.portfolio_targets(forecasts, m, cfg), m, cfg)
+    assert len(check) > 10 and check["gap"].abs().max() < 1e-12                  # exact, session for session
+    assert (check["book"] - check["unlagged"]).abs().mean() > 1e-3               # and it would notice a target one session off
+    assert (check["fill"] > check["decision"]).all() and (check["next_fill"].iloc[:-1].to_numpy() == check["fill"].iloc[1:].to_numpy()).all()
+
+
+def test_no_target_where_a_fill_cannot_happen():
+    m, _ = market(n_days=60, n_syms=3)
+    index = m.close.index
+    real = m.real.copy()
+    real.loc[index[31], "S001"] = False
+    mk = pf.Market(m.close.where(real), m.open.where(real), m.raw_close, m.dollar_volume, real, m.event, m.sector)
+    fwd = pf.forward_returns(mk, CFG)
+    assert np.isnan(fwd.loc[index[30], "S001"])                                  # no bar to enter on
+    assert np.isnan(fwd.loc[index[25], "S001"])                                  # no bar to leave on
+    assert not np.isnan(fwd.loc[index[30], "S000"]) and not np.isnan(fwd.loc[index[26], "S001"])
+
+
+def test_nothing_past_the_lock_is_loaded():
+    days = pd.bdate_range("2023-12-01", "2024-01-31")
+    def bars(mult=1.0):
+        return pd.DataFrame([{"symbol": s, "date": d, "open": 10.0 * mult, "high": 11.0 * mult, "low": 9.0 * mult, "close": 10.5 * mult, "volume": 1e6, "trade_count": 100.0}
+                             for s in ("AAA", "BBB") for d in days])
+    universe = pd.DataFrame({"symbol": ["AAA", "BBB"], "sector": ["X", "Y"]})
+    actions = pd.DataFrame(columns=["kind", "symbol", "when", "source_symbol", "old_symbol", "new_symbol"])
+    registry = pd.DataFrame(columns=["symbol", "date", "effect", "kind"])
+    cfg = pf.Config()
+    locked = pf.build_market(bars(), bars(), bars(), actions, registry, universe, until=pf.lock_date(cfg))
+    assert locked.close.index.max() == pd.Timestamp("2024-01-02")
+    assert pf.lock_date(cfg, True) == pd.Timestamp("2026-10-12")
+
+
+def test_the_benchmark_guard_and_truncated_days():
+    days = pd.bdate_range("2021-12-27", periods=8)
+    bars = pd.DataFrame({"symbol": "SPY", "date": days, "open": 100.0, "close": [100, 101, 102, 103, 104, 300, 106, 107.0]})
+    r = pf.benchmark_returns(bars, "SPY", truncated=pd.DatetimeIndex([days[5]]))
+    assert r.loc[days[5]] == 0 and r.loc[days[6]] == pytest.approx(106 / 104 - 1)
+    ok = pf.check_benchmarks(bars, {"SPY": {2022: 107 / 104 - 1}}, pd.DatetimeIndex([days[5]]))
+    assert ok["ok"].all()
+    assert not pf.check_benchmarks(bars, {"SPY": {2022: 0.20}}, pd.DatetimeIndex([days[5]]))["ok"].any()
+
+
+def test_the_spread_estimator_finds_a_planted_spread():
+    rng = np.random.default_rng(5)
+    n, half = 400, 0.002
+    eff = np.cumsum(rng.normal(0, 0.01, n))
+    close = eff + half * rng.choice([-1, 1], n)
+    # high and low bracket the path with the spread on both sides
+    high, low = np.maximum(close, eff + 0.008) + half, np.minimum(close, eff - 0.008) - half
+    days = pd.bdate_range("2020-01-01", periods=n)
+    raw = pd.DataFrame({"symbol": "A", "date": days, "close": np.exp(close), "high": np.exp(high), "low": np.exp(low), "volume": 1.0, "trade_count": 1.0})
+    est = pf.abdi_ranaldo(raw)["spread"].median()
+    assert 0.5 * (2 * half) < est < 2.5 * (2 * half)
+
+
+def test_the_rule_search_applies_its_stated_rule():
+    import sys
+    sys.path.insert(0, "scripts")
+    import portfolio_rules as script
+    table = pd.DataFrame({"score": [0.30, 0.28, 0.10], "turn_val": [20.0, 5.0, 1.0]})
+    assert script.choose(table)["turn_val"] == 5.0                               # tied within 0.05: the lower turnover
+    assert script.choose(pd.DataFrame({"score": [0.30, 0.10], "turn_val": [20.0, 1.0]}))["turn_val"] == 20.0
+    m, _ = market(n_days=1000, n_syms=60)
+    doc = {"grid": {"cadence_sessions": [5, 10], "top_frac": [0.2], "hold_multiple": [1.0, 2.0]},
+           "windows": {"development": ["2021-12-15", "2022-04-30"], "validation": ["2022-05-01", "2022-10-20"]},
+           "costs": {"cost_bps": 5.0, "impact": 1.0, "aum": 1e7}, "fixed": {"sector_cap": 1.0, "execution": "next_close", "model": "base"}}
+    out = script.search(m, doc)
+    assert len(out) == 4 and out["score"].is_monotonic_decreasing
+    assert (out["score"] == out[["ir_dev", "ir_val"]].min(axis=1)).all()
