@@ -309,3 +309,19 @@ def test_the_followup_and_sample_scripts_run_from_the_audit_outputs(outputs, mon
     for part in ("## 1. The vendor's daily range", "## 2. Dates on which", "## 3. The vendor's adjustment steps", "## 4. The vendor's close", "## 5. Evidence"):
         assert part in text
     assert (outputs / "followup" / "range_buckets.csv").exists()
+
+
+def test_the_sessions_script_matches_the_audit_and_stops_at_its_date(made, outputs, tmp_path, monkeypatch, capsys):
+    import build_sessions as script
+    path = tmp_path / "s.parquet"
+    monkeypatch.setattr(sys, "argv", ["build_sessions.py", "--sip", str(made / "sip"), "--universe", str(made / "u.csv"), "--start", "2024-10-01", "--until", str(DAYS[50].date()), "--out", str(path)])
+    assert script.main() == 0
+    s = pd.read_parquet(path)
+    assert s["date"].max() <= DAYS[50]
+    audited = pd.read_parquet(outputs / "sessions.parquet")
+    audited = audited[(audited["date"] <= DAYS[50]) & (audited["bars"] > 0)]
+    m = s[s["bars"] > 0].merge(audited, on=["symbol", "date"], suffixes=("", "_a"))
+    assert len(m) == len(audited)
+    for col in ("bars", "slots", "high", "low"):
+        assert np.allclose(m[col].astype(float), m[f"{col}_a"].astype(float))
+    assert "symbol-sessions" in capsys.readouterr().out

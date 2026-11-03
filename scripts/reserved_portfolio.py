@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The portfolio protocol (protocols/portfolio_v1.yaml), on the frozen rules. Prints everything, writes nothing.
+"""The portfolio protocol (protocols/portfolio_v2.yaml), on the frozen rules. Prints everything, writes nothing.
 
     python scripts/reserved_portfolio.py --reference data/reference                     development and validation; nothing later is loaded
     python scripts/reserved_portfolio.py --reference data/reference --score-reserved    once, after the freeze, the reserved window too
@@ -27,7 +27,7 @@ def main() -> int:
     ap.add_argument("--benchmarks", default=None, help="a saved benchmark file; by default fetched from Alpaca")
     ap.add_argument("--score-reserved", action="store_true")
     args = ap.parse_args()
-    cfg, doc = pf.load_protocol(ROOT / "protocols" / "portfolio_v1.yaml")
+    cfg, doc = pf.load_protocol(ROOT / "protocols" / "portfolio_v2.yaml")
     pd.set_option("display.width", 230)
     pd.set_option("display.max_columns", 40)
     pd.set_option("display.max_rows", 100)
@@ -92,8 +92,8 @@ def main() -> int:
     rows = []
     for name in ("base_pe", "base_pe_x"):
         for span, (a, b) in spans.items():
-            c = pf.paired_comparison(res["base"], res[name], target, eligible, rf, a, b, cfg.seed)
-            rows.append({"model": name, "window": span, **{k: c[k] for k in ("dates", "ic_small", "ic_large", "ic_gap", "ic_gap_lo", "ic_gap_hi", "clark_west_t", "net_return_gap_ann", "net_gap_lo", "net_gap_hi", "sharpe_gap", "sharpe_gap_lo", "sharpe_gap_hi")}, "verdict": pf.verdict(c)})
+            c = pf.paired_comparison(res["base"], res[name], target, eligible, rf, a, b, cfg.seed, cfg.hac_lags)
+            rows.append({"model": name, "window": span, **{k: c[k] for k in ("dates", "clark_west_t", "loss_gap", "loss_gap_lo", "loss_gap_hi", "ic_small", "ic_large", "ic_gap", "ic_gap_lo", "ic_gap_hi", "net_return_gap_ann", "net_gap_lo", "net_gap_hi", "sharpe_gap", "sharpe_gap_lo", "sharpe_gap_hi")}, "verdict": pf.verdict(c)})
     comparison = pd.DataFrame(rows)
     print("\nPE against base (intervals 95%, block bootstrap):")
     print(comparison.drop(columns="verdict").to_string(index=False))

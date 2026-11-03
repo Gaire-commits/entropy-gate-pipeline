@@ -13,6 +13,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from src.volpanel import trailing_dollar_volume
+
 OPEN_CODES = ("Q", "O")
 CLOSE_CODES = ("M", "6")
 TOL_BP = 0.5
@@ -74,18 +76,52 @@ def official_prices(prints: pd.DataFrame, raw: pd.DataFrame, min_prints: int = 5
     return out.drop(columns=["year", "high", "low"]).sort_values(["symbol", "date"]).reset_index(drop=True)
 
 
-def summary(op: pd.DataFrame, tol_bp: float = TOL_BP) -> pd.DataFrame:
-    """By year: how many vendor bars have an official open and close, and how the vendor's compare with them."""
-    x = op.assign(year=op["date"].dt.year)
+def coverage(op: pd.DataFrame) -> pd.DataFrame:
+    """By year: how many vendor bars have an official open and close. Counts only, so it is safe to print for any period."""
+    g = op.groupby(op["date"].dt.year)
+    return pd.DataFrame({"bars": g.size(), "with_listing": g["listing"].apply(lambda s: s.notna().mean()),
+                         "with_official_open": g["official_open"].apply(lambda s: s.notna().mean()),
+                         "with_official_close": g["official_close"].apply(lambda s: s.notna().mean())})
+
+
+def eligible_coverage(op: pd.DataFrame, raw: pd.DataFrame, joined: pd.Series | None = None, min_close: float = 5.0, min_dollar_volume: float = 10e6) -> pd.DataFrame:
+    """The same among the bars the protocols can use: at least $5, liquid by trailing_dollar_volume(), in the index by then."""
+    r = _real(raw).sort_values(["symbol", "date"])
+    r["dv63"] = (r["close"] * r["volume"]).groupby(r["symbol"]).transform(trailing_dollar_volume)
+    ok = r[(r["close"] >= min_close) & (r["dv63"] >= min_dollar_volume)]
+    if joined is not None:
+        ok = ok[~(ok["date"] < ok["symbol"].map(joined))]
+    x = ok[["symbol", "date"]].merge(op[["symbol", "date", "official_open"]], on=["symbol", "date"], how="left")
+    g = x.groupby(x["date"].dt.year)
+    return pd.DataFrame({"usable_bars": g.size(), "with_official_open": g["official_open"].apply(lambda s: s.notna().mean())})
+
+
+def gap_summary(op: pd.DataFrame, before, tol_bp: float = TOL_BP) -> pd.DataFrame:
+    """By year: how the vendor's open and close compare with the official ones, on dates before `before` only. Gap sizes describe
+    the data, so the reserved period's are not computed here, let alone printed."""
+    x = op[op["date"] < pd.Timestamp(before)]
+    x = x.assign(year=x["date"].dt.year)
     g = x.groupby("year")
     a_open, a_close = x["open_gap_bp"].abs(), x["close_gap_bp"].abs()
     return pd.DataFrame({
-        "bars": g.size(),
-        "with_official_open": g["official_open"].apply(lambda s: s.notna().mean()),
-        "with_official_close": g["official_close"].apply(lambda s: s.notna().mean()),
         "open_equal": (a_open <= tol_bp).astype(float).where(x["official_open"].notna()).groupby(x["year"]).mean(),
         "open_over_25bp": (a_open > 25).astype(float).where(x["official_open"].notna()).groupby(x["year"]).mean(),
         "open_p99_bp": a_open.groupby(x["year"]).quantile(0.99),
         "close_equal": (a_close <= tol_bp).astype(float).where(x["official_close"].notna()).groupby(x["year"]).mean(),
         "open_outside_range": x["open_outside_range"].where(x["official_open"].notna()).astype(float).groupby(x["year"]).mean(),
-    })
+        "bars": g.size()})
+
+
+def missing_on_extreme_days(op: pd.DataFrame, raw: pd.DataFrame, adj: pd.DataFrame, before, top: float = 0.01) -> dict:
+    """Are sessions with no official open concentrated among the largest moves? On dates before `before` only: the share missing
+    overall, and among the top `top` of sessions by V on the vendor's open."""
+    keys = ["symbol", "date"]
+    a = adj.copy()
+    a["date"] = pd.to_datetime(a["date"]).dt.normalize()
+    a = a[(a["volume"] > 0) & (a["trade_count"] > 0) & (a["date"] < pd.Timestamp(before))].sort_values(keys)
+    r = _real(raw)[keys + ["high", "low"]]
+    m = a[keys + ["open", "close"]].merge(r, on=keys).merge(op[keys + ["official_open"]], on=keys, how="left")
+    m["V"] = np.log(m["open"] / m.groupby("symbol")["close"].shift(1)) ** 2 + np.log(m["high"] / m["low"]) ** 2 / (4 * np.log(2))
+    m = m.dropna(subset=["V"])
+    cut = m["V"].quantile(1 - top)
+    return {"sessions": int(len(m)), "missing_overall": float(m["official_open"].isna().mean()), "missing_on_top": float(m.loc[m["V"] >= cut, "official_open"].isna().mean())}

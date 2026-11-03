@@ -46,6 +46,7 @@ class Config:
     min_train_sessions: int = 504
     refit_every: int = 63
     train_sample_every: int = 5     # training dates, sampled so overlapping targets do not multiply rows
+    hac_lags: int = 9               # Newey-West lags for forecast comparisons, in decisions (protocols/clark_west_verification.md)
     # permutation entropy of daily returns, fixed before any result
     pe_m: int = 3
     pe_tau: int = 1
@@ -148,8 +149,8 @@ def asset_returns(m: Market, execution: str = "next_close") -> pd.DataFrame:
 
 
 def adv63(m: Market) -> pd.DataFrame:
-    """Trailing median daily dollar volume, sessions before t only."""
-    return m.dollar_volume.shift(1).rolling(63, min_periods=40).median()
+    """Trailing median daily dollar volume, sessions before t only: the measure both protocols use."""
+    return volpanel.trailing_dollar_volume(m.dollar_volume)
 
 
 # ---------------------------------------------------------------- permutation entropy
@@ -396,16 +397,18 @@ def newey_west_t(x: pd.Series | np.ndarray, lags: int = 4) -> float:
     return float(x.mean() / np.sqrt(s / n)) if s > 0 else float("nan")
 
 
-def clark_west(small: pd.DataFrame, large: pd.DataFrame, target: pd.DataFrame, eligible: pd.DataFrame) -> pd.Series:
-    """Clark-West (2007) adjusted loss difference per decision date, on the target's cross-sectional rank. Positive means the
-    larger, nesting model forecasts better after allowing for the noise its extra parameters add under the null."""
+def forecast_losses(small: pd.DataFrame, large: pd.DataFrame, target: pd.DataFrame, eligible: pd.DataFrame) -> pd.DataFrame:
+    """Per decision date, averaged across stocks, on the target's cross-sectional rank: each model's squared error, and the
+    Clark-West (2007) adjusted difference. `clark_west` is positive when the larger, nesting model forecasts better after
+    allowing for the noise its extra parameters add under the null; `gain` is the same difference with no such allowance."""
     y = xs_rank(target.where(eligible))
-    out = {}
+    rows = {}
     for day in small.index:
         pair = pd.DataFrame({"a": small.loc[day], "b": large.loc[day], "y": y.loc[day]}).dropna()
         if len(pair) >= 20:
-            out[day] = float((((pair["y"] - pair["a"]) ** 2) - ((pair["y"] - pair["b"]) ** 2) + ((pair["a"] - pair["b"]) ** 2)).mean())
-    return pd.Series(out, name="clark_west", dtype=float)
+            e0, e1, d = (pair["y"] - pair["a"]) ** 2, (pair["y"] - pair["b"]) ** 2, (pair["a"] - pair["b"]) ** 2
+            rows[day] = {"loss_small": float(e0.mean()), "loss_large": float(e1.mean()), "gain": float((e0 - e1).mean()), "clark_west": float((e0 - e1 + d).mean())}
+    return pd.DataFrame.from_dict(rows, orient="index")
 
 
 # ---------------------------------------------------------------- the portfolio
@@ -603,29 +606,36 @@ def _sharpe_gap(pair: np.ndarray) -> float:
 
 
 def paired_comparison(small: dict, large: dict, target: pd.DataFrame, eligible: pd.DataFrame, rf: pd.Series | None = None,
-                      start=None, end=None, seed: int = 0) -> dict:
-    """The larger model against the smaller on the same dates in [start, end]: forecast (IC gap, Clark-West) and net of costs."""
+                      start=None, end=None, seed: int = 0, hac_lags: int = 9) -> dict:
+    """The larger model against the smaller on the same dates in [start, end]. Three things kept apart: Clark-West (is there
+    incremental predictive content?), the unadjusted forecast-loss gap (did the larger model's errors actually shrink, here?), and
+    the portfolio net of costs. `hac_lags` is in decisions."""
     joined = pd.concat([small["daily"]["net"].rename("a"), large["daily"]["net"].rename("b")], axis=1).dropna().loc[start:end]
     if rf is not None:
         joined = joined.sub(rf.reindex(joined.index).fillna(0.0), axis=0)
     ics = pd.concat([small["ic"].rename("a"), large["ic"].rename("b")], axis=1).dropna().loc[start:end]
     d_ic = (ics["b"] - ics["a"]).to_numpy()
-    cw = clark_west(small["forecasts"], large["forecasts"], target, eligible).loc[start:end]
+    fl = forecast_losses(small["forecasts"], large["forecasts"], target, eligible).loc[start:end]
+    loss = (fl["loss_large"] - fl["loss_small"]).to_numpy()
+    loss_lo, loss_hi = block_bootstrap(loss, np.nanmean, block=8, seed=seed)
     ic_lo, ic_hi = block_bootstrap(d_ic, np.nanmean, block=8, seed=seed)
     ret_lo, ret_hi = block_bootstrap((joined["b"] - joined["a"]).to_numpy(), _ann_mean, seed=seed)
     sh_lo, sh_hi = block_bootstrap(joined[["a", "b"]].to_numpy(), _sharpe_gap, seed=seed)
     return {"ic_small": ics["a"].mean(), "ic_large": ics["b"].mean(), "ic_gap": float(np.nanmean(d_ic)), "ic_gap_lo": ic_lo, "ic_gap_hi": ic_hi,
-            "clark_west_t": newey_west_t(cw), "net_return_gap_ann": _ann_mean((joined["b"] - joined["a"]).to_numpy()),
+            "clark_west_t": newey_west_t(fl["clark_west"], lags=hac_lags), "loss_gap": float(np.nanmean(loss)), "loss_gap_lo": loss_lo, "loss_gap_hi": loss_hi,
+            "net_return_gap_ann": _ann_mean((joined["b"] - joined["a"]).to_numpy()),
             "net_gap_lo": ret_lo, "net_gap_hi": ret_hi, "sharpe_gap": _sharpe_gap(joined[["a", "b"]].to_numpy()),
             "sharpe_gap_lo": sh_lo, "sharpe_gap_hi": sh_hi, "dates": len(ics)}
 
 
 def verdict(row: dict) -> str:
-    """The rule, fixed before any result. Forecast: Clark-West t at least 1.645 (one-sided 5%) and the IC gap's interval above
-    zero. Portfolio: the net-return gap's interval above zero. They are separate claims and can disagree."""
-    forecast = row["clark_west_t"] >= 1.645 and row["ic_gap_lo"] > 0
-    net = row["net_gap_lo"] > 0
-    return f"forecast {'improves' if forecast else 'no improvement shown'}; net of costs {'improves' if net else 'no improvement shown'}"
+    """The rule (protocols/portfolio_v2.yaml). The forecast improves only if Clark-West t is at least 1.645 (one-sided 5%) AND the
+    forecast-loss gap's interval lies below zero AND the IC gap's interval lies above zero. Clark-West alone says there is
+    incremental content, not that errors fell. The portfolio improves if the net-return gap's interval lies above zero."""
+    content = row["clark_west_t"] >= 1.645
+    fell = row["loss_gap_hi"] < 0 and row["ic_gap_lo"] > 0
+    forecast = "forecast improves" if content and fell else "Clark-West detects content, but forecast loss and IC do not show it" if content else "forecast: no improvement shown"
+    return f"{forecast}; net of costs {'improves' if row['net_gap_lo'] > 0 else 'no improvement shown'}"
 
 
 def run_model(name: str, feats: dict, eligible: pd.DataFrame, target: pd.DataFrame, m: Market, dates: pd.DatetimeIndex, cfg: Config,

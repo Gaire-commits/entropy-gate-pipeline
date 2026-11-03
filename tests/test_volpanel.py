@@ -174,7 +174,8 @@ def test_the_target_is_the_next_session_and_eligibility_needs_every_requirement(
 
 
 def test_sample_sizes_are_a_waterfall_by_window_of_the_target_date(inputs):
-    windows = {"a": (str(DAYS[0].date()), str(DAYS[39].date())), "b": (str(DAYS[41].date()), str(DAYS[-1].date()))}
+    # the liquidity measure needs 40 earlier sessions, so the first window runs past that
+    windows = {"a": (str(DAYS[0].date()), str(DAYS[49].date())), "b": (str(DAYS[51].date()), str(DAYS[-1].date()))}
     p = build(inputs)
     table = volpanel.sample_sizes(p, SMALL, warmups=(10,), windows=windows)
     assert list(table["window"]) == ["a", "b"] and (table["sessions"] > 0).all()

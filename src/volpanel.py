@@ -45,7 +45,7 @@ RANGE_REASONS = ["symbol has no vendor bars", "outside the security's trading sp
                  "no trades (placeholder bar)", "invalid bar", "market-wide truncated day",
                  "range disagrees with the 5-minute cache"]
 OVERNIGHT_REASONS = ["previous session has no valid bar", "previous session is a truncated day",
-                     "first session of a segment (identity change)", "corporate action or adjustment step"]
+                     "first session of a segment (identity change)", "corporate action or adjustment step", "no official open"]
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class Rules:
     market_gap_ratio: float = 0.05                # median trade count over its trailing median, below this: truncated day
     market_gap_min_symbols: int = 50              # symbols that must have a trailing median for the date to be judged
     min_raw_close: float = 5.0                    # the price as quoted that day, in dollars
-    min_dollar_volume: float = 10e6               # trailing 63-session median, in-session, past-only
+    min_dollar_volume: float = 10e6               # trailing_dollar_volume(): the same measure in both protocols
     weekly: int = 5                               # HAR windows, in sessions, and how many must hold a value
     weekly_min: int = 4
     monthly: int = 22
@@ -72,12 +72,19 @@ def load_registry(path) -> pd.DataFrame:
     return r
 
 
+def trailing_dollar_volume(dollar_volume):
+    """The liquidity measure both protocols use, for a Series of one stock's sessions or a table of stocks: the median of the
+    quoted close times the vendor's raw volume (extended hours included, so about 28% above the session's) over the 63 sessions
+    before t, at least 40 of them with a real bar. The session itself is never in its own window."""
+    return dollar_volume.shift(1).rolling(63, min_periods=40).median()
+
+
 def vendor_frame(raw: pd.DataFrame, split: pd.DataFrame, adj: pd.DataFrame) -> pd.DataFrame:
     """One row per vendor daily bar (adjustment `all`), with the quoted close and the adjustment steps: how far the
     adjusted-to-raw ratio moves between a security's consecutive real bars. A step marks an ex-date of some kind."""
     keys = ["symbol", "date"]
     v = adj[keys + ["open", "high", "low", "close", "volume", "trade_count"]].copy()
-    v = v.merge(raw[keys + ["high", "low", "close"]].rename(columns={"high": "raw_high", "low": "raw_low", "close": "raw_close"}),
+    v = v.merge(raw[keys + ["high", "low", "close", "volume"]].rename(columns={"high": "raw_high", "low": "raw_low", "close": "raw_close", "volume": "raw_volume"}),
                 on=keys, how="left")
     v = v.merge(split[keys + ["close"]].rename(columns={"close": "split_close"}), on=keys, how="left")
     v["real"] = (v["volume"] > 0) & (v["trade_count"] > 0)
@@ -152,11 +159,12 @@ def event_sessions(actions: pd.DataFrame, v: pd.DataFrame, registry: pd.DataFram
 
 def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFrame, registry: pd.DataFrame,
                 symbols: list[str], rules: Rules = Rules(), start="2016-01-04", end="2026-10-12",
-                official: pd.DataFrame | None = None) -> pd.DataFrame:
+                official: pd.DataFrame | None = None, open_fallback: bool = False) -> pd.DataFrame:
     """The panel: every symbol on every NYSE session from `start` to `end`, with V, V_id, the close-to-close return, and the
     reason each is missing. `vendor` is vendor_frame(...); `sessions` the audit's sessions.parquet. With `official`
-    (src/official.py), the overnight return runs to the listing exchange's official open where it printed one, and to the
-    vendor's open, flagged in `open_source`, where it did not. The gap is measured on raw prices, so the correction is exact."""
+    (src/official.py), the overnight return runs to the listing exchange's official open, the gap measured on raw prices so the
+    correction is exact. Where that open is missing, the session has no overnight and so no V, with the reason kept; the range
+    alone (V_id) is unaffected. `open_fallback` uses the vendor's open there instead, flagged in `open_source`: a sensitivity."""
     cal = nyse.sessions(start, end)
     p = pd.MultiIndex.from_product([sorted(symbols), cal], names=["symbol", "date"]).to_frame(index=False)
     p["half_day"] = np.asarray(nyse.is_half_day(p["date"]))
@@ -164,8 +172,8 @@ def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFr
     p = p.merge(v, on=["symbol", "date"], how="left", indicator="has_row")
     p["has_row"] = p["has_row"] == "both"
     p["real"] = p["real"].eq(True)
-    s = sessions[["symbol", "date", "bars", "slots", "high", "low", "dv_trailing63"]].rename(
-        columns={"bars": "bars5", "slots": "slots5", "high": "high5", "low": "low5", "dv_trailing63": "dv63"})
+    s = sessions[["symbol", "date", "bars", "slots", "high", "low"]].rename(
+        columns={"bars": "bars5", "slots": "slots5", "high": "high5", "low": "low5"})
     p = p.merge(s, on=["symbol", "date"], how="left")
 
     ohlc = ["open", "high", "low", "close"]
@@ -196,23 +204,27 @@ def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFr
     p = p.merge(ev.rename(columns={"source": "event_source"}), on=["symbol", "date"], how="left")
     p = p.sort_values(["symbol", "date"]).reset_index(drop=True)          # the shifts below are by session
     p["event"] = p["event_source"].notna()
+    p["dollar_volume"] = (p["raw_close"] * p["raw_volume"]).where(p["real"] & ~p["trunc"])
+    p["dv63"] = p.groupby("symbol", sort=False)["dollar_volume"].transform(trailing_dollar_volume)
+    p["open_source"] = "vendor"
+    no_official = pd.Series(False, index=p.index)
+    gap_bp = pd.Series(0.0, index=p.index)
+    if official is not None:
+        p = p.merge(official[["symbol", "date", "open_gap_bp"]].dropna(), on=["symbol", "date"], how="left")
+        p["open_source"] = np.where(p["open_gap_bp"].notna(), "official", "vendor")
+        no_official = p["open_gap_bp"].isna() & ~open_fallback
+        gap_bp = p["open_gap_bp"].fillna(0.0)
 
     g = p.groupby("symbol", sort=False)
     p["prev_close"], p["prev_ok"], p["prev_trunc"] = g["close"].shift(1), g["bar_ok"].shift(1).eq(True), \
         g["trunc"].shift(1).eq(True)
 
     range_conds = [~p["has_vendor"], ~p["in_span"], ~p["has_row"], ~p["real"], ~p["bar_ok"], p["trunc"], p["range_conflict"]]
-    night_conds = [~p["prev_ok"], p["prev_trunc"], p["is_break"], p["event"]]
+    night_conds = [~p["prev_ok"], p["prev_trunc"], p["is_break"], p["event"], no_official]
     p["reason_id"] = np.select(range_conds, RANGE_REASONS, "")
     p["reason"] = np.select(range_conds + night_conds, RANGE_REASONS + OVERNIGHT_REASONS, "")
     p["rho"] = np.where(p["reason_id"] == "", PARKINSON * lr_v ** 2, np.nan)
-    p["r_on"] = np.where(p["reason"] == "", np.log(p["open"] / p["prev_close"]), np.nan)
-    p["open_source"] = "vendor"
-    if official is not None:
-        gap = official[["symbol", "date", "open_gap_bp"]].dropna()
-        p = p.merge(gap, on=["symbol", "date"], how="left")
-        p["open_source"] = np.where(p["open_gap_bp"].notna(), "official", "vendor")
-        p["r_on"] = p["r_on"] - p["open_gap_bp"].fillna(0.0) / 1e4
+    p["r_on"] = np.where(p["reason"] == "", np.log(p["open"] / p["prev_close"]) - gap_bp / 1e4, np.nan)
     p["V"] = p["r_on"] ** 2 + p["rho"]
     ret_ok = p["in_span"] & p["bar_ok"] & ~p["trunc"] & p["prev_ok"] & ~p["prev_trunc"] & ~p["is_break"] & ~p["event"]
     p["ret"] = np.where(ret_ok, np.log(p["close"] / p["prev_close"]), np.nan)

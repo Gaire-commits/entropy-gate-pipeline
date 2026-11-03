@@ -14,11 +14,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from _common import reachable
+from _common import ROOT, reachable
 
-from src import official
+from src import official, portfolio as pf
 
 TRUNCATED = ["2021-04-19", "2021-10-25", "2022-03-08"]   # the vendor's own truncated days (RESULTS.md)
+RESERVED_START = "2024-01-03"
 
 
 def main() -> int:
@@ -34,7 +35,8 @@ def main() -> int:
               "- run section 35, then the auctions fetch in section 39.")
         return 1
     prints = pd.read_parquet(need[0])
-    op = official.official_prices(prints, pd.read_parquet(need[1]))
+    raw = pd.read_parquet(need[1])
+    op = official.official_prices(prints, raw)
     op.to_parquet(ref / "official_prices.parquet", index=False)
 
     pd.set_option("display.width", 200)
@@ -42,8 +44,12 @@ def main() -> int:
           f"{op['listing'].notna().mean():.2%} with a listing exchange")
     years = op.assign(year=op["date"].dt.year).drop_duplicates(["symbol", "year"])
     print("\nlisting exchanges (symbol-years):", years["listing"].value_counts(dropna=False).to_dict())
-    print("\nby year (shares of vendor bars; 'equal' within 0.5 bp, among bars with an official price):")
-    print(official.summary(op).round(4).to_string())
+    print("\ncoverage by year (shares of vendor bars; counts only, so every year is shown):")
+    print(official.coverage(op).round(4).to_string())
+    print("\ncoverage among usable bars ($5, $10M liquidity, in the index by then):")
+    print(official.eligible_coverage(op, raw, pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv")).round(4).to_string())
+    print("\nvendor against official, before the reserved period only ('equal' within 0.5 bp):")
+    print(official.gap_summary(op, RESERVED_START).round(4).to_string())
     print("\nofficial open taken from:", op["open_print"].value_counts(dropna=False).to_dict(),
           "| official close taken from:", op["close_print"].value_counts(dropna=False).to_dict())
     t = op[op["date"].isin(pd.to_datetime(TRUNCATED))]
@@ -53,7 +59,7 @@ def main() -> int:
     miss = op[op["official_open"].isna()]
     print(f"\nvendor bars with no official open: {len(miss):,}; symbols with the most:",
           miss["symbol"].value_counts().head(8).to_dict())
-    before = op[op["date"] < "2024-01-03"]                  # a data check, so the reserved window's own dates are not listed
+    before = op[op["date"] < RESERVED_START]                # a data check, so the reserved window's own dates are not listed
     big = before.reindex(before["open_gap_bp"].abs().sort_values(ascending=False).index).head(10)
     print("\nlargest open gaps before the reserved window (vendor over official, bp):")
     print(big[["symbol", "date", "listing", "vendor_open", "official_open", "open_print", "open_gap_bp"]]

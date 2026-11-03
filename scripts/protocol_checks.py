@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""The checks that need Alpaca, run before the reserved window is scored. They use no forecast and score nothing.
+"""The checks that need Alpaca, run before the reserved period is scored. They use no forecast and score nothing. For the reserved period they
+print coverage counts only: no return or open-gap summary of it.
 
     python scripts/protocol_checks.py --reference data/reference
 
 1. Alpaca's SPY and BIL against the independently recorded total returns in the protocol, 2017-2023.
-2. The official open: how many vendor bars have one, by year (needs official_prices.parquet).
-3. Quoted half-spreads just before the close on sampled development and validation days, against the frozen cost.
+2. The official open: its coverage among usable bars, by year.
+3. Whether sessions with no official open cluster on the largest moves, before the reserved period.
+4. Quoted half-spreads just before the close on sampled development and validation days, against the frozen cost.
 Prints PASS or FAIL for each. A failure means amend the protocol, with the reason, before anything is scored.
 """
 
@@ -23,6 +25,8 @@ from src import nyse, official, portfolio as pf
 from src.alpaca_rest import AlpacaREST, rfc3339
 
 MIN_COVERAGE = 0.95
+EXTREME_MULTIPLE = 2.0      # the top 1% of sessions may lack an official open at most this many times as often as sessions overall...
+EXTREME_FLOOR = 0.02        # ...or at this share, whichever is larger
 
 
 def spreads(client, symbols, days, seconds: int = 30) -> pd.DataFrame:
@@ -43,7 +47,7 @@ def main() -> int:
     ap.add_argument("--reference", default="data/reference")
     args = ap.parse_args()
     ref = Path(args.reference)
-    cfg, doc = pf.load_protocol(ROOT / "protocols" / "portfolio_v1.yaml")
+    cfg, doc = pf.load_protocol(ROOT / "protocols" / "portfolio_v2.yaml")
     pd.set_option("display.width", 200)
     results = {}
     client = AlpacaREST()
@@ -57,18 +61,24 @@ def main() -> int:
     print(f"   BIL daily: largest move {r.abs().max():.2%}; SPY sessions {bench[bench['symbol'] == 'SPY']['date'].nunique()}")
     results["benchmarks"] = bool(guard["ok"].all())
 
-    print("\n2. The official open:")
+    print("\n2. The official open, coverage among usable bars ($5, $10M liquidity, in the index by then):")
     path = ref / "official_prices.parquet"
+    raw = pd.read_parquet(ref / "daily" / "daily_sip_raw.parquet")
     if path.exists():
         op = pd.read_parquet(path)
-        table = official.summary(op)
+        table = official.eligible_coverage(op, raw, pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv"))
         print(table.round(4).to_string())
-        results["official open"] = bool((table["with_official_open"] >= MIN_COVERAGE).all())
+        results["official open coverage"] = bool((table["with_official_open"] >= MIN_COVERAGE).all())
+
+        print(f"\n3. Are missing official opens concentrated on the largest moves? Before {cfg.holdout_start}, the top 1% of sessions by V on the vendor's open:")
+        m = official.missing_on_extreme_days(op, raw, pd.read_parquet(ref / "daily" / "daily_sip_all.parquet"), cfg.holdout_start)
+        print(f"   {m['sessions']:,} sessions; missing overall {m['missing_overall']:.2%}; missing on the top 1% {m['missing_on_top']:.2%}")
+        results["no clustering on extreme days"] = m["missing_on_top"] <= max(EXTREME_MULTIPLE * m["missing_overall"], EXTREME_FLOOR)
     else:
         print("   official_prices.parquet is missing: run the auctions fetch and scripts/official_prices.py first.")
-        results["official open"] = False
+        results["official open coverage"] = False
 
-    print("\n3. Quoted half-spreads before the close, development and validation only:")
+    print("\n4. Quoted half-spreads before the close, development and validation only:")
     rng = np.random.default_rng(0)
     universe = pd.read_csv(ROOT / "universe" / "sp500.csv")["symbol"].tolist()
     symbols = sorted(rng.choice(universe, 30, replace=False).tolist())
@@ -89,7 +99,7 @@ def main() -> int:
     for name, ok in results.items():
         print(f"{'PASS' if ok else 'NOT CHECKED' if ok is None else 'FAIL'}: {name}")
     failed = [n for n, ok in results.items() if ok is False]
-    print("\n" + ("PRE-CHECKS PASSED: the reserved window may be scored when you decide." if not failed else f"STOP: {failed}. Amend the protocol, with the reason, before anything is scored."))
+    print("\n" + ("DATA CHECKS PASSED. This scored nothing. Scoring stays a separate decision." if not failed else f"STOP: {failed}. Amend the protocol, with the reason, before anything is scored."))
     return 2 if failed else 0
 
 

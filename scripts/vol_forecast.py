@@ -1,102 +1,78 @@
 #!/usr/bin/env python3
-"""The volatility protocol, by stage (protocols/volatility_v1.yaml; prints everything, writes nothing).
+"""The volatility protocol, by stage (protocols/volatility_v2.yaml; prints everything, writes nothing unless told to).
 
-    python scripts/vol_forecast.py --stage baseline --audit outputs/data_audit_v2 --reference data/reference
-    python scripts/vol_forecast.py --stage reserved --score-reserved --audit ... --reference ... --official data/reference/official_prices.parquet [--rv data/reference/rv5.parquet]
+    python scripts/vol_forecast.py --stage baseline --sessions sessions.parquet --reference data/reference --official data/reference/official_prices.parquet
+    python scripts/vol_forecast.py --stage rv --sip data/bars_sip --rv data/reference/rv5.parquet
+    python scripts/vol_forecast.py --stage reserved --score-reserved --sessions ... --reference ... --official ... --rv ...
 
-`baseline` chooses the HAR form on development and confirms it on validation. It uses no PE and loads nothing after the lock.
-`rv` builds the realized-variance robustness target from the 5-minute cache. `reserved` runs the one registered comparison, once,
-on the reserved test window.
+`baseline` applies the protocol's rule for the HAR form on development and its gate on validation. It uses no PE and loads nothing after
+the lock. `rv` builds the realized-variance robustness target. `reserved` runs the one registered comparison, once, on the reserved test window.
 """
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from _common import ROOT
 
-from src import portfolio as pf, volforecast as vf
+from src import portfolio as pf, volforecast as vf, volpanel
+
+SPANS = {"development": ("2016-01-01", "2021-12-31"), "validation": ("2022-01-04", "2023-12-29")}
+PROTOCOL = ROOT / "protocols" / "volatility_v2.yaml"
+
+
+def gate(rows: pd.DataFrame, form: str, cfg: vf.VolConfig) -> bool:
+    """On validation, the baseline's QLIKE and log loss must each be lower than the monthly mean carried forward, on the same rows, with
+    the 95% interval of each gap below zero."""
+    spec = vf.CANDIDATES[form]
+    fc, _ = vf.walk_forward(rows, spec["names"], cfg, *SPANS["validation"], spec.get("per_stock", False), spec.get("level", False))
+    nv = vf.naive_forecast(rows, *SPANS["validation"]).merge(fc[["symbol", "date"]], on=["symbol", "date"])
+    a, b = vf.daily_loss(nv), vf.daily_loss(fc)
+    ok = True
+    for loss in ("qlike", "mse_log"):
+        g = vf.gap(a[loss], b[loss], cfg)
+        print(f"  {loss}: {b[loss].mean():.4f} against {a[loss].mean():.4f}; gap {g['gap']:+.4f} [{g['lo']:+.4f}, {g['hi']:+.4f}], t {g['t']:.1f}")
+        ok = ok and g["hi"] < 0
+    print(f"  conversion from logs: mean smearing factor {fc['smear'].mean():.3f}; mean realized over mean forecast variance {vf.calibration(fc):.3f}")
+    print("GATE PASSED" if ok else "GATE FAILED: stop; the comparison does not run on this baseline")
+    return ok
 
 
 def baseline_stage(args, cfg: vf.VolConfig) -> int:
     end = vf.lock_end(cfg)
-    p = vf.load_panel(Path(args.audit) / "sessions.parquet", args.reference, end, args.official, ROOT)
-    print(f"panel through {p['date'].max().date()} (locked); open: {'official where printed' if args.official else 'the vendor open'}")
+    p = vf.load_panel(args.sessions, args.reference, end, args.official, ROOT)
+    print(f"panel through {p['date'].max().date()} (locked). The open: {'official, and no V where it is missing' if args.official else 'THE VENDOR OPEN, a stand-in: this is not the registered target'}")
     joined = pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv")
     rows = vf.build_rows(p, cfg, joined)
     print(vf.sample_sizes(rows, cfg).to_string(index=False))
-    spans = {"development": ("2016-01-01", "2021-12-31"), "validation": (cfg.validation_start, "2023-12-29")}
-    fc = {}
-    for name, spec in vf.CANDIDATES.items():
-        for w, (a, b) in spans.items():
-            fc[name, w] = vf.walk_forward(rows, spec["names"], cfg, a, b, spec.get("per_stock", False), spec.get("level", False))[0]
-    naive = {w: vf.naive_forecast(rows, a, b) for w, (a, b) in spans.items()}
+    named = p[(p["reason"] != "") & p["in_span"] & (p["date"] >= "2016-01-05")]
+    print("\nwhy V is missing, stock-sessions through the lock:", named["reason"].value_counts().to_dict())
+    fc = {(name, w): vf.walk_forward(rows, spec["names"], cfg, a, b, spec.get("per_stock", False), spec.get("level", False))[0]
+          for name, spec in vf.CANDIDATES.items() for w, (a, b) in SPANS.items()}
+    naive = {w: vf.naive_forecast(rows, a, b) for w, (a, b) in SPANS.items()}
     table = []
     for name in list(vf.CANDIDATES) + ["naive monthly mean"]:
         row = {"model": name}
-        for w in spans:
+        for w in SPANS:
             fr = naive[w] if name.startswith("naive") else fc[name, w]
-            # on the rows and dates the walk-forward scored, so every model is compared on the same sessions
-            fr = fr[fr["target_date"].isin(fc["log_har", w]["target_date"])]
+            fr = fr[fr["target_date"].isin(fc["log_har", w]["target_date"])]         # the same sessions for every model
             d = vf.daily_loss(fr)
-            row.update({f"{w[:3]}_qlike": d["qlike"].mean(), f"{w[:3]}_mse_log": d["mse_log"].mean(), f"{w[:3]}_mse_level_x1e6": d["mse_level"].mean() * 1e6})
+            row.update({f"{w[:3]}_qlike": d["qlike"].mean(), f"{w[:3]}_log_loss": d["mse_log"].mean(), f"{w[:3]}_realized_over_forecast": vf.calibration(fr)})
         table.append(row)
     table = pd.DataFrame(table)
     pd.set_option("display.width", 200)
     pd.set_option("display.max_columns", 30)
     print("\n" + table.round(4).to_string(index=False))
     chosen = vf.choose_baseline({r["model"]: r["dev_qlike"] for _, r in table.iterrows() if not r["model"].startswith("naive")})
-    print(f"\nchosen on development QLIKE (ties within 0.5% to the simplest): {chosen}")
-    coefs = vf.walk_forward(rows, vf.CANDIDATES[chosen]["names"], cfg, *spans["development"], vf.CANDIDATES[chosen].get("per_stock", False), vf.CANDIDATES[chosen].get("level", False))[1]
+    print(f"\nthe rule's choice on development QLIKE (ties within 0.5% to the simplest): {chosen}")
+    spec = vf.CANDIDATES[chosen]
+    coefs = vf.walk_forward(rows, spec["names"], cfg, *SPANS["development"], spec.get("per_stock", False), spec.get("level", False))[1]
     print("its pooled coefficients over the development refits, mean and std:", coefs.mean().round(3).to_dict(), coefs.std().round(3).to_dict())
-    print("\nthe validation gate: the chosen baseline must beat the monthly mean carried forward, on the same rows")
-    keep = fc[chosen, "validation"][["symbol", "date"]]
-    nv = naive["validation"].merge(keep, on=["symbol", "date"])
-    a, b = vf.daily_loss(nv), vf.daily_loss(fc[chosen, "validation"])
-    ok = True
-    for loss in ("qlike", "mse_log"):
-        g = vf.gap(a[loss], b[loss], cfg.seed)
-        print(f"  {loss}: {b[loss].mean():.4f} against {a[loss].mean():.4f}; gap {g['gap']:+.4f} [{g['lo']:+.4f}, {g['hi']:+.4f}], t {g['t']:.1f}")
-        ok = ok and g["hi"] < 0
-    print("GATE PASSED" if ok else "GATE FAILED: stop; do not run the comparison on this baseline")
-    return 0 if ok else 2
-
-
-def reserved_stage(args, cfg: vf.VolConfig) -> int:
-    import yaml
-    if not args.score_reserved:
-        print("STOPPED: this scores the reserved window. It runs once, after the freeze, with --score-reserved.")
-        return 2
-    with open(ROOT / "protocols" / "volatility_v1.yaml") as f:
-        doc = yaml.safe_load(f)
-    end = vf.lock_end(cfg, True)
-    if not args.official:
-        print("STOPPED: the registered target uses the official open: pass --official.")
-        return 2
-    p = vf.load_panel(Path(args.audit) / "sessions.parquet", args.reference, end, args.official, ROOT)
-    joined = pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv")
-    rows = vf.build_rows(p, cfg, joined)
-    print(vf.sample_sizes(rows, cfg).to_string(index=False))
-    r = vf.pe_test(rows, doc["baseline"]["form"], cfg, cfg.test_start, cfg.test_end)
-    print("\nPRIMARY: baseline against baseline + PE, log variance, Clark-West")
-    print({k: v for k, v in r.items() if k != "by_year"})
-    print(pd.DataFrame(r["by_year"]).T.round(5).to_string())
-    print("\nVERDICT:", vf.verdict(r))
-    print("\nROBUSTNESS (reported, not decisive)")
-    idr = vf.build_rows(p, cfg, joined, col="rho")
-    x = vf.pe_test(idr, doc["baseline"]["form"], cfg, cfg.test_start, cfg.test_end)
-    print("intraday only (V_id):", {k: x[k] for k in ("rows", "clark_west_t", "qlike", "pe_coef_mean")})
-    if args.rv:
-        rv = pd.read_parquet(args.rv)
-        q = p.merge(rv[["symbol", "date", "rv"]], on=["symbol", "date"], how="left")
-        q["V_rv"] = q["r_on"] ** 2 + q["rv"]
-        x = vf.pe_test(vf.build_rows(q, cfg, joined, col="V_rv"), doc["baseline"]["form"], cfg, cfg.test_start, cfg.test_end)
-        print("realized variance from 5-minute bars plus the overnight:", {k: x[k] for k in ("rows", "clark_west_t", "qlike", "pe_coef_mean")})
-    return 0
+    print("\nthe validation gate:")
+    return 0 if gate(rows, chosen, cfg) else 2
 
 
 def rv_stage(args) -> int:
@@ -115,11 +91,62 @@ def rv_stage(args) -> int:
     return 0
 
 
+def report(r: dict) -> None:
+    c = r["log_loss"]
+    q = r["qlike"]
+    print(f"  rows {r['rows']:,}, target dates {r['dates']}, {r['first']} to {r['last']}")
+    print(f"  1. Clark-West (is there incremental predictive content?): mean {r['clark_west_mean']:+.5f}, t {r['clark_west_t']:.2f} with {vf.VolConfig().hac_lags} Newey-West lags; pass at 1.645")
+    print(f"     of which the adjustment for estimation noise: {r['adjustment_mean']:.6f}")
+    print(f"  2. Unadjusted paired log loss, PE minus baseline (did errors actually fall?): {c['gap']:+.5f} [{c['lo']:+.5f}, {c['hi']:+.5f}], t {c['t']:.2f}; baseline {r['baseline_log_loss']:.4f}")
+    print(f"  3. QLIKE, PE minus baseline: {q['gap']:+.5f} [{q['lo']:+.5f}, {q['hi']:+.5f}], t {q['t']:.2f}; baseline {r['baseline_qlike']:.4f}")
+    print(f"     level forecasts, realized over forecast: baseline {r['calibration_baseline']:.3f}, with PE {r['calibration_pe']:.3f}")
+    print(f"  PE coefficient: mean {r['pe_coef_mean']:+.4f}, same sign on {r['pe_coef_same_sign']:.0%} of refits")
+
+
+def reserved_stage(args, cfg: vf.VolConfig) -> int:
+    import yaml
+    if not args.score_reserved:
+        print("STOPPED: this scores the reserved window. It runs once, after the freeze, with --score-reserved.")
+        return 2
+    if not args.official:
+        print("STOPPED: the registered target uses the official open: pass --official.")
+        return 2
+    with open(PROTOCOL) as f:
+        doc = yaml.safe_load(f)
+    form = doc["baseline"]["form"]
+    locked = vf.build_rows(vf.load_panel(args.sessions, args.reference, vf.lock_end(cfg), args.official, ROOT), cfg, pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv"))
+    print("the validation gate first:")
+    if not gate(locked, form, cfg):
+        print("STOPPED: the gate failed, so the reserved window was not scored.")
+        return 2
+    end = vf.lock_end(cfg, True)
+    p = vf.load_panel(args.sessions, args.reference, end, args.official, ROOT)
+    joined = pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv")
+    rows = vf.build_rows(p, cfg, joined)
+    print(vf.sample_sizes(rows, cfg).to_string(index=False))
+    r = vf.pe_test(rows, form, cfg, cfg.test_start, cfg.test_end)
+    print("\nPRIMARY: baseline against baseline + PE, on the reserved window")
+    report(r)
+    print(pd.DataFrame(r["by_year"]).T.round(5).to_string())
+    print("\nVERDICT:", vf.verdict(r))
+    print("\nROBUSTNESS (reported, not decisive)")
+    print("the range alone (V_id):")
+    report(vf.pe_test(vf.build_rows(p, cfg, joined, col="rho"), form, cfg, cfg.test_start, cfg.test_end))
+    print("the vendor's open where the official open is missing:")
+    report(vf.pe_test(vf.build_rows(vf.load_panel(args.sessions, args.reference, end, args.official, ROOT, open_fallback=True), cfg, joined), form, cfg, cfg.test_start, cfg.test_end))
+    if args.rv:
+        q = p.merge(pd.read_parquet(args.rv)[["symbol", "date", "rv"]], on=["symbol", "date"], how="left")
+        q["V_rv"] = q["r_on"] ** 2 + q["rv"]
+        print("realized variance from 5-minute bars plus the overnight:")
+        report(vf.pe_test(vf.build_rows(q, cfg, joined, col="V_rv"), form, cfg, cfg.test_start, cfg.test_end))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", choices=["baseline", "rv", "reserved"], required=True)
     ap.add_argument("--sip", default="data/bars_sip")
-    ap.add_argument("--audit", default="outputs/data_audit_v2")
+    ap.add_argument("--sessions", default="sessions.parquet")
     ap.add_argument("--reference", default="data/reference")
     ap.add_argument("--official", default=None)
     ap.add_argument("--rv", default=None)

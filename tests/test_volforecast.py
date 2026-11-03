@@ -39,7 +39,7 @@ def panel(n=60, seed=0, pe_effect=0.0):
             lv[t] = -9.0 + 0.6 * (lv[t - 1] + 9.0) + pe_effect * (pe[t - 1] - 0.9) + vol_noise[t]
         V = np.exp(lv)
         frames.append(pd.DataFrame({"symbol": f"S{i:02d}", "date": DAYS, "V": V, "rho": 0.7 * V, "r_on": np.sqrt(0.3 * V), "ret": ret, "half_day": np.asarray(nyse.is_half_day(DAYS)), "segment": 0,
-                                    "in_span": True, "raw_close": 50.0, "dv63": 5e7, "open_source": "official"}))
+                                    "in_span": True, "raw_close": 50.0, "dv63": 5e7, "open_source": "official", "reason": ""}))
     return pd.concat(frames, ignore_index=True)
 
 
@@ -108,9 +108,12 @@ def test_the_comparison_finds_a_planted_pe_effect_and_not_a_missing_one():
     null = vf.pe_test(vf.build_rows(panel(seed=1), CFG), "log_har", CFG, DAYS[300], DAYS[-1])
     real = vf.pe_test(vf.build_rows(panel(seed=1, pe_effect=4.0), CFG), "log_har", CFG, DAYS[300], DAYS[-1])
     assert real["clark_west_t"] > 2.5 and real["pe_coef_same_sign"] == 1.0 and real["pe_coef_mean"] > 0
+    assert real["log_loss"]["hi"] < 0
     assert null["clark_west_t"] < 1.645
     assert vf.verdict(real).startswith("PE improves")
     assert vf.verdict(null) == "PE: no improvement shown"
+    significant_only = {"clark_west_t": 2.0, "log_loss": {"hi": 0.001}, "qlike": {"hi": 0.001}}
+    assert vf.verdict(significant_only).startswith("Clark-West detects incremental content, but")   # significance alone is not an improvement
     assert set(real["by_year"]) <= {2020, 2021}
 
 
@@ -119,16 +122,43 @@ def test_the_official_open_replaces_the_vendor_open_exactly():
     raw, split, adj, sessions, actions, registry = _.__wrapped__()
     v = volpanel.vendor_frame(raw, split, adj)
     symbols = ["S0", "S5"]
-    plain = volpanel.build_panel(sessions, v, actions, registry, symbols, volpanel.Rules(market_gap_min_symbols=5), start=D[0], end=D[-1])
+    rules = volpanel.Rules(market_gap_min_symbols=5)
+    plain = volpanel.build_panel(sessions, v, actions, registry, symbols, rules, start=D[0], end=D[-1])
     day = D[20]
     official = pd.DataFrame({"symbol": ["S0"], "date": [day], "open_gap_bp": [50.0]})
-    with_print = volpanel.build_panel(sessions, v, actions, registry, symbols, volpanel.Rules(market_gap_min_symbols=5), start=D[0], end=D[-1], official=official)
+    strict = volpanel.build_panel(sessions, v, actions, registry, symbols, rules, start=D[0], end=D[-1], official=official)
     a = plain[(plain["symbol"] == "S0") & (plain["date"] == day)].iloc[0]
-    b = with_print[(with_print["symbol"] == "S0") & (with_print["date"] == day)].iloc[0]
+    b = strict[(strict["symbol"] == "S0") & (strict["date"] == day)].iloc[0]
     assert b["r_on"] == pytest.approx(a["r_on"] - 0.005) and b["open_source"] == "official"
     assert b["V"] == pytest.approx(b["r_on"] ** 2 + b["rho"])
-    other = with_print[(with_print["symbol"] == "S5") & (with_print["date"] == day)].iloc[0]
-    assert other["open_source"] == "vendor"
+    # no official open: no overnight and no V, with the reason kept; the range survives
+    other = strict[(strict["symbol"] == "S5") & (strict["date"] == day)].iloc[0]
+    assert other["reason"] == "no official open" and np.isnan(other["V"]) and np.isnan(other["r_on"])
+    assert other["rho"] > 0 and other["open_source"] == "vendor" and other["ret"] == other["ret"]
+    # the sensitivity: the vendor's open there, flagged
+    loose = volpanel.build_panel(sessions, v, actions, registry, symbols, rules, start=D[0], end=D[-1], official=official, open_fallback=True)
+    filled = loose[(loose["symbol"] == "S5") & (loose["date"] == day)].iloc[0]
+    assert filled["reason"] == "" and filled["open_source"] == "vendor"
+    assert filled["V"] == pytest.approx(plain[(plain["symbol"] == "S5") & (plain["date"] == day)].iloc[0]["V"])
+
+
+def test_both_protocols_use_the_same_liquidity_measure():
+    days = nyse.sessions("2022-01-03", "2022-09-30")
+    rng = np.random.default_rng(1)
+    frames = []
+    for s in ("AAA", "BBB", "CCC"):
+        close = 40 * np.exp(np.cumsum(rng.normal(0, 0.01, len(days))))
+        frames.append(pd.DataFrame({"symbol": s, "date": days, "open": close, "high": close * 1.01, "low": close * 0.99, "close": close, "volume": rng.uniform(1e5, 1e6, len(days)), "trade_count": 1000.0}))
+    bars = pd.concat(frames, ignore_index=True)
+    actions = pd.DataFrame(columns=["kind", "symbol", "when", "source_symbol", "old_symbol", "new_symbol"])
+    registry = pd.DataFrame(columns=["symbol", "date", "effect", "kind"])
+    universe = pd.DataFrame({"symbol": ["AAA", "BBB", "CCC"], "sector": "X"})
+    m = pf.build_market(bars, bars, bars, actions, registry, universe)
+    sessions = bars[["symbol", "date", "high", "low"]].assign(bars=78.0, slots=78)
+    p = volpanel.build_panel(sessions, volpanel.vendor_frame(bars, bars, bars), actions, registry, ["AAA", "BBB", "CCC"], volpanel.Rules(market_gap_min_symbols=50), start=days[0], end=days[-1])
+    wide = p.pivot(index="date", columns="symbol", values="dv63")
+    pd.testing.assert_frame_equal(wide, pf.adv63(m).reindex_like(wide), check_names=False, check_freq=False)
+    assert wide.notna().any(axis=None) and wide.iloc[:40].isna().all(axis=None)   # at least 40 earlier sessions
 
 
 def test_realized_variance_from_bars():
@@ -157,21 +187,51 @@ def test_the_stages_run_end_to_end_and_the_reserved_stage_needs_its_flag(monkeyp
     import vol_forecast as script
     cfg = replace(CFG, validation_start="2021-01-04", test_start="2021-06-01", test_end="2021-12-31")
     monkeypatch.setattr(script.vf, "load_panel", lambda *a, **k: panel(n=55, seed=3))
-    args = type("A", (), {"audit": "x", "reference": "y", "official": "z", "rv": None, "score_reserved": False})()
+    monkeypatch.setattr(script, "SPANS", {"development": ("2016-01-01", "2020-12-31"), "validation": ("2021-01-04", "2021-05-28")})
+    monkeypatch.setattr(script, "PROTOCOL", Path(__file__).resolve().parents[1] / "protocols" / "volatility_v1.yaml")
+    args = type("A", (), {"sessions": "x", "reference": "y", "official": "z", "rv": None, "score_reserved": False})()
     assert script.reserved_stage(args, cfg) == 2                                 # no flag: nothing runs
     assert "STOPPED" in capsys.readouterr().out
     assert script.baseline_stage(args, cfg) in (0, 2)
     out = capsys.readouterr().out
-    assert "chosen on development QLIKE" in out and "validation gate" in out and "pe" not in out.split("validation gate")[1]
+    assert "the rule's choice on development QLIKE" in out and "validation gate" in out and " pe" not in out.split("validation gate")[1]
     args.score_reserved = True
     assert script.reserved_stage(args, cfg) == 0
     out = capsys.readouterr().out
     assert "PRIMARY" in out and "VERDICT" in out and "ROBUSTNESS" in out
+    assert "1. Clark-West" in out and "2. Unadjusted paired log loss" in out and "3. QLIKE" in out and "the vendor's open where the official open is missing" in out
 
 
 def test_the_reserved_stage_requires_the_official_open(capsys):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     import vol_forecast as script
-    args = type("A", (), {"audit": "x", "reference": "y", "official": None, "rv": None, "score_reserved": True})()
+    args = type("A", (), {"sessions": "x", "reference": "y", "official": None, "rv": None, "score_reserved": True})()
     assert script.reserved_stage(args, CFG) == 2
     assert "official open" in capsys.readouterr().out
+
+
+def test_the_level_forecast_uses_a_smearing_factor_from_training_rows_only(rows):
+    first, last = DAYS[300], DAYS[340]
+    a, _ = vf.walk_forward(rows, vf.LOG_HAR, CFG, first, last)
+    T = a["date"].min()
+    block = a["date"] <= T
+    tr = rows["target_date"] <= T
+    A = np.column_stack([np.ones(int(tr.sum())), rows.loc[tr, vf.LOG_HAR].to_numpy()])
+    beta, *_ = np.linalg.lstsq(A, rows.loc[tr, "y"].to_numpy(), rcond=None)
+    factor = np.exp(rows.loc[tr, "y"].to_numpy() - A @ beta).mean()
+    assert a.loc[block, "smear"].iloc[0] == pytest.approx(factor)
+    assert np.allclose(a.loc[block, "h"], np.exp(a.loc[block, "f"]) * factor)
+    changed = rows.copy()
+    later = changed["target_date"] > T
+    changed.loc[later, "y"] = changed.loc[later, "y"] + 5.0                      # the future's residuals must not move today's conversion
+    b, _ = vf.walk_forward(changed, vf.LOG_HAR, CFG, first, last)
+    assert np.allclose(a.loc[block, "h"], b.loc[block, "h"])
+
+
+def test_clark_west_gain_and_adjustment_are_kept_apart():
+    s = pd.DataFrame({"symbol": "A", "date": [1, 2], "target_date": pd.to_datetime(["2024-01-02", "2024-01-03"]), "y": [1.0, 1.0], "f": [0.0, 0.0]})
+    l = s.assign(f=[0.5, 2.0])
+    out = vf.clark_west(s, l)
+    assert out["gain"].tolist() == [1 - 0.25, 1 - 1.0]
+    assert out["adjustment"].tolist() == [0.25, 4.0]
+    assert out["clark_west"].tolist() == [1.0, 4.0]                              # a positive Clark-West with no gain at all on the second date

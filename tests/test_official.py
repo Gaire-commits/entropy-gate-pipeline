@@ -50,5 +50,19 @@ def test_official_open_prefers_q_then_o_and_leaves_days_without_a_print_empty():
     others = aaa.drop(index=[days[3], days[5]])
     assert (others["open_gap_bp"].abs() < 1e-9).all()                       # the other venue's print is never used
     assert (op["close_print"] == "M").all() and (op["close_gap_bp"].abs() < 1e-9).all()
-    s = official.summary(op)
-    assert s["close_equal"].eq(1).all() and s.loc[2020, "with_official_open"] < 1 == s.loc[2021, "with_official_open"]
+    c = official.coverage(op)
+    assert c.loc[2020, "with_official_open"] < 1 == c.loc[2021, "with_official_open"]
+    assert list(c.columns) == ["bars", "with_listing", "with_official_open", "with_official_close"]   # counts only
+    g = official.gap_summary(op, "2021-01-01")
+    assert list(g.index) == [2020] and g["close_equal"].eq(1).all()              # nothing from on or after the cutoff is even computed
+
+
+def test_coverage_among_usable_bars_and_missing_prints_on_extreme_days():
+    a, raw = frames()
+    op = official.official_prices(a, raw, min_prints=10)
+    e = official.eligible_coverage(op, raw, min_dollar_volume=1.0)
+    assert e["usable_bars"].sum() > 0 and e["with_official_open"].between(0, 1).all()
+    assert official.eligible_coverage(op, raw, min_dollar_volume=1e15).empty
+    adj = raw.copy()
+    m = official.missing_on_extreme_days(op, raw, adj, "2022-01-01")
+    assert m["sessions"] > 0 and 0 < m["missing_overall"] < 1
