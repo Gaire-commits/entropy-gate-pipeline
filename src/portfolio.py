@@ -46,7 +46,7 @@ class Config:
     min_train_sessions: int = 504
     refit_every: int = 63
     train_sample_every: int = 5     # training dates, sampled so overlapping targets do not multiply rows
-    hac_lags: int = 9               # Newey-West lags for forecast comparisons, in decisions (protocols/clark_west_verification.md)
+    hac_lags: int = 2               # Newey-West lags for forecast comparisons, in decisions (protocols/clark_west_verification.md)
     cw_critical: float = 1.645      # the Clark-West t that counts as a 5% one-sided pass, and...
     cw_critical_holm: float = 1.96  # ...a 2.5% one, for the Holm correction across the two protocols
     # permutation entropy of daily returns, fixed before any result
@@ -608,7 +608,7 @@ def _sharpe_gap(pair: np.ndarray) -> float:
 
 
 def paired_comparison(small: dict, large: dict, target: pd.DataFrame, eligible: pd.DataFrame, rf: pd.Series | None = None,
-                      start=None, end=None, seed: int = 0, hac_lags: int = 9, critical: float = 1.645) -> dict:
+                      start=None, end=None, seed: int = 0, hac_lags: int = 2, critical: float = 1.645) -> dict:
     """The larger model against the smaller on the same dates in [start, end]. Three things kept apart: Clark-West (is there
     incremental predictive content?), the unadjusted forecast-loss gap (did the larger model's errors actually shrink, here?), and
     the portfolio net of costs. `hac_lags` is in decisions."""

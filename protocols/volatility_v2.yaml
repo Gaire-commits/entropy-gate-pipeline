@@ -1,0 +1,100 @@
+# THE VOLATILITY PROTOCOL, VERSION 2, frozen 2026-11-02, before its reserved period was scored. It replaces protocols/volatility_v1.yaml, which stays as it was; protocols/amendment_1.md gives
+# each change and its reason. Hash-checked by tests/test_frozen.py, along with the code that runs it. A change means a new, dated file with the reason in it, never an edit here.
+#
+# THE QUESTION. Does permutation entropy (PE) of daily returns improve next-day volatility forecasts beyond a HAR-style volatility-history baseline? One registered hypothesis. Positive or null, the
+# answer is reported. Three claims stay separate: structure, forecast, and whether it trades; only the first two are in scope.
+#
+# THE PERIOD. Reserved window: target sessions 2024-01-03 to 2026-10-12, shared with protocols/portfolio_v2.yaml. It is RESERVED FOR THIS SPECIFICATION BUT PREVIOUSLY EXPOSED THROUGH RELATED RESEARCH;
+# protocols/reserved_period_disclosure.md lists every prior use. It is not an untouched test. Only data after this protocol's date can be untouched. PE of daily returns has not been compared with the
+# baseline on any window of this data, development and validation included.
+#
+# THE TARGET. For a stock and NYSE session t (not annualized, not scaled for calendar time; a half-day is a session of its own):
+#   r_on(t) = ln O(t) - ln C(t-1)                 overnight, from the previous session's close
+#   rho(t)  = (ln H(t) - ln L(t))^2 / (4 ln 2)    Parkinson range of the regular session
+#   V(t)    = r_on(t)^2 + rho(t)                  primary. What is forecast and scored is ln V(t+1), floored at (1 bp)^2
+# C is the vendor's close, `all`-adjusted: it is the official closing price (99.99% against the listing exchange's official close on 20 sampled stocks). O is the listing exchange's official open (its
+# official-open print, else its opening trade), applied as a raw-price correction to the vendor's adjusted open. H and L are the vendor's quoted high and low. Other missing values, their reasons,
+# corporate-action sessions, truncated days, range conflicts and identity breaks follow src/volpanel.py.
+#
+# A MISSING OFFICIAL OPEN. Where the listing exchange printed neither, V is missing for that session, with the reason "no official open", and nothing is substituted. The session cannot be a target and
+# counts against the stock's validity rules below; the range alone (V_id) is unaffected. The vendor's open in those places is a reported sensitivity only.
+#
+# HALF-DAYS. Half-day targets are left out of fitting and scoring. Half-days stay in the inputs and in the return series behind PE, so the timeline is not compressed.
+#
+# THE SAMPLE. Today's S&P 500 list (fetched 2026-09-29), each stock only from its index-join date (registry/sp500_join_dates.csv, Wikipedia's "Date added", retrieved 2026-11-02; CTVA, PSKY and WBD have
+# no date and stay in). Origin t is eligible if everything through t passes: valid V(t); 4 of 5 and 18 of 22 sessions with valid V; 90% of 65 sessions with valid V and return; quoted close at least $5;
+# liquidity at least $10M, where liquidity is the median of quoted close x the vendor's raw daily volume over the 63 earlier sessions (at least 40 of them), the measure protocols/portfolio_v2.yaml uses
+# too. That volume includes extended hours, about 28% above the session's, so the rule is slightly lenient.
+# Rows on the vendor's open, as a stand-in until the official prints are checked: development 541,016 (from 2016-04-06), validation 213,799. The reserved window's rows were not recounted under these rules. Sessions 2022-01-03 and 2024-01-02 are embargoed as targets.
+#
+# THE SURVIVORSHIP LIMIT. Join dates remove the time before a stock entered the index. They do not bring back companies that have since left it or failed: every stock here survived in the index to
+# 2026. The distress that precedes removal, with its large variance, is missing, by an unknown amount and with an unknown effect on what PE appears to add. Fixing this needs point-in-time constituents
+# such as CRSP. A result here describes today's index members, and says so.
+#
+# THE BASELINE. By the rule in protocols/vol_baseline_search.yaml, on development with no PE: pooled OLS of ln V(t+1) on ln V(t), the log of the 5-session mean and the log of the 22-session mean, refit
+# every 21 sessions on every row whose target is realized. Under the amended conversion and liquidity measure, on the vendor's open: development QLIKE 0.468 against 0.475-0.532 for the other three forms and 0.562 for the monthly mean carried forward; validation gate passed, QLIKE gap
+# -0.058 [-0.078, -0.038], log loss gap -0.200 [-0.257, -0.142] against the monthly mean. Precondition 2 reselects the form on the official open.
+#
+# THE ADDITION. PE(t): normalized permutation entropy of the stock's daily close-to-close log returns, order 3, delay 1, over the last 63 overlapping patterns, so 65 returns. A pattern with a tie or a
+# missing return is left out; at least 57 valid patterns are required. Normalized by ln 6. Entered in its level. Never tuned on any result.
+#
+# FROM LOGS TO VARIANCE. The models forecast ln V; QLIKE needs a variance. h = exp(f) x s, where s is Duan's (1983) smearing factor: the mean of exp(residual) over that refit's own training rows, and
+# nothing later. Each model and each refit has its own s. No normal assumption. Mean realized over mean forecast variance is printed for each model as the check on it. The log loss does not depend on s.
+#
+# THE TEST. Baseline against baseline + PE, identical rows and folds, averaged across stocks per target date so dependence across stocks sits inside each date's value:
+#   1. CLARK-WEST (2007), adjusted squared-error difference on ln V(t+1), Newey-West t with 21 lags on the date series. It asks whether PE has incremental predictive content. It does not say errors fell.
+#   2. THE UNADJUSTED PAIRED LOG-LOSS DIFFERENCE, PE minus baseline: the mean, its 95% block-bootstrap interval (blocks of 21 target dates) and its Newey-West t. It asks whether errors actually fell in this sample.
+#   3. THE QLIKE DIFFERENCE, the same way: squared log error is not robust to a noisy variance proxy (Patton 2011), QLIKE is.
+# WHY 1.94 AND NOT 1.645 (protocols/clark_west_verification.md). The rule, committed before it was measured: the smallest lag whose false alarms at nominal 5% are at most 7.5% in every null scenario, and if none, a critical value calibrated from placebos. On this pooled,
+# recursive design no lag qualified, on simulated panels or the real target. So the critical value is 1.94, the 95th percentile of the Clark-West t at 21 lags, the refit cycle, over 4,000 placebos per window matched to real PE's measured common movement, on the real target up to the lock, the
+# larger of two 690-date windows, rounded up. 2.33 is the 97.5th, for Holm. It was calibrated on the vendor's open and before the lock, so the reserved dates' own dependence can differ. On those placebos the full "improves" verdict false-alarms about 1% of the time.
+#
+# THE VERDICT, one of three:
+#   PE IMPROVES THE FORECAST of log variance out of sample: Clark-West t at least 1.94 (`cw_critical`, one-sided 5%) AND the interval in 2 wholly below zero. It then says whether QLIKE agrees (its interval wholly below zero) or does not confirm it.
+#   CLARK-WEST DETECTS INCREMENTAL CONTENT, BUT LOG LOSS DID NOT DEMONSTRABLY FALL: Clark-West passes and the interval in 2 does not lie below zero. It then says whether QLIKE did fall.
+#   NO IMPROVEMENT SHOWN: otherwise.
+# A Holm correction across the two protocols' primary Clark-West tests is also reported: a test clearing its own 2.5% critical value (`cw_critical_holm`) passes, and the other then needs only its own 5% value. The verdict is the unadjusted one.
+#
+# REPORTED, NOT DECISIVE. Squared error on levels. By year. The PE coefficient and its sign stability. Realized over forecast variance. Robustness targets on the same design: V_id (the range alone), V
+# with the vendor's open where the official one is missing, and realized variance from 5-minute SIP bars plus the overnight. Genuine extremes stay in (MRNA 2026-08-19 and others are known to exist, see the disclosure).
+#
+# PRECONDITIONS, none of which scores anything or summarizes reserved-period returns or open gaps. A failure stops the evaluation until an amendment, with its reason, is filed:
+#   1. scripts/protocol_checks.py: among usable bars (at least $5, liquid as above, in the index by then), at least 95% have an official open in every year. Counts only for the reserved period.
+#      Before the reserved period, sessions in the top 1% by V may lack an official open at most max(2 x the overall share, 2%) of the time.
+#   2. scripts/vol_forecast.py --stage baseline --official <file>, with sessions built only up to the lock (scripts/build_sessions.py --until 2024-01-02): on the official open the rule still picks the form
+#      below, and on validation that form's QLIKE and log loss each beat the monthly mean carried forward, with the 95% interval of each gap below zero. If the rule picks another form, or the gate fails, the test does not run.
+#
+# RUN ONCE, and only on Kshitiz's word: python scripts/vol_forecast.py --stage reserved --score-reserved --sessions <file> --reference <dir> --official <file> --rv <file>. Without that flag nothing after
+# 2024-01-02 is loaded. Record the outcome in RESULTS.md whatever it is. This protocol runs first, then the portfolio's, both already frozen, so neither result can change the other's rules.
+#
+# WHEN EACH CHOICE WAS MADE. Version 1 listed these together as made "in freezing" and called the PE settings "fixed in advance". That was too loose; amendment_1.md, A6, has the record by commit.
+#   BEFORE ANY DAILY FORECAST, 2026-10-27 and 28: the question and evidence standard (Kshitiz's brief); a range proxy with the overnight explicit (the brief) and V's formula (the data audit); realized
+#     variance as robustness; proposed from the audit and undecided until the freeze: the official open, the $5 and $10M thresholds, and HEAT1's window boundaries.
+#   AFTER THE FIRST PORTFOLIO RESULTS, BEFORE ANY VARIANCE FORECAST, 2026-11-02: leaving half-day targets out; the log loss and the floor; the HAR candidates, the QLIKE selection rule and the gate.
+#     Those portfolio results had already shown PE adding nothing detectable to return forecasts on development and validation.
+#   REUSED FOR VOLATILITY, WITH THOSE PORTFOLIO RESULTS VISIBLE: the PE settings, written for the portfolio tool before its first run and never tuned, but not chosen for variance; and index-join dates,
+#     adopted for the portfolio after its diagnostics. They are "fixed in advance" only against variance forecasts, of which none with PE exists.
+#   AFTER THE BASELINE SEARCH'S RESULTS, BEFORE ANY PE COMPARISON ON VARIANCE, 2026-11-02: everything in amendment 1, which is the conversion from logs, the missing-open policy, the shared liquidity measure and the lag.
+# On review on 2026-11-02, with this history in front of them, Kshitiz retained the PE specification, V, the half-day treatment and the index-join dates.
+registered: "2026-11-02"
+period: reserved for this specification but previously exposed through related research
+baseline:
+  form: log_har
+settings:
+  pe_m: 3
+  pe_tau: 1
+  pe_window: 63
+  warmup: 65
+  floor: 1.0e-8
+  min_train_sessions: 252
+  refit_every: 21
+  hac_lags: 21
+  cw_critical: 1.94
+  cw_critical_holm: 2.33
+  block: 21
+  long_window: 252
+  long_min: 63
+  validation_start: "2022-01-04"
+  test_start: "2024-01-03"
+  test_end: "2026-10-12"
+  seed: 0

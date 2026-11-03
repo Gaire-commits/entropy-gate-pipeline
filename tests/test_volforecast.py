@@ -190,7 +190,7 @@ def test_the_stages_run_end_to_end_and_the_reserved_stage_needs_its_flag(monkeyp
     cfg = replace(CFG, validation_start="2021-01-04", test_start="2021-06-01", test_end="2021-12-31")
     monkeypatch.setattr(script.vf, "load_panel", lambda *a, **k: panel(n=55, seed=3))
     monkeypatch.setattr(script, "SPANS", {"development": ("2016-01-01", "2020-12-31"), "validation": ("2021-01-04", "2021-05-28")})
-    monkeypatch.setattr(script, "PROTOCOL", Path(__file__).resolve().parents[1] / "protocols" / "volatility_v1.yaml")
+    monkeypatch.setattr(script, "PROTOCOL", Path(__file__).resolve().parents[1] / "protocols" / "volatility_v2.yaml")
     args = type("A", (), {"sessions": "x", "reference": "y", "official": "z", "rv": None, "score_reserved": False})()
     assert script.reserved_stage(args, cfg) == 2                                 # no flag: nothing runs
     assert "STOPPED" in capsys.readouterr().out

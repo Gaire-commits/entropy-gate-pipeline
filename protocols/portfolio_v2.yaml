@@ -1,0 +1,100 @@
+# THE PORTFOLIO PROTOCOL, VERSION 2, frozen 2026-11-02, before its reserved period was scored. It replaces protocols/portfolio_v1.yaml, which stays as it was; protocols/amendment_1.md gives
+# each change and its reason. Hash-checked by tests/test_frozen.py, along with the code that runs it. A change means a new, dated file with the reason in it, never an edit here.
+#
+# THE QUESTION. Does adding permutation entropy (PE) to an interpretable forecast of daily stock returns improve the forecast, and the portfolio built on it, net of costs? One primary test: `base_pe`
+# against `base`. `base_pe_x` (three interactions fixed in advance) is secondary.
+#
+# THE PERIOD. Reserved window: decisions and returns from 2024-01-03 to 2026-10-12, shared with protocols/volatility_v2.yaml. It is RESERVED FOR THIS SPECIFICATION BUT PREVIOUSLY EXPOSED THROUGH RELATED
+# RESEARCH; protocols/reserved_period_disclosure.md lists every prior use. It is not an untouched test. Only data after this protocol's date can be untouched.
+#
+# THE MODEL. Ridge on standardized features (src/portfolio.py: BASE, PE_FEATURE, INTERACTIONS), refit every 63 sessions on all realized rows, predicting each stock's cross-sectional rank in the next
+# 21 sessions' return. PE: normalized permutation entropy of the stock's daily close-to-close log returns, order 3, delay 1, over the last 63 overlapping patterns, so 65 returns; a pattern with a tie or
+# a missing return is left out; at least 57 valid patterns are required; normalized by ln 6; entered as a cross-sectional rank.
+#
+# THE RULES. Chosen on development and validation only (protocols/portfolio_rule_search_v2.yaml), on the PE-free model. Hold 21 sessions in 3 staggered tranches, one turning over every 7 sessions. Each
+# tranche buys the best 20% of eligible stocks by forecast, equally weighted, and keeps a holding while it stays in the best 40%; no sector above 30% of a tranche's names. 24 candidates were seen in
+# choosing this, and the choice's information ratio against equal-weight was -0.00 in development and +0.42 in validation, so expect selection bias in its favour on those windows.
+#
+# EXECUTION AND TARGET. Decided at the close of t, filled at the official close of t+1. The target runs from that fill to the fill 21 sessions later; a book reconciles to it to rounding error per
+# tranche (src/portfolio.py: reconcile_target). A stock with no bar cannot be traded and keeps its weight.
+#
+# COSTS, in the tool's first version, before any of its results, and not changed since: 5 bp one-way on every dollar traded, plus square-root impact: daily volatility x sqrt(trade / daily dollar
+# volume), on $10M. On development and validation this charged 8.4 bp per dollar traded, against about 9 bp average market impact (median about 6) in Frazzini, Israel and Moskowitz, "Trading Costs"
+# (live institutional trades, https://papers.ssrn.com/abstract=3229719). Daily-bar spread estimators (Abdi and Ranaldo 2017) could not resolve spreads this small here: the estimate rose with dollar
+# volume. Measured quotes are precondition 3.
+#
+# UNIVERSE. Today's S&P 500 list (fetched 2026-09-29), each stock only from its index-join date (registry/sp500_join_dates.csv, Wikipedia's "Date added", retrieved 2026-11-02; CTVA, PSKY and WBD have
+# no date and stay in). Raw close at least $5, 90% of bars over a year, and liquidity at least $10M, where liquidity is the median of quoted close x the vendor's raw daily volume over the 63 earlier
+# sessions (at least 40 of them), the measure protocols/volatility_v2.yaml uses too. That volume includes extended hours, about 28% above the session's, so the rule and the impact are slightly lenient.
+#
+# THE SURVIVORSHIP LIMIT. Join dates remove the run-up into the index (equal-weight's 2019-2021 return fell about 3 points a year). They do not bring back companies that have since left it or failed:
+# every stock here survived in the index to 2026, which inflates absolute returns by an unknown amount. Fixing this needs point-in-time constituents such as CRSP. Judge the book against equal-weight,
+# which shares the bias, and read the IC first. Nothing here says the book beats the market.
+#
+# THE TEST. For each larger model against `base`, on the reserved window only, kept apart, per decision date, averaged across stocks:
+#   1. CLARK-WEST (2007), adjusted squared-error difference on the target's rank, Newey-West t with 2 lags in decisions. It asks whether there is incremental predictive content. It does not say errors fell.
+#   2. THE UNADJUSTED PAIRED LOSS DIFFERENCE, larger minus base, with its 95% block-bootstrap interval (blocks of 8 decisions). It asks whether errors actually fell in this sample.
+#   3. THE IC GAP, with its interval the same way. 4. THE NET-RETURN GAP, with its 95% block-bootstrap interval (blocks of 21 sessions).
+# WHY THESE LAGS, AND WHY 1.645 STANDS (protocols/clark_west_verification.md). The rule, committed before it was measured: the smallest lag whose false alarms at nominal 5% are at most 7.5% in every null scenario. On this design, with placebo predictors on the
+# real target over the last 98 decisions before the lock, 2 lags give 6.8% and 3.8%; 2 is also the fewest that cover the target's overlap of 3 decisions. So normal critical values stay, with false alarms measured a little above nominal in one scenario. The volatility protocol's critical value differs, and is calibrated.
+#
+# THE VERDICT, for each larger model against `base`. Primary is `base_pe`:
+#   FORECAST IMPROVES: Clark-West t at least 1.645 (`cw_critical`, one-sided 5%) AND the interval in 2 wholly below zero AND the interval of the IC gap wholly above zero.
+#   CLARK-WEST DETECTS CONTENT, BUT FORECAST LOSS AND IC DO NOT SHOW IT: Clark-West passes and either interval fails.
+#   NO IMPROVEMENT SHOWN: otherwise.
+#   PORTFOLIO IMPROVES: the interval of the net-return gap wholly above zero. Otherwise no improvement shown.
+# A Holm correction across the two protocols' primary Clark-West tests is also reported: a test clearing its own 2.5% critical value (`cw_critical_holm`) passes, and the other then needs only its own 5% value. The verdicts above are the unadjusted ones.
+#
+# REPORTED, NOT DECISIVE: every metric against equal-weight and SPY (net return, Sharpe and Sortino over BIL, maximum drawdown, turnover, IC); the book's active return against equal-weight with its
+# interval; other cost levels; the largest single-stock days; genuine extremes stay in (MRNA 2026-08-19 and others are known to exist, see the disclosure).
+#
+# PRECONDITIONS, run by scripts/protocol_checks.py, none of which scores anything or summarizes reserved-period returns or open gaps. A failure stops the evaluation until an amendment, with its reason, is filed:
+#   1. Alpaca's SPY and BIL match `benchmark_reference` below within 0.5% in every year, 2017-2023. Nothing later is fetched for this check.
+#   2. Among usable bars, at least 95% have an official open in every year (the volatility protocol's target). Counts only for the reserved period. Before it, sessions in the top 1% by V may lack an
+#      official open at most max(2 x the overall share, 2%) of the time.
+#   3. The median quoted half-spread before the close, on sampled development and validation days, is at most the 5 bp assumed. If the plan serves no quotes, this is reported as not checked, and the frozen cost stands with that gap stated.
+#
+# RUN ONCE, and only on Kshitiz's word: python scripts/reserved_portfolio.py --reference <dir> --score-reserved. Before that flag, nothing after 2024-01-02 is loaded. Record the outcome in RESULTS.md whatever it is.
+#
+# WHEN EACH CHOICE WAS MADE. Version 1 did not separate these; amendment_1.md, A6, has the record by commit.
+#   BEFORE THE TOOL'S FIRST RESULTS, 2026-11-02: the features, the interactions and the PE settings, none tuned since; the cost model; the $5 and $10M thresholds and HEAT1's window boundaries, carried from the
+#     volatility panel of 2026-10-28.
+#   AFTER ITS FIRST RESULTS, ON DEVELOPMENT AND VALIDATION ONLY: the rule search and its amendment (staggered tranches), and these rules, on the PE-free model; index-join dates; the target's match to next-close fills.
+#     PE against `base` had by then been seen on development and validation on two sets of rules, showing nothing the rule could tell from zero. No setting was chosen from that comparison.
+#   AFTER THE VOLATILITY BASELINE'S RESULTS, BEFORE ANY RESERVED SCORE, 2026-11-02: everything in amendment 1 that touches this file, which is the verdict's loss condition, the lag, the shared liquidity measure in the check and the coverage rule.
+# On review on 2026-11-02 Kshitiz retained the PE specification and the index-join dates.
+registered: "2026-11-02"
+period: reserved for this specification but previously exposed through related research
+rules:
+  rebalance_every: 21
+  horizon: 21
+  tranches: 3
+  top_frac: 0.20
+  hold_frac: 0.40
+  sector_cap: 0.30
+  execution: next_close
+  cost_bps: 5.0
+  impact: 1.0
+  aum: 10000000.0
+  min_raw_close: 5.0
+  min_dollar_volume: 10000000.0
+  min_coverage: 0.9
+  ridge: 0.01
+  min_train_sessions: 504
+  refit_every: 63
+  train_sample_every: 5
+  hac_lags: 2
+  cw_critical: 1.645
+  cw_critical_holm: 1.96
+  pe_m: 3
+  pe_tau: 1
+  pe_window: 63
+  validation_start: "2022-01-04"
+  holdout_start: "2024-01-03"
+  holdout_end: "2026-10-12"
+  seed: 0
+# Calendar-year total returns from Yahoo's adjusted closes, retrieved 2026-11-02. SPY is within 0.3% of the S&P 500 total-return index in every year; BIL within 0.3% of
+# FRED's 3-month T-bill (DTB3) in every year except 2022 (0.64% below, as rates rose).
+benchmark_reference:
+  SPY: {2017: 0.21705, 2018: -0.04569, 2019: 0.31224, 2020: 0.18332, 2021: 0.28729, 2022: -0.18175, 2023: 0.26176}
+  BIL: {2017: 0.00689, 2018: 0.01737, 2019: 0.02032, 2020: 0.00399, 2021: -0.00098, 2022: 0.01405, 2023: 0.04945}

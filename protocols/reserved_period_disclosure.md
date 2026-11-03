@@ -1,6 +1,6 @@
 # Prior use of the reserved period, 2024-01-03 to 2026-10-12
 
-Written 2026-11-02, before the period was scored under `protocols/volatility_v1.yaml` or `protocols/portfolio_v1.yaml`, and to be cited with either result.
+Written 2026-11-02, before the period was scored under the protocols, and updated the same day for their second version (`protocols/volatility_v2.yaml`, `protocols/portfolio_v2.yaml`, by `protocols/amendment_1.md`). To be cited with either result.
 
 **The period is reserved for these specifications but previously exposed through related research. It is not an untouched test.** Walk-forward fitting stops a model from seeing the future. It cannot stop earlier findings on these same dates from having shaped the questions, features and settings. Only trading days after 2026-11-02 can be untouched; the protocols do not use them.
 
@@ -38,11 +38,23 @@ Part of the data audit for these protocols ran over the whole span, so the follo
 - **Yahoo check, 2026-11-02.** Requests for SPY, BIL and two index series returned one bar dated 2024-01-03, which was cut unread.
 - **From memory,** not measured, in the notes: a calm 2024 with an August spike, the April 2025 tariff shock, a rising 2026.
 
+From amendment 1 on, the checks print only coverage counts for this period, and no return or open-gap summary of it. The items above were seen before that rule.
+
+## What was done up to the lock while amending, 2026-11-02
+
+Nothing here loaded a date after 2024-01-02 for analysis or scored the period, but each could have shaped the protocols:
+
+- **The baseline search ran again** on development and validation, with no PE, on the vendor's open, under the amended conversion and liquidity measure. Its numbers were visible, and the first search's were visible when the amendment was written.
+- **The Clark-West verification** (`protocols/clark_west_verification.md`) used the real target up to the lock against placebo predictors built from simulated returns, and the portfolio's target the same way. No PE of a real return series was set against any target.
+- **A description of real PE up to the lock,** with the target dropped first: how much PE moves together across stocks, and how slowly. It chose the placebo behind the volatility protocol's critical value. It says nothing about forecasting.
+- **The portfolio's locked report ran again** on development and validation, including PE against `base` there. `base_pe` passes on neither window.
+
 ## What has not been done
 
 - **PE of daily returns against next-day variance has not been compared on any window** of this data, development and validation included.
-- **PE of daily returns against returns** has been compared on development and validation only (portfolio tool, 2026-11-02, on two sets of rules), not on the reserved period. No setting or rule was chosen from that comparison.
+- **PE of daily returns against returns** has been compared on development and validation only (portfolio tool, 2026-11-02, on successive sets of rules), not on the reserved period. No setting or rule was chosen from that comparison, but the PE settings were reused for volatility with it visible (`protocols/amendment_1.md`, A6).
 - **The final portfolio rules** were chosen on the PE-free model on development and validation only, as the best of 24 candidates seen across two searches; the second search's design followed from reading the first's results (`protocols/portfolio_rule_search_v2.yaml`).
+- **The volatility panel on the official open** has not run for all stocks, on any window: it needs Alpaca's prints. Numbers in the record so far use the vendor's open as a stand-in.
 
 ## How to read a result from this period
 
@@ -50,3 +62,4 @@ Part of the data audit for these protocols ran over the whole span, so the follo
 2. A null is informative: earlier work on these dates found little, and nothing was tuned to it.
 3. A positive result is weaker than an untouched one. The confirmation it would need is a forward test on trading days after 2026-11-02, with the rule unchanged.
 4. Two primary tests share this period, on different targets (next-session variance; 21-session returns). Report each verdict, plus a Holm correction across both.
+5. A significant Clark-West result is not a fall in out-of-sample loss. Quote the unadjusted loss difference and its interval beside it, and QLIKE.

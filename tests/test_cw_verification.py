@@ -77,3 +77,13 @@ def test_a_calibration_job_uses_only_rows_up_to_its_window(tmp_path):
     path2 = tmp_path / "arrays2.npz"
     np.savez(path2, y=y2, X=X, origin=origin, realized=origin + 1, col=col, T=np.array(T), N=np.array(N))
     assert cw._calibration_job((str(path2), window, "matched to real PE", 2, 1)) == out
+
+
+def test_a_planted_effect_reaches_the_inputs_as_it_would_in_real_variance():
+    T, N = 60, 3
+    z = np.tile(np.arange(T, dtype=float)[:, None], (1, N)) / 100.0
+    origin, col = np.array([30, 40]), np.array([0, 2])
+    moved = cw.with_effect_in_the_inputs(np.zeros((2, 3)), z, origin, col, 2.0)
+    assert np.allclose(moved[:, 0], 2.0 * z[origin - 1, col])                               # today's V held yesterday's effect
+    assert np.allclose(moved[:, 1], 2.0 * np.array([z[o - 5:o, c].mean() for o, c in zip(origin, col)]))
+    assert np.allclose(moved[:, 2], 2.0 * np.array([z[o - 22:o, c].mean() for o, c in zip(origin, col)]))

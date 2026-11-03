@@ -29,6 +29,7 @@ before part D ran, with parts A to C and part P's description of the real predic
      development and validation. On the real target, recursive, refit every 21 sessions, on two windows of 690 target dates: the last before the lock, and the 690 before those, which
      hold March 2020. The larger of the two is used, rounded up to two decimals. The 97.5th percentile, the same way, serves the Holm correction. Reported and not used: the same
      without the swing, and with part A's adverse swing.
+  E. Power at that critical value, on the real target: a true effect of known size planted on the matched placebo. No rule rests on it. It says how large an effect a null could miss.
 """
 
 from __future__ import annotations
@@ -121,6 +122,7 @@ def stats(y, f0, f1, key, scored, lags) -> dict:
     out = {f"t{l}": nw_t(a, l) for l in lags}
     out.update({f"raw{l}": nw_t(g, l) for l in lags})
     out["naive"] = float(cw.mean() / (cw.std() / np.sqrt(len(cw))))
+    out["gain"] = float(g.mean())
     return out
 
 
@@ -304,7 +306,8 @@ def swing(rng, T: int) -> np.ndarray:
 
 def _calibration_job(job: tuple) -> list[dict]:
     """One worker's share of part D: placebo draws for one window and one scenario."""
-    path, targets, scenario, reps, seed = job
+    path, targets, scenario, reps, seed, *planted = job
+    effect = planted[0] if planted else 0.0
     with np.load(path) as a:
         y, X, origin, realized, col, T, N = a["y"], a["X"], a["origin"], a["realized"], a["col"], int(a["T"]), int(a["N"])
     keep = realized <= targets[-1]          # a later window's rows play no part, in training or in scoring
@@ -322,9 +325,39 @@ def _calibration_job(job: tuple) -> list[dict]:
             z = z + np.sqrt(REAL_DATE_SD ** 2 - OWN_DATE_SD ** 2) * swing(rng, T)[:, None]
         elif scenario == "part A's adverse swing":
             z = z + z.std() * swing(rng, T)[:, None]
-        f0, f1, sc = recursive_forecasts(y, X, z[origin, col], realized, origin, blocks)
-        out.append(stats(y, f0, f1, realized, sc, VOL_LAGS))
+        at_origin = z[origin, col]
+        planted_y, planted_X = y + effect * at_origin, with_effect_in_the_inputs(X, z, origin, col, effect) if effect else X
+        f0, f1, sc = recursive_forecasts(planted_y, planted_X, at_origin, realized, origin, blocks)
+        out.append(stats(planted_y, f0, f1, realized, sc, VOL_LAGS))
     return out
+
+
+def with_effect_in_the_inputs(X: np.ndarray, z: np.ndarray, origin, col, effect: float) -> np.ndarray:
+    """A true effect of PE on ln V is also in past V, so the HAR inputs carry it too and the baseline absorbs part of it. Leaving the inputs alone would
+    make it far easier to detect than a real one. To first order in the small b x PE, each input's log moves by b times the mean of PE over the sessions it spans."""
+    past = np.roll(z, 1, axis=0)
+    past[0] = 0.0
+    frame = pd.DataFrame(past)
+    spans = [past, frame.rolling(5, min_periods=1).mean().to_numpy(), frame.rolling(22, min_periods=1).mean().to_numpy()]
+    return X + effect * np.column_stack([a[origin, col] for a in spans])
+
+
+def part_e(args, reps: int, seed: int) -> pd.DataFrame:
+    """Power on the real target, at the calibrated critical value: what a true effect of this size would do. An effect b adds b x PE to ln V, in the target and in the inputs."""
+    data = real_target(args)
+    window = np.unique(data["realized"])[-690:]
+    effects = (1.0, 2.0, 5.0, 10.0)
+    per_job = 50
+    jobs = [(args.arrays, window, "matched to real PE", per_job, seed + 1000 * (i + 1) + k, b) for i, b in enumerate(effects) for k in range(reps // per_job)]
+    with ProcessPoolExecutor(args.workers, mp_context=get_context("spawn")) as ex:
+        done = list(ex.map(_calibration_job, jobs))
+    per = len(jobs) // len(effects)
+    table = {}
+    for i, b in enumerate(effects):
+        t = pd.DataFrame([r for res in done[i * per:(i + 1) * per] for r in res])
+        table[f"effect {b:g}"] = {"draws": len(t), "mean fall in log loss": t["gain"].mean(), f"clears {args.critical}": (t[f"t{CALIBRATION_LAG}"] >= args.critical).mean(),
+                                  "clears, and raw loss fell": ((t[f"t{CALIBRATION_LAG}"] >= args.critical) & (t[f"raw{CALIBRATION_LAG}"] >= 1.96)).mean(), f"mean t, lag {CALIBRATION_LAG}": t[f"t{CALIBRATION_LAG}"].mean()}
+    return pd.DataFrame(table).T
 
 
 def part_d(args, reps: int, seed: int) -> tuple[pd.DataFrame, dict]:
@@ -451,6 +484,7 @@ def main() -> int:
     ap.add_argument("--parts", default="abc")
     ap.add_argument("--arrays", default="cw_real_target.npz", help="part D's arrays, built once")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--critical", type=float, default=1.645, help="part E: the calibrated critical value")
     args = ap.parse_args()
     pd.set_option("display.width", 200)
     pd.set_option("display.max_columns", 20)
@@ -472,6 +506,9 @@ def main() -> int:
         print(f"D. The calibrated critical value on the real target, {args.reps} draws for the matched placebo, half that for the others:")
         table, chosen = part_d(args, args.reps, args.seed)
         print(table.T.to_string(), f"\n\nTHE RULE GIVES: {chosen}\n({time.time() - t0:.0f}s)\n", flush=True)
+    if "e" in args.parts:
+        print(f"E. Power on the real target at {args.critical}, on the last 690 target dates before the lock:")
+        print(part_e(args, args.reps, args.seed).to_string(float_format=lambda v: f"{v:.4f}"), f"\n({time.time() - t0:.0f}s)\n", flush=True)
     return 0
 
 

@@ -31,8 +31,8 @@ class VolConfig:
     min_train_sessions: int = 252   # sessions of history before the first forecast
     refit_every: int = 21
     hac_lags: int = 21              # Newey-West lags, in target dates (protocols/clark_west_verification.md)
-    cw_critical: float = 1.645      # the Clark-West t that counts as a 5% one-sided pass, and...
-    cw_critical_holm: float = 1.96  # ...a 2.5% one, for the Holm correction across the two protocols
+    cw_critical: float = 1.94       # the Clark-West t that counts as a 5% one-sided pass, calibrated on placebos, and...
+    cw_critical_holm: float = 2.33  # ...a 2.5% one, for the Holm correction across the two protocols
     block: int = 21                 # block length for the bootstrap intervals, in target dates
     long_window: int = 252
     long_min: int = 63

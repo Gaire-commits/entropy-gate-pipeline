@@ -5,8 +5,8 @@
     python scripts/vol_forecast.py --stage rv --sip data/bars_sip --rv data/reference/rv5.parquet
     python scripts/vol_forecast.py --stage reserved --score-reserved --sessions ... --reference ... --official ... --rv ...
 
-`baseline` applies the protocol's rule for the HAR form on development and its gate on validation. It uses no PE and loads nothing after
-the lock. `rv` builds the realized-variance robustness target. `reserved` runs the one registered comparison, once, on the reserved test window.
+`baseline` applies the protocol's rule for the HAR form on development and its gate on validation. No model in it uses PE, and it loads nothing
+after the lock. `rv` builds the realized-variance robustness target. `reserved` runs the one registered comparison, once, on the reserved test window.
 """
 
 from __future__ import annotations

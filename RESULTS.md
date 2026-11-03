@@ -1781,7 +1781,7 @@ V_id(t) = rho(t)                              intraday only, a sensitivity targe
 
 ## Frozen protocols for the reserved period (2026-11-02; the period not scored)
 
-The portfolio's rules and costs were finalized on development and validation only, and the portfolio and volatility protocols were frozen, before 2024-01-03 to 2026-10-12 was scored under either. Files: `protocols/portfolio_v1.yaml`, `protocols/volatility_v1.yaml`, `protocols/reserved_period_disclosure.md`. `tests/test_frozen.py` hash-checks the protocols and the code that runs them; the freeze is commit `8ee50cb`. The period is **reserved for these specifications but previously exposed through related research**.
+The portfolio's rules and costs were finalized on development and validation only, and the portfolio and volatility protocols were frozen, before 2024-01-03 to 2026-10-12 was scored under either. The first freeze is commit `8ee50cb`: `protocols/portfolio_v1.yaml`, `protocols/volatility_v1.yaml`. Both were replaced the same day, still before scoring, by version 2: see "Amendment 1" below, whose numbers replace this section's where they differ. Disclosure: `protocols/reserved_period_disclosure.md`. `tests/test_frozen.py` hash-checks the protocols and the code that runs them. The period is **reserved for these specifications but previously exposed through related research**.
 
 ### Measured
 
@@ -1824,7 +1824,7 @@ SPY rebuilt from closes and dividends differs from its adjusted close by at most
 
 PE on these rules, against `base`: `base_pe` validation IC gap -0.0003 [-0.0012, +0.0006], Clark-West t -1.16, net-return gap -0.2% a year [-0.8%, +0.4%]; `base_pe_x` validation IC gap -0.0009 [-0.0028, +0.0007], Clark-West t -1.34, net gap -0.1% [-1.0%, +0.8%]. Neither passes in development or validation. The result holds at 20 bp one-way (validation: base 4.1%, equal-weight 3.1%).
 
-**The volatility baseline, with no PE.** On the vendor's open (the official open needs keys):
+**The volatility baseline, with no PE: the first search, before amendment 1.** On the vendor's open (the official open needs keys):
 
 | | Development QLIKE | Development squared log error | Validation QLIKE | Validation squared log error |
 |---|---:|---:|---:|---:|
@@ -1843,10 +1843,68 @@ Validation gate passed: against the monthly mean, QLIKE gap -0.048 [-0.068, -0.0
 3. **PE looks unlikely to help on returns.** Nothing on these windows suggests it, in line with E6 and the entropy-free run. The reserved period is its one registered test.
 4. **The rules could have been chosen differently.** The best validation book was narrower and turned over more; the rule favours whichever holds up in both windows, and that was a choice made before seeing either.
 
+## Amendment 1 (2026-11-02; the reserved period not scored)
+
+On review, Kshitiz asked for six changes before scoring and kept STEP 3 locked. `protocols/amendment_1.md` gives each with its reason, and produces `protocols/volatility_v2.yaml` and `protocols/portfolio_v2.yaml`. The PE specification, V, the half-day treatment and index-join dates stay, with the survivorship limit stated in both protocols: companies since removed from the index remain absent. No PE of daily returns has been compared with a variance baseline on any window.
+
+| | Version 1 | Version 2 |
+|---|---|---|
+| The verdict | Clark-West alone | Clark-West says there is content. "Improves" also needs the unadjusted paired loss difference's 95% interval below zero. QLIKE is reported beside it |
+| Volatility inference | 5 lags, 1.645 | **21 lags, 1.94**, calibrated (2.33 for Holm) |
+| Portfolio inference | 4 lags, 1.645 | **2 lags, 1.645** (1.96 for Holm) |
+| Logs to variance, for QLIKE | `exp(f + s²/2)`, assuming normal residuals | Duan's smearing factor, per refit, from its own training rows |
+| No official open | The vendor's open, flagged | No V for that session; the vendor's open is a sensitivity only |
+| Liquidity | Two measures | One: median quoted close × the vendor's raw volume over the 63 earlier sessions |
+| Reserved-period summaries in the checks | Printed by the audit and the open check | Coverage counts only |
+| History of the choices | One list, "made in freezing" | By commit: before any daily forecast; after the portfolio's results; reused for volatility; after the baseline search |
+
+### Measured
+
+**Clark-West on this design** (`protocols/clark_west_verification.md`; placebos, no real PE against any target). False alarms at nominal 5%, in percent:
+
+| | Volatility, 21 lags, real target | Portfolio, 2 lags, real target |
+|---|---:|---:|
+| Placebo's own swings only | 5.9 and 3.3 on two windows; 7.4 in the first, smaller run | 6.8 |
+| Matched to real PE's common movement | 8.3 and 7.0 | not run |
+| Adverse slow swing | 11.3 and 10.3 | 3.8 |
+| Adverse slow swing, ignoring dependence across dates and stocks | 45 | 7 |
+
+By the rule committed first, no lag qualified for volatility, so a critical value calibrated on the matched placebo replaces 1.645: 1.94 at 5%. At that value the full verdict "PE improves the forecast" false-alarms 0.8-1.3% of the time. The rule chose 2 lags for the portfolio, and 1.645 stands there.
+
+**Real PE's common movement**, up to the lock with the target dropped first: 0.7% of its variance is common across stocks, against 0.2% for independent noise and about 50% for the adverse swing. That is why the calibration uses a matched placebo.
+
+**Power at 1.94,** on the real target with a planted effect, in the target and in the inputs as a real one would be. If one standard deviation of PE moved next-day variance by 2.6%, Clark-West clears 1.94 in 82% of draws and the raw loss is also significantly lower in 44%. At 6.6%, 100% and 95%. At 1.3%, 35% and 11%. So a null would rule out about 7% and say little about 1%.
+
+**The baseline again, on the vendor's open, with no PE.** The rule still picks the pooled log-HAR and the gate still passes. This is a stand-in, not the registered target, which needs the official open:
+
+| | Development QLIKE | Development log loss | Validation QLIKE | Validation log loss | Realized over forecast variance, development / validation |
+|---|---:|---:|---:|---:|---:|
+| **pooled log-HAR (chosen)** | **0.468** | **0.694** | 0.433 | 0.639 | 1.107 / 0.960 |
+| plus the stock's long-run level | 0.475 | 0.700 | 0.428 | 0.628 | 1.134 / 0.924 |
+| log-HAR per stock | 0.478 | 0.706 | 0.428 | 0.632 | 1.128 / 0.956 |
+| level HAR | 0.532 | 1.018 | 0.447 | 0.858 | 1.088 / 0.988 |
+| monthly mean carried forward | 0.562 | 0.951 | 0.491 | 0.839 | 1.002 / 1.001 |
+
+Validation gate passed: against the monthly mean, QLIKE gap -0.058 [-0.078, -0.038], log loss gap -0.200 [-0.257, -0.142]. Mean smearing factor 1.588. Rows: development 541,016, validation 213,799.
+
+**The portfolio's locked report, on the final protocol with Yahoo's benchmarks.** Nothing here changes the rules. PE against `base` (the loss is on ranks, in units of 1e-4):
+
+| | Clark-West t, 2 lags | Loss gap [95%] | IC gap [95%] | Net-return gap a year [95%] | Verdict |
+|---|---:|---:|---:|---:|---|
+| `base_pe`, development | 0.65 | -0.00 [-0.15, +0.13] | -0.0002 [-0.0013, +0.0009] | -0.2% [-0.9%, +0.5%] | No improvement shown |
+| `base_pe`, validation | -1.30 | +0.08 [-0.02, +0.22] | -0.0003 [-0.0012, +0.0006] | -0.2% [-0.8%, +0.4%] | No improvement shown |
+
+### Interpretations (each can be wrong)
+
+1. **A 1.94 bar is a real cost, and the right one.** On these placebos 1.645 would raise false alarms by about half. The price is a test less able to detect a small effect, which matters when reading a null.
+2. **The distinction in A1 will likely matter.** With a true effect, Clark-West often passes while the raw loss is not significantly lower. That outcome would be reported as content without a demonstrated fall in errors, and not as an improvement.
+3. **Smearing changes the level of QLIKE more than its ranking.** The rule's pick did not move. The level forecasts are still off in the mean by 11% and 4%, in opposite directions, so QLIKE gaps deserve more trust than QLIKE levels.
+4. **A pass could be small.** With this many stock-days, an effect of 6.6% per standard deviation of PE almost always passes, yet lowers a log loss of about 0.64 by only 0.0004. The amount matters as much as the verdict.
+
 ### Unresolved before scoring
 
-- **Alpaca's own SPY and BIL, the official-open coverage for all stocks, quoted spreads, and the volatility gate on the official open** have not run, because this machine has no keys. `notebooks/reserved_evaluation.ipynb` steps 1 and 2 run them. Both protocols are frozen subject to these preconditions.
-- **Settings chosen in freezing**, listed at the end of `protocols/volatility_v1.yaml`, can be replaced by Kshitiz and the advisor by a dated amendment before anything is scored.
+- **The checks that need Alpaca have not run,** because this machine has no keys: Alpaca's own SPY and BIL, official-open coverage for all stocks and whether missing opens cluster on extreme days, quoted spreads, and the baseline gate on the official open. `notebooks/reserved_evaluation.ipynb` steps 1 and 2 run them. Both protocols are subject to these preconditions.
+- **Choices beyond the six requested,** listed at the end of `protocols/amendment_1.md`, can be replaced by Kshitiz and the advisor by a dated amendment before anything is scored. So can the calibration's use of the matched placebo; the adverse one would give 2.12.
 - Whether HEAT2's test has been scored: the record is silent, and the disclosure says so.
 
 ## Advisor feedback and response (September 2026)
@@ -1939,6 +1997,7 @@ The response so far:
 | 2026-10-28 | Open gap on raw prices (section 38): the vendor's close is the official close (99.99%); its open equals the listing exchange's opening print on 74.2% of symbol-days, is more than 25 bp away on 5.4%, and up to 13% away on stress days (March 2020). It is 7% of the variance of an approximate V. Proposed: the official open as O, which needs the universe's auction prints |
 | 2026-11-02 | Portfolio tool built (`notebooks/portfolio_tool.ipynb`) and run with the hold-out locked: no forecast skill out of sample, PE and interactions add nothing the rule can tell from zero, and the weekly book loses to equal-weight after costs (validation: -0.6% a year against +4.9%) |
 | 2026-11-02 | Benchmarks checked on public data, MRNA's +177% found genuine, the target reconciled with next-close fills. Portfolio rules chosen on development and validation (monthly, 3 tranches, best 20%). Volatility baseline chosen with no PE (pooled log-HAR). **Both protocols frozen; the shared reserved period not scored** (prior use disclosed). Alpaca-only checks pending |
+| 2026-11-02 | Amendment 1, before scoring: both protocols at version 2. Clark-West kept apart from a fall in loss; its inference measured on placebos (volatility 21 lags and a calibrated 1.94, portfolio 2 lags and 1.645); Duan's smearing for QLIKE; no V without an official open; one liquidity measure; reserved-period summaries removed from the checks; the history corrected by commit. On the vendor's open the rule still picks the pooled log-HAR and the gate passes. Alpaca's checks and the gate on the official open have not run. The reserved period is not scored |
 
 ## Next steps
 

@@ -95,6 +95,9 @@ def main() -> int:
             c = pf.paired_comparison(res["base"], res[name], target, eligible, rf, a, b, cfg.seed, cfg.hac_lags, cfg.cw_critical)
             rows.append({"model": name, "window": span, **{k: c[k] for k in ("dates", "clark_west_t", "loss_gap", "loss_gap_lo", "loss_gap_hi", "ic_small", "ic_large", "ic_gap", "ic_gap_lo", "ic_gap_hi", "net_return_gap_ann", "net_gap_lo", "net_gap_hi", "sharpe_gap", "sharpe_gap_lo", "sharpe_gap_hi")}, "verdict": pf.verdict(c)})
     comparison = pd.DataFrame(rows)
+    gaps = ["loss_gap", "loss_gap_lo", "loss_gap_hi"]
+    comparison[gaps] = comparison[gaps] * 1e4       # the loss is on ranks, and these gaps are small: in units of 1e-4
+    comparison = comparison.rename(columns={g: f"{g}_x1e4" for g in gaps})
     print(f"\nPE against base (intervals 95%, block bootstrap). Clark-West clears {cfg.cw_critical} at 5% and, for Holm, {cfg.cw_critical_holm} at 2.5%:")
     print(comparison.drop(columns="verdict").to_string(index=False))
     print()
