@@ -1781,7 +1781,7 @@ V_id(t) = rho(t)                              intraday only, a sensitivity targe
 
 ## Frozen protocols for the reserved period (2026-11-02; the period not scored)
 
-The portfolio's rules and costs were finalized on development and validation only, and the portfolio and volatility protocols were frozen, before 2024-01-03 to 2026-10-12 was scored under either. Files: `protocols/portfolio_v1.yaml`, `protocols/volatility_v1.yaml`, `protocols/reserved_period_disclosure.md`. `tests/test_frozen.py` hash-checks the protocols and the code that runs them. The period is **reserved for these specifications but previously exposed through related research**.
+The portfolio's rules and costs were finalized on development and validation only, and the portfolio and volatility protocols were frozen, before 2024-01-03 to 2026-10-12 was scored under either. Files: `protocols/portfolio_v1.yaml`, `protocols/volatility_v1.yaml`, `protocols/reserved_period_disclosure.md`. `tests/test_frozen.py` hash-checks the protocols and the code that runs them; the freeze is commit `8ee50cb`. The period is **reserved for these specifications but previously exposed through related research**.
 
 ### Measured
 
