@@ -112,8 +112,10 @@ def test_the_comparison_finds_a_planted_pe_effect_and_not_a_missing_one():
     assert null["clark_west_t"] < 1.645
     assert vf.verdict(real).startswith("PE improves")
     assert vf.verdict(null) == "PE: no improvement shown"
-    significant_only = {"clark_west_t": 2.0, "log_loss": {"hi": 0.001}, "qlike": {"hi": 0.001}}
+    significant_only = {"clark_west_t": 2.0, "clark_west_critical": 1.645, "log_loss": {"hi": 0.001}, "qlike": {"hi": 0.001}}
     assert vf.verdict(significant_only).startswith("Clark-West detects incremental content, but")   # significance alone is not an improvement
+    assert vf.verdict({**significant_only, "clark_west_critical": 2.5}) == "PE: no improvement shown"
+    assert real["clark_west_critical"] == CFG.cw_critical and real["clark_west_critical_holm"] == CFG.cw_critical_holm
     assert set(real["by_year"]) <= {2020, 2021}
 
 

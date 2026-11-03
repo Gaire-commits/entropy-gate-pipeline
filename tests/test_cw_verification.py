@@ -53,3 +53,27 @@ def test_the_statistic_rejects_a_real_effect_and_rarely_a_placebo():
         f0, f1, sc = cw.recursive_forecasts(y, X, z, t + 1, t, cw.blocks_for(first, last, 21))
         passed.append(cw.stats(y, f0, f1, t + 1, sc, cw.VOL_LAGS)["t21"] >= 1.645)
     assert sum(passed) <= 2
+
+
+def test_the_common_swing_has_the_scale_it_claims():
+    g = cw.swing(np.random.default_rng(0), 2000)
+    assert abs(g.std() - 1) < 1e-12 and abs(g.mean()) < 1e-12 and np.corrcoef(g[1:], g[:-1])[0, 1] > 0.9
+
+
+def test_a_calibration_job_uses_only_rows_up_to_its_window(tmp_path):
+    rng = np.random.default_rng(0)
+    T, N = 420, 30
+    t, c = np.meshgrid(np.arange(T - 1), np.arange(N), indexing="ij")
+    origin, col = t.ravel(), c.ravel()
+    X = rng.normal(size=(len(origin), 3))
+    y = 0.5 * X[:, 0] + rng.normal(size=len(origin))
+    path = tmp_path / "arrays.npz"
+    np.savez(path, y=y, X=X, origin=origin, realized=origin + 1, col=col, T=np.array(T), N=np.array(N))
+    window = np.arange(300, 360)
+    out = cw._calibration_job((str(path), window, "matched to real PE", 2, 1))
+    assert len(out) == 2 and all(np.isfinite(r["t21"]) and np.isfinite(r["raw21"]) for r in out)
+    y2 = y.copy()
+    y2[origin + 1 > window[-1]] += 100.0     # a change after the window must change nothing
+    path2 = tmp_path / "arrays2.npz"
+    np.savez(path2, y=y2, X=X, origin=origin, realized=origin + 1, col=col, T=np.array(T), N=np.array(N))
+    assert cw._calibration_job((str(path2), window, "matched to real PE", 2, 1)) == out

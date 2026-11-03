@@ -18,12 +18,26 @@ Dependence across stocks is handled by averaging within each date; dependence ac
 rule, fixed before this was run: the Newey-West lag to use is the smallest of the lags tried whose false-alarm rate at the nominal 5% is at most 7.5% in
 every null scenario, simulated and real. If no lag qualifies, Clark-West t with normal critical values is not adequate on its own, and a
 critical value calibrated from placebos replaces 1.645.
+
+No lag qualified for volatility (part A's slow common swing), so part D applies that second branch. How to calibrate was not fixed by that rule, so this was added and committed
+before part D ran, with parts A to C and part P's description of the real predictor as the only things seen, and no PE of a real return series ever set against the target:
+
+  P. What the real predictor looks like, up to the lock, with the target dropped before anything is computed: how much PE's date mean moves. It says nothing about forecasting. It
+     shows real PE is nothing like part A's adverse swing: 0.7% of its variance is common, against 39% there.
+  D. The critical value is the 95th percentile of the Clark-West t, at 21 Newey-West lags (the refit cycle, and the value set before part A), over placebos resembling the real
+     predictor: each stock's own PE of simulated returns, plus a slow common swing scaled so the date mean's standard deviation is 0.0013, real PE's larger value across
+     development and validation. On the real target, recursive, refit every 21 sessions, on two windows of 690 target dates: the last before the lock, and the 690 before those, which
+     hold March 2020. The larger of the two is used, rounded up to two decimals. The 97.5th percentile, the same way, serves the Holm correction. Reported and not used: the same
+     without the swing, and with part A's adverse swing.
 """
 
 from __future__ import annotations
 
 import argparse
 import time
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import get_context
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -34,6 +48,9 @@ from src import portfolio as pf, volforecast as vf
 
 VOL_LAGS = (5, 10, 21, 42)
 PORT_LAGS = (2, 4, 9, 18)
+CALIBRATION_LAG = 21
+OWN_DATE_SD = 0.0006    # the date mean's standard deviation with a placebo's own swings alone (part P)
+REAL_DATE_SD = 0.0013   # real PE's, the larger of development (0.0010) and validation (0.0013) (part P)
 
 
 def nw_t(x: np.ndarray, lags: int) -> float:
@@ -234,6 +251,120 @@ def part_b(args, reps: int, seed: int) -> pd.DataFrame:
     return pd.DataFrame(out).T
 
 
+def real_target(args) -> dict:
+    """What part D needs from the panel, saved once so workers do not each rebuild it. The target and the baseline's inputs only: no PE."""
+    if Path(args.arrays).exists():
+        with np.load(args.arrays) as a:
+            return {k: a[k] for k in a.files}
+    cfg = vf.VolConfig()
+    p = vf.load_panel(args.sessions, args.reference, vf.lock_end(cfg), None, ROOT)
+    rows = vf.build_rows(p, cfg, pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv"))
+    dates = pd.DatetimeIndex(np.sort(pd.concat([rows["date"], rows["target_date"]]).unique()))
+    symbols = pd.Index(sorted(rows["symbol"].unique()))
+    out = {"y": rows["y"].to_numpy(), "X": rows[vf.LOG_HAR].to_numpy(), "origin": dates.get_indexer(rows["date"]), "realized": dates.get_indexer(rows["target_date"]),
+           "col": symbols.get_indexer(rows["symbol"]), "T": np.array(len(dates)), "N": np.array(len(symbols)), "dates": dates.to_numpy()}
+    np.savez(args.arrays, **out)
+    return out
+
+
+def part_p(args) -> pd.DataFrame:
+    """How much the real predictor moves together across stocks, and how slowly, against the placebos. The target is dropped before anything is computed."""
+    cfg = vf.VolConfig()
+    p = vf.load_panel(args.sessions, args.reference, vf.lock_end(cfg), None, ROOT)
+    rows = vf.build_rows(p, cfg, pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv"))[["symbol", "date", "pe"]]
+
+    def describe(z: pd.DataFrame) -> dict:
+        z = z.dropna()
+        mean = z.groupby("date")["pe"].mean()
+        return {"sd": z["pe"].std(), "date_mean_sd": mean.std(), "common_share": mean.var() / z["pe"].var(), "stock_mean_sd": z.groupby("symbol")["pe"].transform("mean").std(),
+                "autocorr_1": mean.autocorr(1), "autocorr_21": mean.autocorr(21), "autocorr_63": mean.autocorr(63)}
+    lock = pd.Timestamp(cfg.validation_start)
+    dates, symbols = pd.DatetimeIndex(np.sort(rows["date"].unique())), pd.Index(sorted(rows["symbol"].unique()))
+    rng = np.random.default_rng(args.seed)
+    own = pf.rolling_pe(pd.DataFrame(rng.normal(size=(len(dates) + 70, len(symbols)))), 3, 1, 63).to_numpy()[70:]
+    d, c = dates.get_indexer(rows["date"]), symbols.get_indexer(rows["symbol"])
+
+    def placebo(panel: np.ndarray) -> pd.DataFrame:
+        return pd.DataFrame({"symbol": rows["symbol"].to_numpy(), "date": rows["date"].to_numpy(), "pe": panel[d, c]})
+    g = swing(rng, len(dates))
+    table = {"real PE, up to the lock": describe(rows), "  development": describe(rows[rows["date"] < lock]), "  validation": describe(rows[rows["date"] >= lock]),
+             "placebo: own swings only": describe(placebo(own)), "placebo: matched to real PE": describe(placebo(own + np.sqrt(REAL_DATE_SD ** 2 - OWN_DATE_SD ** 2) * g[:, None])),
+             "placebo: part A's adverse swing": describe(placebo(own + np.nanstd(own) * g[:, None]))}
+    return pd.DataFrame(table).T
+
+
+def swing(rng, T: int) -> np.ndarray:
+    """A slow common swing with standard deviation exactly 1 over the sample."""
+    e = rng.normal(size=T)
+    g = np.zeros(T)
+    for t in range(1, T):
+        g[t] = 0.98 * g[t - 1] + np.sqrt(1 - 0.98 ** 2) * e[t]
+    return (g - g.mean()) / g.std()
+
+
+def _calibration_job(job: tuple) -> list[dict]:
+    """One worker's share of part D: placebo draws for one window and one scenario."""
+    path, targets, scenario, reps, seed = job
+    with np.load(path) as a:
+        y, X, origin, realized, col, T, N = a["y"], a["X"], a["origin"], a["realized"], a["col"], int(a["T"]), int(a["N"])
+    keep = realized <= targets[-1]          # a later window's rows play no part, in training or in scoring
+    y, X, origin, realized, col = y[keep], X[keep], origin[keep], realized[keep], col[keep]
+    first, last = origin[realized >= targets[0]].min(), origin.max()
+    blocks = [(a, a, min(a + 20, last)) for a in sorted(np.unique(origin[(origin >= first) & (origin <= last)]))[::21]]
+    rng = np.random.default_rng(seed)
+    pool = placebo_pool(rng, (T, N), size=6)
+    out = []
+    for _ in range(reps):
+        z = pool[rng.integers(len(pool))]
+        z = np.roll(z[:, rng.permutation(N)], rng.integers(T), axis=0)
+        z = np.nan_to_num(z - np.nanmean(z))
+        if scenario == "matched to real PE":
+            z = z + np.sqrt(REAL_DATE_SD ** 2 - OWN_DATE_SD ** 2) * swing(rng, T)[:, None]
+        elif scenario == "part A's adverse swing":
+            z = z + z.std() * swing(rng, T)[:, None]
+        f0, f1, sc = recursive_forecasts(y, X, z[origin, col], realized, origin, blocks)
+        out.append(stats(y, f0, f1, realized, sc, VOL_LAGS))
+    return out
+
+
+def part_d(args, reps: int, seed: int) -> tuple[pd.DataFrame, dict]:
+    """The calibrated critical values (the module's docstring has the rule)."""
+    data = real_target(args)
+    targets = np.unique(data["realized"])
+    dates = data["dates"]
+    windows = {"last 690 target dates": targets[-690:], "the 690 before those": targets[-1380:-690]}
+    plan = {"matched to real PE": reps, "own swings only": reps // 2, "part A's adverse swing": reps // 2}
+    jobs, labels = [], []
+    per_job = 100
+    for w, tg in windows.items():
+        print(f"  {w}: {str(dates[tg[0]])[:10]} to {str(dates[tg[-1]])[:10]}")
+        for scenario, n in plan.items():
+            for k in range(0, n, per_job):
+                jobs.append((args.arrays, tg, scenario, min(per_job, n - k), seed + len(jobs) + 1))
+                labels.append((w, scenario))
+    with ProcessPoolExecutor(args.workers, mp_context=get_context("spawn")) as ex:
+        done = list(ex.map(_calibration_job, jobs))
+    rows, draws = [], {}
+    for (w, scenario), res in zip(labels, done):
+        draws.setdefault((w, scenario), []).extend(res)
+    for (w, scenario), res in draws.items():
+        t = pd.DataFrame(res)
+        row = {"window": w, "scenario": scenario, "draws": len(t)}
+        for l in VOL_LAGS:
+            row[f"false alarms at 1.645, lag {l}"] = float((t[f"t{l}"] >= 1.645).mean())
+        for l in VOL_LAGS:
+            row[f"95th, lag {l}"] = float(t[f"t{l}"].quantile(0.95))
+        row[f"97.5th, lag {CALIBRATION_LAG}"] = float(t[f"t{CALIBRATION_LAG}"].quantile(0.975))
+        cut = float(t[f"t{CALIBRATION_LAG}"].quantile(0.95))
+        row["joint false alarm: clears the 95th and raw loss fell"] = float(((t[f"t{CALIBRATION_LAG}"] >= cut) & (t[f"raw{CALIBRATION_LAG}"] >= 1.96)).mean())
+        rows.append(row)
+    table = pd.DataFrame(rows)
+    use = table[table["scenario"] == "matched to real PE"]
+    five = float(np.ceil(use[f"95th, lag {CALIBRATION_LAG}"].max() * 100) / 100)
+    holm = float(np.ceil(use[f"97.5th, lag {CALIBRATION_LAG}"].max() * 100) / 100)
+    return table, {"cw_critical": five, "cw_critical_holm": holm}
+
+
 def part_c(args, reps: int, seed: int) -> pd.DataFrame:
     """The portfolio's comparison: ridge, rank target, 21-session targets at 7-session decisions, refit every 63 sessions, on the last 98 decisions before the lock."""
     cfg = pf.Config(rebalance_every=21, horizon=21, tranches=3, top_frac=0.2, hold_frac=0.4)
@@ -318,6 +449,8 @@ def main() -> int:
     ap.add_argument("--reps", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--parts", default="abc")
+    ap.add_argument("--arrays", default="cw_real_target.npz", help="part D's arrays, built once")
+    ap.add_argument("--workers", type=int, default=4)
     args = ap.parse_args()
     pd.set_option("display.width", 200)
     pd.set_option("display.max_columns", 20)
@@ -332,6 +465,13 @@ def main() -> int:
     if "c" in args.parts:
         print(f"C. The portfolio's comparison, real target, placebo predictors; {args.reps} draws each. Lags in decisions:")
         print(part_c(args, args.reps, args.seed).to_string(), f"\n({time.time() - t0:.0f}s)\n", flush=True)
+    if "p" in args.parts:
+        print("P. The real predictor against the placebos, up to the lock, with the target dropped first:")
+        print(part_p(args).to_string(float_format=lambda v: f"{v:.4f}"), f"\n({time.time() - t0:.0f}s)\n", flush=True)
+    if "d" in args.parts:
+        print(f"D. The calibrated critical value on the real target, {args.reps} draws for the matched placebo, half that for the others:")
+        table, chosen = part_d(args, args.reps, args.seed)
+        print(table.T.to_string(), f"\n\nTHE RULE GIVES: {chosen}\n({time.time() - t0:.0f}s)\n", flush=True)
     return 0
 
 

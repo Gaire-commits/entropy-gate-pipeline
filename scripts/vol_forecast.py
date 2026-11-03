@@ -71,8 +71,14 @@ def baseline_stage(args, cfg: vf.VolConfig) -> int:
     spec = vf.CANDIDATES[chosen]
     coefs = vf.walk_forward(rows, spec["names"], cfg, *SPANS["development"], spec.get("per_stock", False), spec.get("level", False))[1]
     print("its pooled coefficients over the development refits, mean and std:", coefs.mean().round(3).to_dict(), coefs.std().round(3).to_dict())
+    import yaml
+    with open(PROTOCOL) as f:
+        form = yaml.safe_load(f)["baseline"]["form"]
+    if chosen != form:
+        print(f"STOP: the protocol's baseline is {form}, but its rule now picks {chosen}. File an amendment, with the reason, before going on.")
+        return 2
     print("\nthe validation gate:")
-    return 0 if gate(rows, chosen, cfg) else 2
+    return 0 if gate(rows, form, cfg) else 2
 
 
 def rv_stage(args) -> int:
@@ -95,7 +101,9 @@ def report(r: dict) -> None:
     c = r["log_loss"]
     q = r["qlike"]
     print(f"  rows {r['rows']:,}, target dates {r['dates']}, {r['first']} to {r['last']}")
-    print(f"  1. Clark-West (is there incremental predictive content?): mean {r['clark_west_mean']:+.5f}, t {r['clark_west_t']:.2f} with {vf.VolConfig().hac_lags} Newey-West lags; pass at 1.645")
+    t, five, holm = r["clark_west_t"], r["clark_west_critical"], r["clark_west_critical_holm"]
+    print(f"  1. Clark-West (is there incremental predictive content?): mean {r['clark_west_mean']:+.5f}, t {t:.2f} with {vf.VolConfig().hac_lags} Newey-West lags; "
+          f"clears {five} (5%): {'yes' if t >= five else 'no'}; clears {holm} (2.5%, for Holm): {'yes' if t >= holm else 'no'}")
     print(f"     of which the adjustment for estimation noise: {r['adjustment_mean']:.6f}")
     print(f"  2. Unadjusted paired log loss, PE minus baseline (did errors actually fall?): {c['gap']:+.5f} [{c['lo']:+.5f}, {c['hi']:+.5f}], t {c['t']:.2f}; baseline {r['baseline_log_loss']:.4f}")
     print(f"  3. QLIKE, PE minus baseline: {q['gap']:+.5f} [{q['lo']:+.5f}, {q['hi']:+.5f}], t {q['t']:.2f}; baseline {r['baseline_qlike']:.4f}")

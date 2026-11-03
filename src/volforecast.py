@@ -31,6 +31,8 @@ class VolConfig:
     min_train_sessions: int = 252   # sessions of history before the first forecast
     refit_every: int = 21
     hac_lags: int = 21              # Newey-West lags, in target dates (protocols/clark_west_verification.md)
+    cw_critical: float = 1.645      # the Clark-West t that counts as a 5% one-sided pass, and...
+    cw_critical_holm: float = 1.96  # ...a 2.5% one, for the Holm correction across the two protocols
     block: int = 21                 # block length for the bootstrap intervals, in target dates
     long_window: int = 252
     long_min: int = 63
@@ -201,6 +203,7 @@ def pe_test(rows: pd.DataFrame, baseline: str, cfg: VolConfig, first, last) -> d
                          "qlike_gap": float((b["qlike"] - a["qlike"]).loc[c.index].mean())}
     return {"baseline": baseline, "rows": int(len(small)), "dates": int(len(cw)), "first": str(cw.index.min().date()), "last": str(cw.index.max().date()),
             "clark_west_mean": float(cw["clark_west"].mean()), "clark_west_t": pf.newey_west_t(cw["clark_west"], lags=cfg.hac_lags), "adjustment_mean": float(cw["adjustment"].mean()),
+            "clark_west_critical": cfg.cw_critical, "clark_west_critical_holm": cfg.cw_critical_holm,
             "log_loss": gap(a["mse_log"], b["mse_log"], cfg), "qlike": gap(a["qlike"], b["qlike"], cfg), "level_loss": gap(a["mse_level"], b["mse_level"], cfg),
             "baseline_log_loss": float(a["mse_log"].mean()), "baseline_qlike": float(a["qlike"].mean()), "calibration_baseline": calibration(small), "calibration_pe": calibration(large),
             "pe_coef_mean": float(pe.mean()), "pe_coef_same_sign": float((np.sign(pe) == np.sign(pe.mean())).mean()), "by_year": years}
@@ -213,10 +216,10 @@ def calibration(fc: pd.DataFrame) -> float:
 
 def verdict(result: dict) -> str:
     """The rule (protocols/volatility_v2.yaml). A significant Clark-West says PE has incremental predictive content, not that forecasts
-    got better in this sample. PE improves the forecast only if Clark-West t is at least 1.645 (one-sided 5%) AND the unadjusted
+    got better in this sample. PE improves the forecast only if Clark-West t clears its critical value (one-sided 5%) AND the unadjusted
     paired log-loss difference has a 95% interval wholly below zero. QLIKE then says whether that holds under a loss robust to a noisy
     variance proxy."""
-    content = result["clark_west_t"] >= 1.645
+    content = result["clark_west_t"] >= result["clark_west_critical"]
     fell = result["log_loss"]["hi"] < 0
     robust = result["qlike"]["hi"] < 0
     if content and fell:

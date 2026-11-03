@@ -214,10 +214,11 @@ def test_the_scorecard_figures():
     assert pf.newey_west_t(np.ones(10)) != pf.newey_west_t(np.arange(10.0))
     lo, hi = pf.block_bootstrap(np.random.default_rng(0).normal(0.5, 1, 500), np.mean, block=5, n_boot=500)
     assert lo < 0.5 < hi
-    row = {"clark_west_t": 2.0, "loss_gap_hi": -0.001, "ic_gap_lo": 0.001, "net_gap_lo": -0.01}
+    row = {"clark_west_t": 2.0, "clark_west_critical": 1.645, "loss_gap_hi": -0.001, "ic_gap_lo": 0.001, "net_gap_lo": -0.01}
     assert pf.verdict(row) == "forecast improves; net of costs no improvement shown"
     assert pf.verdict({**row, "loss_gap_hi": 0.001}).startswith("Clark-West detects content")     # significance alone is not an improvement
     assert pf.verdict({**row, "clark_west_t": 1.0}).startswith("forecast: no improvement")
+    assert pf.verdict({**row, "clark_west_critical": 2.5}).startswith("forecast: no improvement")
 
 
 def test_the_lookahead_check_catches_a_leak():
