@@ -140,6 +140,16 @@ class AlpacaREST:
         df["t"] = pd.to_datetime(df["t"], utc=True, format="ISO8601")
         return df
 
+    def quotes(self, symbols: list[str], start, end, feed: str = "sip", limit: int = 10000) -> pd.DataFrame:
+        rows = []
+        params = {"symbols": ",".join(symbols), "start": start, "end": end, "feed": feed, "limit": limit, "sort": "asc"}
+        for body in self.pages("/v2/stocks/quotes", params):
+            for sym, items in (body.get("quotes") or {}).items():
+                rows += [(sym, q.get("t"), q.get("bp"), q.get("ap")) for q in items]
+        df = pd.DataFrame(rows, columns=["symbol", "t", "bid", "ask"])
+        df["t"] = pd.to_datetime(df["t"], utc=True, format="ISO8601")
+        return df
+
     def corporate_actions(self, symbols: list[str], start, end, types: list[str] | None = None,
                           data_quality: str | None = "all", limit: int = 1000) -> pd.DataFrame:
         """Every corporate action returned, one row each; `kind` is the response's group (e.g. cash_dividends)."""

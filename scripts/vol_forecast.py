@@ -5,7 +5,8 @@
     python scripts/vol_forecast.py --stage reserved --score-reserved --audit ... --reference ... --official data/reference/official_prices.parquet [--rv data/reference/rv5.parquet]
 
 `baseline` chooses the HAR form on development and confirms it on validation. It uses no PE and loads nothing after the lock.
-`reserved` runs the one registered comparison, once, on the reserved test window.
+`rv` builds the realized-variance robustness target from the 5-minute cache. `reserved` runs the one registered comparison, once,
+on the reserved test window.
 """
 
 from __future__ import annotations
@@ -98,9 +99,26 @@ def reserved_stage(args, cfg: vf.VolConfig) -> int:
     return 0
 
 
+def rv_stage(args) -> int:
+    """Realized variance from the 5-minute SIP cache for every stock (about 15 minutes in Colab), for the robustness target."""
+    from src import audit
+    from src.data import cache_path
+    frames = []
+    for i, sym in enumerate(pd.read_csv(ROOT / "universe" / "sp500.csv")["symbol"]):
+        bars = audit.read_bars(cache_path(args.sip, sym, "5Min"))
+        if bars is not None and not bars.empty:
+            frames.append(vf.realized_variance(bars, sym))
+        if (i + 1) % 100 == 0:
+            print(f"{i + 1} symbols")
+    pd.concat(frames, ignore_index=True).to_parquet(args.rv, index=False)
+    print(f"wrote {args.rv}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", choices=["baseline", "reserved"], required=True)
+    ap.add_argument("--stage", choices=["baseline", "rv", "reserved"], required=True)
+    ap.add_argument("--sip", default="data/bars_sip")
     ap.add_argument("--audit", default="outputs/data_audit_v2")
     ap.add_argument("--reference", default="data/reference")
     ap.add_argument("--official", default=None)
@@ -108,7 +126,7 @@ def main() -> int:
     ap.add_argument("--score-reserved", action="store_true")
     args = ap.parse_args()
     cfg = vf.VolConfig()
-    return baseline_stage(args, cfg) if args.stage == "baseline" else reserved_stage(args, cfg)
+    return {"baseline": baseline_stage, "rv": lambda a, c: rv_stage(a), "reserved": reserved_stage}[args.stage](args, cfg)
 
 
 if __name__ == "__main__":

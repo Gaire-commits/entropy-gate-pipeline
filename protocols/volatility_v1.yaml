@@ -1,0 +1,62 @@
+# THE VOLATILITY PROTOCOL, frozen 2026-11-02, before its reserved period was scored. Hash-checked by tests/test_frozen.py, along with the code that runs it. A change
+# means a new, dated file with the reason in it, never an edit here.
+#
+# THE QUESTION. Does permutation entropy (PE) of daily returns improve next-day volatility forecasts beyond a HAR-style volatility-history baseline? One registered
+# hypothesis. Positive or null, the answer is reported. Three claims stay separate: structure, forecast, and whether it trades; only the first two are in scope.
+#
+# THE PERIOD. Reserved window: target sessions 2024-01-03 to 2026-10-12, shared with protocols/portfolio_v1.yaml. It is RESERVED FOR THIS SPECIFICATION BUT PREVIOUSLY
+# EXPOSED THROUGH RELATED RESEARCH; protocols/reserved_period_disclosure.md lists every prior use. It is not an untouched test. Only data after this protocol's date can
+# be untouched. PE has not been compared with the baseline on any window of this data, development and validation included.
+#
+# THE TARGET. For a stock and NYSE session t (not annualized, not scaled for calendar time; a half-day is a session of its own):
+#   r_on(t) = ln O(t) - ln C(t-1)                 overnight, from the previous session's close
+#   rho(t)  = (ln H(t) - ln L(t))^2 / (4 ln 2)    Parkinson range of the regular session
+#   V(t)    = r_on(t)^2 + rho(t)                  primary. What is forecast and scored is ln V(t+1), floored at (1 bp)^2
+# C is the vendor's close, `all`-adjusted: it is the official closing price (99.99% against the listing exchange's official close on 20 sampled stocks). O is the listing exchange's official
+# open (its official-open print, else its opening trade), applied as a raw-price correction to the vendor's adjusted open; where it printed neither, the vendor's open, flagged. H and L are the
+# vendor's quoted high and low. Missing values, their reasons, corporate-action sessions, truncated days, range conflicts and identity breaks follow src/volpanel.py unchanged.
+#
+# THE SAMPLE. Today's S&P 500 list, each stock only from its index-join date. Origin t is eligible if everything through t passes: valid V(t); 4 of 5 and 18 of 22 sessions with valid V; 90% of 65
+# sessions with valid V and return; quoted close at least $5; trailing median in-session dollar volume at least $10M. Half-day targets are left out of fitting and scoring and stay in the inputs. Rows:
+# development 540,425 (from 2016-04-06), validation 212,559, reserved 322,822 (counts on the vendor's open; counted, not read). Sessions 2022-01-03 and 2024-01-02 are embargoed as targets.
+#
+# THE BASELINE. Chosen on development, confirmed on validation, with no PE (protocols/vol_baseline_search.yaml): pooled OLS of ln V(t+1) on ln V(t), the log of the 5-session mean and the log of the
+# 22-session mean, refit every 21 sessions on every row whose target is realized. Development QLIKE 0.485 against 0.497-0.533 for the other three forms and 0.562 for the monthly mean carried forward.
+# Validation gate passed: QLIKE gap -0.048 [-0.068, -0.030], squared log error gap -0.200 [-0.257, -0.142] against the monthly mean. That search used the vendor's open; precondition 2 repeats the gate on the official open.
+#
+# THE ADDITION. PE(t): normalized permutation entropy of the stock's daily close-to-close log returns, order 3, delay 1, over the last 63 patterns (65 returns), leaving out patterns with a tie or a missing return, entered in its level.
+# Fixed in advance and never tuned: order 3 is the bottom of Bandt and Pompe's recommended range and 63 patterns gives about 10 per pattern, twice the repo's minimum; it is the portfolio protocol's setting too, so the shared period has one PE.
+#
+# THE TEST. Baseline against baseline + PE, identical rows and folds. Clark-West (2007) adjusted squared-error difference on ln V(t+1), averaged across stocks per target date, Newey-West t with 5 lags.
+# THE VERDICT: Clark-West t >= 1.645 (one-sided 5%): PE improves the forecast. Otherwise no improvement shown. A Holm correction across the two protocols' primary tests is also reported; the verdict is the unadjusted one.
+#
+# REPORTED, NOT DECISIVE. QLIKE gap with its 95% block-bootstrap interval: squared log error is not robust to a noisy variance proxy (Patton 2011), QLIKE is, so a pass without QLIKE is stated as such. Squared error on levels. By year. The PE coefficient and its sign stability.
+# Robustness targets on the same design: V_id (the range alone) and realized variance from 5-minute SIP bars plus the overnight. Genuine extremes stay in (MRNA 2026-08-19 and others are known to exist, see the disclosure).
+#
+# PRECONDITIONS, none of which scores anything. A failure stops the evaluation until an amendment, with its reason, is filed:
+#   1. scripts/protocol_checks.py: at least 95% of vendor bars have an official open in every year.
+#   2. scripts/vol_forecast.py --stage baseline --official <file>: the validation gate passes on the official open. The form stays as frozen; if the gate fails, the test does not run.
+#
+# RUN ONCE: python scripts/vol_forecast.py --stage reserved --score-reserved --audit <dir> --reference <dir> --official <file> --rv <file>. Without that flag nothing after 2024-01-02 is loaded. Record the outcome in RESULTS.md whatever it is.
+# ORDER. This protocol first, then the portfolio's, both already frozen, so neither result can change the other's rules.
+#
+# CHOICES MADE IN FREEZING, by Claude on Kshitiz's instruction to freeze, which Kshitiz and the advisor can replace by a dated amendment before anything is scored: the PE settings; V rather than V_id as primary; leaving half-day
+# targets out; the loss and its log scale; HEAT1's window boundaries; the $5 and $10M rules; index-join dates; the official open.
+registered: "2026-11-02"
+period: reserved for this specification but previously exposed through related research
+baseline:
+  form: log_har
+settings:
+  pe_m: 3
+  pe_tau: 1
+  pe_window: 63
+  warmup: 65
+  floor: 1.0e-8
+  min_train_sessions: 252
+  refit_every: 21
+  long_window: 252
+  long_min: 63
+  validation_start: "2022-01-04"
+  test_start: "2024-01-03"
+  test_end: "2026-10-12"
+  seed: 0

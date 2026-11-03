@@ -28,7 +28,7 @@ variance target, the candidate windows with their sample sizes, and the prior ex
 |---|---|
 | Code | `~/entropy-gate-pipeline`, GitHub `Gaire-commits/entropy-gate-pipeline` (public), branch `main` |
 | HEAT (transfer entropy) | `~/Transfer-entropy-`, GitHub `Gaire-commits/Transfer-entropy-`; outputs in Drive `.../outputs/heat_v1`, `heat_v2`. Its scored dates are in RESULTS.md (prior exposure) |
-| Tests | 481 pass (`python3 -m pytest -q`, about 4 min, with the parked `tests/test_folding.py` present). `tests/test_frozen.py` fails if a pre-registered config is edited |
+| Tests | 520 pass (`python3 -m pytest -q`, about 4 min, with the parked `tests/test_folding.py` present). `tests/test_frozen.py` fails if a pre-registered config is edited |
 | Bars | Google Drive, `My Drive/entropy-gate-pipeline-data/data`. `bars/` is IEX (from July 2020); `bars_sip/` is SIP (503 stocks, 2016-01-04 to 2026-10-12, 98–99.7% of slots filled). Never committed |
 | Outputs | Drive, `.../outputs/<experiment>/`. Claude reads the `.md` reports through the Google Drive connector |
 | **Drive problem** | Since about 2026-10-14 Drive has received the folders Colab creates but none of the files (HEAT's runs too). Until fixed, every result is also zipped and downloaded to the Mac (`src/colab.py`: `download_results`; `drive_status` reports whether `/content/drive` is a real mount and Drive's free space; `ensure_drive` remounts before a section). Flushing unmounts Drive and breaks the `data/` and `outputs/` links, so `sync_drive` is for the end of a session only (it crashed section 36 on 2026-10-28 when run between sections). Check Drive storage first: a full Drive accepts folders but refuses files |
@@ -135,12 +135,8 @@ Do not use "Run all": it reruns every old section.
       listing exchange's opening print on 74% of symbol-days and is up to 13% off on stress days (about 7% of the variance of an
       approximate V). Decide whether O is the official open (proposed; needs the auction prints for all 503 symbols, a few minutes'
       fetch, now notebook section 39; then the panel rebuilt with it) or the vendor's open, before the specification is registered.
-   3. Kshitiz and the advisor decide, in RESULTS.md's "Not decided here": the permutation-entropy settings (they set the
-      warm-up), the HAR form and loss, whether half-day targets are scored, V or V_id as the one primary target, the window
-      boundaries, the $5 and $10 million rules, the open (item 2). Then register the specification (a config with a date, frozen by hash).
-   4. Only then fit: the HAR baseline on the development window, frozen, confirmed on validation, and the one-shot
-      Clark-West comparison on test. Every window is reserved for this specification but previously exposed through
-      related research (RESULTS.md, prior exposure).
+   3. Done 2026-11-02: both protocols frozen, `protocols/volatility_v1.yaml` and `protocols/portfolio_v1.yaml`, with the prior use of their shared period in `protocols/reserved_period_disclosure.md`. `tests/test_frozen.py` hash-checks them and their code: a change means a new dated protocol with its reason, never an edit. Settings chosen in freezing are listed at the end of the volatility protocol, and Kshitiz and the advisor can replace them by a dated amendment before anything is scored.
+   4. Next: `notebooks/reserved_evaluation.ipynb`, in order. STEP 1 (Alpaca's benchmarks, official-open coverage, quoted spreads) and STEP 2 (the volatility gate on the official open) score nothing. **STEP 3 scores the reserved period, once, only when Kshitiz decides.** The period stays locked until then: nothing after 2024-01-02 is loaded without `--score-reserved`.
    5. Open: whether HEAT2's test has been scored; why Drive refuses files; the unresolved list in RESULTS.md.
 1. **The forward test ([LIVE_PLAN.md](LIVE_PLAN.md)).** Freeze the rules, then score every new trading day by
    a daily AWS job (no orders). Done: the plan, E12 (the correlated-peers arm is dropped). Next: section 30's
@@ -209,7 +205,9 @@ Do not use "Run all": it reruns every old section.
 | `src/reversal.py` | E6–E8: the reversal by state, and as a slope |
 | `src/ibkr.py`, `src/ibkr_capture.py` | Local market-data recording |
 | `src/nyse.py` | NYSE calendar 2016-2026: closures and 1:00 pm half-days (session counts tested against the cache) |
-| `src/portfolio.py`, `notebooks/portfolio_tool.ipynb` | Separate notebook: a weekly long-only portfolio from a ridge forecast on daily returns, then what PE adds; costs, benchmarks, look-ahead check, hold-out locked by default (RESULTS.md, "Portfolio tool") |
+| `src/portfolio.py`, `notebooks/portfolio_tool.ipynb`, `scripts/portfolio_rules.py`, `scripts/reserved_portfolio.py` | The portfolio: a staggered monthly long-only book from a ridge forecast on daily returns, then what PE adds; costs, benchmarks, look-ahead and target checks; nothing past the lock is loaded |
+| `src/volforecast.py`, `scripts/vol_forecast.py` | The volatility test: HAR candidates, the validation gate, the one Clark-West comparison, the realized-variance target |
+| `protocols/`, `scripts/protocol_checks.py`, `notebooks/reserved_evaluation.ipynb` | The frozen protocols, the disclosure of prior use, the checks that need Alpaca, and the stepwise scoring |
 | `src/alpaca_rest.py` | Direct REST calls for reference data (combined adjustments, symbol mapping off, auctions, corporate actions), keys never logged |
 | `src/audit.py` | Data audit part 2: calendar-aware sessions, impossible values, dollar volume, vendor comparison, identity and corporate actions |
 | `src/audit_followup.py` | Follow-up tables: vendor against cache ranges and closes, truncated days, adjustment steps against records, evidence behind each large move |

@@ -53,8 +53,9 @@ def main() -> int:
     miss = op[op["official_open"].isna()]
     print(f"\nvendor bars with no official open: {len(miss):,}; symbols with the most:",
           miss["symbol"].value_counts().head(8).to_dict())
-    big = op.reindex(op["open_gap_bp"].abs().sort_values(ascending=False).index).head(10)
-    print("\nlargest open gaps (vendor over official, bp):")
+    before = op[op["date"] < "2024-01-03"]                  # a data check, so the reserved window's own dates are not listed
+    big = before.reindex(before["open_gap_bp"].abs().sort_values(ascending=False).index).head(10)
+    print("\nlargest open gaps before the reserved window (vendor over official, bp):")
     print(big[["symbol", "date", "listing", "vendor_open", "official_open", "open_print", "open_gap_bp"]]
           .round(2).to_string(index=False))
     print(f"\nwritten {ref / 'official_prices.parquet'}")

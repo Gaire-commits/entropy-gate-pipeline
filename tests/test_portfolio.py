@@ -397,3 +397,16 @@ def test_a_stock_is_not_eligible_before_it_joined_the_index():
     bars = pd.DataFrame([{"symbol": s, "date": d, "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5, "volume": 1e6, "trade_count": 100.0} for s in ("AAA", "BBB") for d in days[:30]])
     built = pf.build_market(bars, bars, bars, actions, registry, pd.DataFrame({"symbol": ["AAA", "BBB"], "sector": ["X", "Y"]}), joined=pd.Series({"AAA": days[10], "BBB": pd.NaT}))
     assert not built.member.loc[days[9], "AAA"] and built.member.loc[days[10], "AAA"] and built.member["BBB"].all()
+
+
+def test_protocol_checks_measure_quoted_half_spreads():
+    import sys
+    sys.path.insert(0, "scripts")
+    import protocol_checks as script
+
+    class Client:
+        def quotes(self, symbols, lo, hi):
+            return pd.DataFrame({"symbol": ["A", "A", "A", "B"], "t": pd.Timestamp("2021-03-01T20:58:30Z"), "bid": [99.9, 99.9, 0.0, 49.95], "ask": [100.1, 100.1, 100.0, 50.05]})
+    s = script.spreads(Client(), ["A", "B"], ["2021-03-01"]).set_index("symbol")
+    assert s.loc["A", "half_spread_bp"] == pytest.approx(10.0)                  # half of 20 bp; the zero bid is dropped
+    assert s.loc["B", "half_spread_bp"] == pytest.approx(10.0)

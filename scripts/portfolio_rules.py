@@ -24,13 +24,13 @@ def information_ratio(active: pd.Series) -> float:
     return float(active.mean() / active.std() * np.sqrt(252)) if active.std() > 0 else float("nan")
 
 
-def load_market(reference, cfg: pf.Config) -> pf.Market:
+def load_market(reference, cfg: pf.Config, score_holdout: bool = False) -> pf.Market:
     daily = {t: pd.read_parquet(f"{reference}/daily/daily_sip_{t}.parquet") for t in ("raw", "split", "all")}
     actions = audit.normalize_actions(pd.read_parquet(f"{reference}/corporate_actions.parquet"))
     universe = pd.read_csv(ROOT / "universe" / "sp500.csv")
     registry = volpanel.load_registry(ROOT / "registry" / "vol_registry.csv")
     joined = pf.load_joined(ROOT / "registry" / "sp500_join_dates.csv")
-    return pf.build_market(daily["raw"], daily["split"], daily["all"], actions, registry, universe, until=pf.lock_date(cfg), joined=joined)
+    return pf.build_market(daily["raw"], daily["split"], daily["all"], actions, registry, universe, until=pf.lock_date(cfg, score_holdout), joined=joined)
 
 
 def search(m: pf.Market, doc: dict) -> pd.DataFrame:

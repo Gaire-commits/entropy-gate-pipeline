@@ -63,14 +63,15 @@ def official_prices(prints: pd.DataFrame, raw: pd.DataFrame, min_prints: int = 5
     m = m[m["exchange"] == m["listing"]]
     o = _pick(m, "open", OPEN_CODES).rename(columns={"price": "official_open", "condition": "open_print"})
     c = _pick(m, "close", CLOSE_CODES).rename(columns={"price": "official_close", "condition": "close_print"})
-    v = _real(raw)[["symbol", "date", "open", "close"]].rename(columns={"open": "vendor_open", "close": "vendor_close"})
+    v = _real(raw)[["symbol", "date", "open", "close", "high", "low"]].rename(columns={"open": "vendor_open", "close": "vendor_close"})
     v = v[v["symbol"].isin(prints["symbol"].unique())]
     v["year"] = v["date"].dt.year
     out = v.merge(listing[["symbol", "year", "listing"]], on=["symbol", "year"], how="left") \
         .merge(o, on=["symbol", "date"], how="left").merge(c, on=["symbol", "date"], how="left")
     out["open_gap_bp"] = 1e4 * np.log(out["vendor_open"] / out["official_open"])
     out["close_gap_bp"] = 1e4 * np.log(out["vendor_close"] / out["official_close"])
-    return out.drop(columns="year").sort_values(["symbol", "date"]).reset_index(drop=True)
+    out["open_outside_range"] = (out["official_open"] > out["high"]) | (out["official_open"] < out["low"])
+    return out.drop(columns=["year", "high", "low"]).sort_values(["symbol", "date"]).reset_index(drop=True)
 
 
 def summary(op: pd.DataFrame, tol_bp: float = TOL_BP) -> pd.DataFrame:
@@ -86,4 +87,5 @@ def summary(op: pd.DataFrame, tol_bp: float = TOL_BP) -> pd.DataFrame:
         "open_over_25bp": (a_open > 25).astype(float).where(x["official_open"].notna()).groupby(x["year"]).mean(),
         "open_p99_bp": a_open.groupby(x["year"]).quantile(0.99),
         "close_equal": (a_close <= tol_bp).astype(float).where(x["official_close"].notna()).groupby(x["year"]).mean(),
+        "open_outside_range": x["open_outside_range"].where(x["official_open"].notna()).astype(float).groupby(x["year"]).mean(),
     })

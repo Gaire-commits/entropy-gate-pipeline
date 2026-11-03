@@ -150,3 +150,28 @@ def test_the_lock():
     cfg = vf.VolConfig()
     assert vf.lock_end(cfg) == pd.Timestamp("2024-01-02")
     assert vf.lock_end(cfg, True) == pd.Timestamp("2026-10-12")
+
+
+def test_the_stages_run_end_to_end_and_the_reserved_stage_needs_its_flag(monkeypatch, capsys):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import vol_forecast as script
+    cfg = replace(CFG, validation_start="2021-01-04", test_start="2021-06-01", test_end="2021-12-31")
+    monkeypatch.setattr(script.vf, "load_panel", lambda *a, **k: panel(n=55, seed=3))
+    args = type("A", (), {"audit": "x", "reference": "y", "official": "z", "rv": None, "score_reserved": False})()
+    assert script.reserved_stage(args, cfg) == 2                                 # no flag: nothing runs
+    assert "STOPPED" in capsys.readouterr().out
+    assert script.baseline_stage(args, cfg) in (0, 2)
+    out = capsys.readouterr().out
+    assert "chosen on development QLIKE" in out and "validation gate" in out and "pe" not in out.split("validation gate")[1]
+    args.score_reserved = True
+    assert script.reserved_stage(args, cfg) == 0
+    out = capsys.readouterr().out
+    assert "PRIMARY" in out and "VERDICT" in out and "ROBUSTNESS" in out
+
+
+def test_the_reserved_stage_requires_the_official_open(capsys):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import vol_forecast as script
+    args = type("A", (), {"audit": "x", "reference": "y", "official": None, "rv": None, "score_reserved": True})()
+    assert script.reserved_stage(args, CFG) == 2
+    assert "official open" in capsys.readouterr().out

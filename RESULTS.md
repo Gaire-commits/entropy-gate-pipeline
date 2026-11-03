@@ -1760,6 +1760,8 @@ V_id(t) = rho(t)                              intraday only, a sensitivity targe
 
 ## Portfolio tool: does PE help a daily-return portfolio? (run 2026-11-02, hold-out not scored)
 
+*The first version's weekly rules, superseded the same day by the frozen monthly rules in the next section. Kept as run; it had no market line and its target was not yet checked against the fills.*
+
 `notebooks/portfolio_tool.ipynb` (code `src/portfolio.py`, tests `tests/test_portfolio.py`): a separate question from the volatility project, on returns rather than variance. Weekly long-only book of the best tenth of eligible stocks by a ridge forecast, filled at the next session's official close, at 5 bp one-way plus square-root impact on $10M. Same rows, folds and rules for `base`, `base_pe` (rank of PE: m=3, delay 1, 63 patterns) and `base_pe_x` (three interactions fixed in advance). The rule was written down before the run.
 
 **Measured** (251 decisions, 2019-01-04 to 2023-12-21, on the real data on this Mac). SPY and BIL were not available there (no keys), so these Sharpe ratios are on raw returns and there is no market line; that path was run only on stand-in data. The notebook on Colab adds both.
@@ -1776,6 +1778,76 @@ V_id(t) = rho(t)                              intraday only, a sensitivity targe
 - Checks: scrambling every price after a date changes nothing a decision on that date sees (features, eligibility, forecast). The tests recover a planted signal and find none in noise.
 
 **Interpretation.** With these features, at this horizon, the forecast shows no skill out of sample, so the book loses to equal-weight after costs. PE adds nothing the rule can distinguish from zero. The survivor-biased universe flatters every absolute return here. The hold-out (2024-01-03 on) stays unscored, and it overlaps the volatility project's reserved test window. This run does add exposure of PE on 2019-2023 for returns, not for next-day variance.
+
+## Frozen protocols for the reserved period (2026-11-02; the period not scored)
+
+The portfolio's rules and costs were finalized on development and validation only, and the portfolio and volatility protocols were frozen, before 2024-01-03 to 2026-10-12 was scored under either. Files: `protocols/portfolio_v1.yaml`, `protocols/volatility_v1.yaml`, `protocols/reserved_period_disclosure.md`. `tests/test_frozen.py` hash-checks the protocols and the code that runs them. The period is **reserved for these specifications but previously exposed through related research**.
+
+### Measured
+
+**Benchmarks and the risk-free rate, on real public data, nothing after 2024-01-02.** Yahoo's adjusted closes, the S&P 500 total-return index and FRED's 3-month T-bill. Alpaca's own SPY and BIL could not be checked: this machine has no keys. `scripts/protocol_checks.py` does that check; a failure stops the scoring. Stooq refused automated requests behind a bot check, so it was not used.
+
+| Total return, % | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| SPY, adjusted close | 21.71 | -4.57 | 31.22 | 18.33 | 28.73 | -18.18 | 26.18 |
+| S&P 500 total-return index | 21.83 | -4.38 | 31.49 | 18.40 | 28.71 | -18.11 | 26.29 |
+| BIL, adjusted close | 0.69 | 1.74 | 2.03 | 0.40 | -0.10 | 1.40 | 4.94 |
+| 3-month T-bill (DTB3) | 0.94 | 1.99 | 2.11 | 0.37 | 0.05 | 2.04 | 5.25 |
+
+SPY rebuilt from closes and dividends differs from its adjusted close by at most 2.5 bp on a day. Every vendor session from 2016-01-04 to 2024-01-02 exists in both series. BIL's largest daily move is 0.08%, and its daily correlation with SPY is -0.002. It runs up to 0.3% a year below T-bills, and 0.6% below in 2022 as rates rose, so excess returns over it are slightly flattered, for every portfolio alike.
+
+**MRNA, 2026-08-19: genuine.** Alpaca's raw bar (open 116.02, high 176.66, low 114.46, close 174.38, 199.3 million shares, against a 5.7 million median) matches Yahoo's to the cent, as do the sessions around it. There is no corporate-action record and no adjustment step. Moderna and Merck announced that day that INTerpath-001, a Phase 3 trial of intismeran autogene with Keytruda in melanoma, met its primary endpoint ([ASCO Post](https://ascopost.com/news/august-2026/interpath-001-trial-of-mrna-based-individualized-neoantigen-therapy-meets-primary-and-key-secondary-endpoints-in-patients-with-high-risk-resected-melanoma/), [Merck](https://www.merck.com/?p=3697014)). It stays in the data. It lies in the reserved period, and it is listed in the disclosure.
+
+**The forecast target against next-close execution.** The check found one mismatch: where a stock had no bar at the fill or at the exit (the vendor's truncated days), the target used a stale price though no fill could happen. Such targets are now empty. After that fix, every tranche's gross return from fill to next fill equals the same weights on the target to rounding (largest gap 1.2e-15, 176 holding periods), through the same `simulate()` that charges costs. A target one session early would be off by 100-115 bp per holding period (median), so the check would notice. Tests cover this, and the notebook reruns it.
+
+**Costs.** 5 bp one-way plus square-root impact on $10M, fixed before any search. On the final rules that charges 8.4 bp per dollar traded (largest trade 1.12% of a day's dollar volume), against about 9 bp average market impact and about 6 bp median in live institutional trades (Frazzini, Israel, Moskowitz, [Trading Costs](https://papers.ssrn.com/abstract=3229719)). Spreads could not be measured from daily bars: the Abdi-Ranaldo estimate gave 0 to 83 bp by year and rose with dollar volume, which is backwards. A direct sample of quotes before the close needs keys, and is a precondition.
+
+**The rule search,** on the PE-free model only. The first search's pick (every 21 sessions, best 20%, no buffer) had information ratios against equal-weight of 0.58 in development and 0.34 in validation. Two checks undid that: started 5, 10 or 15 sessions later, the same rule's development ratio was 0.07, -0.06 and -0.15; and keeping stocks only from their index-join date cut equal-weight's development return from 28.8% to 25.9% a year while leaving the IC alone. The search was amended before its rerun (`protocols/portfolio_rule_search_v2.yaml`). 24 candidates were seen in all.
+
+| Second search, 12 candidates | Information ratio, development / validation | Net return a year, development / validation | One-way turnover in validation | IC, development / validation |
+|---|---:|---:|---:|---:|
+| **21 sessions, 3 tranches, best 20%, keep in best 40% (chosen)** | **-0.00 / 0.42** | 25.3% / 6.1% | 6.4x | 0.039 / 0.038 |
+| 21 sessions, 3 tranches, best 10%, no buffer (best in validation) | -0.31 / 0.63 | 20.5% / 8.8% | 9.2x | 0.039 / 0.038 |
+| 10 sessions, 2 tranches, best 20%, keep in best 40% (best at this cadence) | -0.57 / -0.10 | 17.6% / 1.1% | 8.5x | 0.001 / 0.006 |
+| 5 sessions, best 20%, keep in best 40% (best at this cadence) | -0.86 / -1.00 | 13.1% / -5.2% | 21.2x | -0.009 / -0.018 |
+
+**The final rules on development and validation, against real SPY and BIL:**
+
+| | Window | Net return a year | Sharpe | Sortino | Max drawdown | Turnover a year | IC (t) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| base | development, 2019-2021 | 25.3% | 0.94 | 1.32 | -45.2% | 7.1x | 0.038 (1.69) |
+| equal-weight | | 26.3% | 1.07 | 1.49 | -37.7% | 0.8x | |
+| SPY | | 25.8% | 1.13 | 1.56 | -33.7% | | |
+| base | validation, 2022-2023 | 6.1% | 0.24 | 0.35 | -26.0% | 6.4x | 0.038 (0.97) |
+| equal-weight | | 3.3% | 0.10 | 0.14 | -20.1% | 0.5x | |
+| SPY | | 1.0% | -0.01 | -0.02 | -24.5% | | |
+
+PE on these rules, against `base`: `base_pe` validation IC gap -0.0003 [-0.0012, +0.0006], Clark-West t -1.16, net-return gap -0.2% a year [-0.8%, +0.4%]; `base_pe_x` validation IC gap -0.0009 [-0.0028, +0.0007], Clark-West t -1.34, net gap -0.1% [-1.0%, +0.8%]. Neither passes in development or validation. The result holds at 20 bp one-way (validation: base 4.1%, equal-weight 3.1%).
+
+**The volatility baseline, with no PE.** On the vendor's open (the official open needs keys):
+
+| | Development QLIKE | Development squared log error | Validation QLIKE | Validation squared log error |
+|---|---:|---:|---:|---:|
+| **pooled log-HAR (chosen)** | **0.485** | **0.694** | 0.443 | 0.639 |
+| plus the stock's long-run level | 0.497 | 0.700 | 0.433 | 0.628 |
+| log-HAR per stock | 0.499 | 0.706 | 0.439 | 0.632 |
+| level HAR | 0.533 | 1.018 | 0.447 | 0.858 |
+| monthly mean carried forward | 0.562 | 0.951 | 0.491 | 0.839 |
+
+Validation gate passed: against the monthly mean, QLIKE gap -0.048 [-0.068, -0.030], squared log error gap -0.200 [-0.257, -0.142]. Coefficients over the development refits: daily 0.24, weekly 0.24, monthly 0.32, stable. Rows, by target date: development 540,425, validation 212,559, reserved 322,822 (counted, not read).
+
+### Interpretations (each can be wrong)
+
+1. **The monthly book's edge over equal-weight is thin.** Its information ratio is zero in development and positive in validation, only 2 years, and the rules are the best of 24. Expect it to shrink.
+2. **The monthly IC of about 0.04 may be real.** It is positive at every start date tried, unmoved by index-join dates, and present among stocks in the index since before 2016 (t 3.1, on one calendar phase). But staggered across phases its t is 1.9 over five years, and survivors left out could still explain it: join dates only remove future joiners, not companies since removed.
+3. **PE looks unlikely to help on returns.** Nothing on these windows suggests it, in line with E6 and the entropy-free run. The reserved period is its one registered test.
+4. **The rules could have been chosen differently.** The best validation book was narrower and turned over more; the rule favours whichever holds up in both windows, and that was a choice made before seeing either.
+
+### Unresolved before scoring
+
+- **Alpaca's own SPY and BIL, the official-open coverage for all stocks, quoted spreads, and the volatility gate on the official open** have not run, because this machine has no keys. `notebooks/reserved_evaluation.ipynb` steps 1 and 2 run them. Both protocols are frozen subject to these preconditions.
+- **Settings chosen in freezing**, listed at the end of `protocols/volatility_v1.yaml`, can be replaced by Kshitiz and the advisor by a dated amendment before anything is scored.
+- Whether HEAT2's test has been scored: the record is silent, and the disclosure says so.
 
 ## Advisor feedback and response (September 2026)
 
@@ -1866,6 +1938,7 @@ The response so far:
 | 2026-10-28 | Auction and trade check fetched and run (rerun of sections 35-36): the vendor's close is the official close (99.8% of symbol-days, 30 of 30 at trade level), the cache's is not (63.5%); the vendor's open is the opening print wherever the trade-level sample can say, with exceptions where a regular trade came first. The comparison had a flaw (split-adjusted prices rounded to the cent), so the full-sample open rates are lower bounds; the code now compares raw prices and the rerun is pending |
 | 2026-10-28 | Open gap on raw prices (section 38): the vendor's close is the official close (99.99%); its open equals the listing exchange's opening print on 74.2% of symbol-days, is more than 25 bp away on 5.4%, and up to 13% away on stress days (March 2020). It is 7% of the variance of an approximate V. Proposed: the official open as O, which needs the universe's auction prints |
 | 2026-11-02 | Portfolio tool built (`notebooks/portfolio_tool.ipynb`) and run with the hold-out locked: no forecast skill out of sample, PE and interactions add nothing the rule can tell from zero, and the weekly book loses to equal-weight after costs (validation: -0.6% a year against +4.9%) |
+| 2026-11-02 | Benchmarks checked on public data, MRNA's +177% found genuine, the target reconciled with next-close fills. Portfolio rules chosen on development and validation (monthly, 3 tranches, best 20%). Volatility baseline chosen with no PE (pooled log-HAR). **Both protocols frozen; the shared reserved period not scored** (prior use disclosed). Alpaca-only checks pending |
 
 ## Next steps
 
