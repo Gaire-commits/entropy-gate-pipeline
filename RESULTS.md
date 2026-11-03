@@ -1845,7 +1845,7 @@ Validation gate passed: against the monthly mean, QLIKE gap -0.048 [-0.068, -0.0
 
 ## Amendment 1 (2026-11-02; the reserved period not scored)
 
-On review, Kshitiz asked for six changes before scoring and kept STEP 3 locked. `protocols/amendment_1.md` gives each with its reason, and produces `protocols/volatility_v2.yaml` and `protocols/portfolio_v2.yaml`. The PE specification, V, the half-day treatment and index-join dates stay, with the survivorship limit stated in both protocols: companies since removed from the index remain absent. No PE of daily returns has been compared with a variance baseline on any window.
+On review, Kshitiz asked for six changes before scoring and kept STEP 3 locked. `protocols/amendment_1.md` gives each with its reason, and produces `protocols/volatility_v2.yaml` and `protocols/portfolio_v2.yaml` (commit `fb9b5f2`). The PE specification, V, the half-day treatment and index-join dates stay, with the survivorship limit stated in both protocols: companies since removed from the index remain absent. No PE of daily returns has been compared with a variance baseline on any window.
 
 | | Version 1 | Version 2 |
 |---|---|---|
