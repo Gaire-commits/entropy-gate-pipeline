@@ -31,16 +31,43 @@ def frames():
     return a, pd.DataFrame(raw)
 
 
-def test_the_listing_exchange_follows_the_vendor_close_and_its_code_change():
+def test_the_listing_exchange_is_per_month_and_nasdaqs_two_codes_are_one_exchange():
     a, raw = frames()
-    lst = official.listing_exchange(official.with_vendor(a, raw), min_prints=10)
-    got = {(r.symbol, r.year): r.listing for r in lst.itertuples()}
-    assert got == {("AAA", 2020): "T", ("AAA", 2021): "Q", ("BBB", 2020): "N", ("BBB", 2021): "N"}
+    lst = official.listing_exchange(official.with_vendor(a, raw))
+    got = {(r.symbol, r.month): r.listing for r in lst.itertuples()}
+    assert got == {("AAA", "2020-12"): "Q", ("AAA", "2021-01"): "Q", ("BBB", "2020-12"): "N", ("BBB", "2021-01"): "N"}
+
+
+def test_a_code_change_or_a_listing_move_inside_a_year_loses_no_prints():
+    days = pd.bdate_range("2021-01-04", "2021-12-31")
+    raw = pd.DataFrame([{"symbol": s, "date": d, "open": 100.0, "high": 102.0, "low": 99.0, "close": 101.0, "volume": 1000, "trade_count": 50} for s in ("NAS", "HON") for d in days])
+    rows = []
+    for s, d in raw[["symbol", "date"]].itertuples(index=False):
+        flip = pd.Timestamp("2021-04-01") <= d < pd.Timestamp("2021-05-01") and d.day % 2 == 0     # flipping between the codes
+        ex = ("T" if d < pd.Timestamp("2021-06-01") and not flip else "Q") if s == "NAS" else ("N" if d < pd.Timestamp("2021-05-17") else "Q")
+        rows += [(s, d, "open", "O", 100.0, d, ex), (s, d, "close", "6", 101.0, d, ex)]
+    a = pd.DataFrame(rows, columns=["symbol", "date", "side", "condition", "price", "t", "exchange"])
+    op = official.official_prices(a, raw)
+    nas, hon = op[op["symbol"] == "NAS"], op[op["symbol"] == "HON"]
+    assert nas["official_open"].notna().all() and nas["official_close"].notna().all()
+    assert hon["official_open"].notna().sum() >= len(hon) - 10              # at most the days of the move's own month are lost
+
+
+def test_the_code_is_the_rule_that_was_picked():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import official_listing_candidates as script
+    a, raw = frames()
+    picked = script.candidate_opens(official.with_vendor(a, raw), "month", True).sort_values(["symbol", "date"]).reset_index(drop=True)
+    op = official.official_prices(a, raw).dropna(subset=["official_open"]).reset_index(drop=True)
+    assert (op["symbol"] == picked["symbol"]).all() and (op["date"] == picked["date"]).all()
+    assert np.allclose(op["official_open"], picked["official_open"]) and (op["open_print"] == picked["open_print"]).all()
 
 
 def test_official_open_prefers_q_then_o_and_leaves_days_without_a_print_empty():
     a, raw = frames()
-    op = official.official_prices(a, raw, min_prints=10)
+    op = official.official_prices(a, raw)
     assert len(op) == len(raw)
     days = sorted(op["date"].unique())
     aaa = op[op["symbol"] == "AAA"].set_index("date")
@@ -59,7 +86,7 @@ def test_official_open_prefers_q_then_o_and_leaves_days_without_a_print_empty():
 
 def test_coverage_among_usable_bars_and_missing_prints_on_extreme_days():
     a, raw = frames()
-    op = official.official_prices(a, raw, min_prints=10)
+    op = official.official_prices(a, raw)
     e = official.eligible_coverage(op, raw, min_dollar_volume=1.0)
     assert e["usable_bars"].sum() > 0 and e["with_official_open"].between(0, 1).all()
     assert official.eligible_coverage(op, raw, min_dollar_volume=1e15).empty

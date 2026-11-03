@@ -3,9 +3,10 @@
 The vendor's daily close is the official close, but its open is the first regular trade on any venue, which on a late
 opening auction can be a stale price far from where the auction cleared (RESULTS.md, data audit part 2). The official
 open is the listing exchange's official open print (condition Q), or its opening trade (O) where there is no Q; the
-official close its official close (M), or its closing trade (6). The listing exchange of each symbol and year is the
-one whose closing prints equal the vendor's close most often; Nasdaq listings print under T until 2020 and under Q
-from 2021, and a symbol can move (LIN, N to Q in 2024).
+official close its official close (M), or its closing trade (6). The listing exchange of each symbol and month is the
+one with the most days whose closing print equals the vendor's close (protocols/amendment_2.md). T and Q count as one
+exchange: Nasdaq's prints change from T to Q during April to June 2021, flipping between them, and a symbol can move
+(HON, N to Nasdaq in 2021; LIN, N to Q in 2024).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from src.volpanel import trailing_dollar_volume
 OPEN_CODES = ("Q", "O")
 CLOSE_CODES = ("M", "6")
 TOL_BP = 0.5
+ONE_EXCHANGE = {"T": "Q"}       # Nasdaq, under its two codes
 
 
 def _real(raw: pd.DataFrame) -> pd.DataFrame:
@@ -34,18 +36,17 @@ def with_vendor(prints: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
     v = _real(raw)[["symbol", "date", "open", "close"]].rename(columns={"open": "vendor_open", "close": "vendor_close"})
     m = a.merge(v, on=["symbol", "date"])
     m["gap_bp"] = 1e4 * np.log(np.where(m["side"] == "open", m["vendor_open"], m["vendor_close"]) / m["price"])
-    m["year"] = m["date"].dt.year
+    m["month"] = m["date"].dt.strftime("%Y-%m")
+    m["venue"] = m["exchange"].replace(ONE_EXCHANGE)
     return m
 
 
-def listing_exchange(m: pd.DataFrame, min_prints: int = 50, tol_bp: float = TOL_BP) -> pd.DataFrame:
-    """Per symbol and year: the exchange whose closing prints equal the vendor's close most often, and how often."""
-    c = m[(m["side"] == "close") & m["condition"].isin(CLOSE_CODES)]
-    rate = c.groupby(["symbol", "year", "exchange"])["gap_bp"].agg(
-        prints="size", close_equal=lambda x: float((x.abs() <= tol_bp).mean())).reset_index()
-    rate = rate[rate["prints"] >= min_prints]
-    best = rate.sort_values(["symbol", "year", "close_equal"], ascending=[True, True, False]).drop_duplicates(["symbol", "year"])
-    return best.rename(columns={"exchange": "listing"}).reset_index(drop=True)
+def listing_exchange(m: pd.DataFrame, tol_bp: float = TOL_BP) -> pd.DataFrame:
+    """Per symbol and month: the exchange with the most days whose closing print equals the vendor's close, and how many. Ties go alphabetically, so reruns agree."""
+    c = m[(m["side"] == "close") & m["condition"].isin(CLOSE_CODES) & (m["gap_bp"].abs() <= tol_bp)].drop_duplicates(["symbol", "date", "venue"])
+    days = c.groupby(["symbol", "month", "venue"]).size().rename("days").reset_index()
+    best = days.sort_values(["symbol", "month", "days", "venue"], ascending=[True, True, False, True]).drop_duplicates(["symbol", "month"])
+    return best.rename(columns={"venue": "listing"}).reset_index(drop=True)
 
 
 def _pick(m: pd.DataFrame, side: str, codes: tuple) -> pd.DataFrame:
@@ -56,24 +57,24 @@ def _pick(m: pd.DataFrame, side: str, codes: tuple) -> pd.DataFrame:
     return x[["symbol", "date", "price", "condition"]]
 
 
-def official_prices(prints: pd.DataFrame, raw: pd.DataFrame, min_prints: int = 50) -> pd.DataFrame:
+def official_prices(prints: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
     """One row per vendor bar with a trade: the vendor's raw open and close, the official ones where the listing exchange
     printed them (empty where it did not), which print each is, and the gaps in basis points (vendor over official)."""
     m = with_vendor(prints, raw)
-    listing = listing_exchange(m, min_prints)
-    m = m.merge(listing[["symbol", "year", "listing"]], on=["symbol", "year"])
-    m = m[m["exchange"] == m["listing"]]
+    listing = listing_exchange(m)
+    m = m.merge(listing[["symbol", "month", "listing"]], on=["symbol", "month"])
+    m = m[m["venue"] == m["listing"]]
     o = _pick(m, "open", OPEN_CODES).rename(columns={"price": "official_open", "condition": "open_print"})
     c = _pick(m, "close", CLOSE_CODES).rename(columns={"price": "official_close", "condition": "close_print"})
     v = _real(raw)[["symbol", "date", "open", "close", "high", "low"]].rename(columns={"open": "vendor_open", "close": "vendor_close"})
     v = v[v["symbol"].isin(prints["symbol"].unique())]
-    v["year"] = v["date"].dt.year
-    out = v.merge(listing[["symbol", "year", "listing"]], on=["symbol", "year"], how="left") \
+    v["month"] = v["date"].dt.strftime("%Y-%m")
+    out = v.merge(listing[["symbol", "month", "listing"]], on=["symbol", "month"], how="left") \
         .merge(o, on=["symbol", "date"], how="left").merge(c, on=["symbol", "date"], how="left")
     out["open_gap_bp"] = 1e4 * np.log(out["vendor_open"] / out["official_open"])
     out["close_gap_bp"] = 1e4 * np.log(out["vendor_close"] / out["official_close"])
     out["open_outside_range"] = (out["official_open"] > out["high"]) | (out["official_open"] < out["low"])
-    return out.drop(columns=["year", "high", "low"]).sort_values(["symbol", "date"]).reset_index(drop=True)
+    return out.drop(columns=["month", "high", "low"]).sort_values(["symbol", "date"]).reset_index(drop=True)
 
 
 def coverage(op: pd.DataFrame) -> pd.DataFrame:

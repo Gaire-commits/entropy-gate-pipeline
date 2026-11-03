@@ -42,8 +42,8 @@ def main() -> int:
     pd.set_option("display.width", 200)
     print(f"{len(prints):,} auction prints for {prints['symbol'].nunique()} symbols; {len(op):,} vendor bars with a trade, "
           f"{op['listing'].notna().mean():.2%} with a listing exchange")
-    years = op.assign(year=op["date"].dt.year).drop_duplicates(["symbol", "year"])
-    print("\nlisting exchanges (symbol-years):", years["listing"].value_counts(dropna=False).to_dict())
+    months = op.assign(month=op["date"].dt.strftime("%Y-%m")).drop_duplicates(["symbol", "month"])
+    print("\nlisting exchanges (symbol-months; Nasdaq under Q):", months["listing"].value_counts(dropna=False).to_dict())
     print("\ncoverage by year (shares of vendor bars; counts only, so every year is shown):")
     print(official.coverage(op).round(4).to_string())
     print("\ncoverage among usable bars ($5, $10M liquidity, in the index by then):")

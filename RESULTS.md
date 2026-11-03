@@ -1907,6 +1907,14 @@ Validation gate passed: against the monthly mean, QLIKE gap -0.058 [-0.078, -0.0
 - **Choices beyond the six requested,** listed at the end of `protocols/amendment_1.md`, can be replaced by Kshitiz and the advisor by a dated amendment before anything is scored. So can the calibration's use of the matched placebo; the adverse one would give 2.12.
 - Whether HEAT2's test has been scored: the record is silent, and the disclosure says so.
 
+## Amendment 2 and the first real data checks (2026-11-03; the reserved period not scored)
+
+STEP 1 ran on Alpaca's data. Benchmarks passed (largest gap 0.39%, SPY 2018), missing opens do not cluster on big moves (1.81% on the top 1% of sessions, 1.72% overall), and the median quoted half-spread is 1.51 bp against the 5 bp assumed. **Official-open coverage failed: 91.08% of usable bars in 2021, against the 95% limit.**
+
+The fault was ours. Prints exist for 99.99% of 2021's bars, but the code chose one exchange per stock per year, while Nasdaq's prints change code from T to Q during April to June 2021. `protocols/amendment_2.md` changes the choice to per month with T and Q as one exchange, by a rule committed before the comparison ran (`4fc717f`). Lowest-year coverage for 2016-2023 becomes 99.78%, prices agree with the old rule on 99.992% of bars where both exist, and the limit stays at 95%. Where official-open prints and opening trades both exist they are equal, so the mix of codes over time does not change the target. On 2023-01-24, when the NYSE skipped most opening auctions, 265 of 342 NYSE stocks had no official open and so get no V under the policy in amendment 1.
+
+STEP 1 still has to be rerun under the new rule, then STEP 2.
+
 ## Advisor feedback and response (September 2026)
 
 The feedback asked for:
@@ -1998,6 +2006,7 @@ The response so far:
 | 2026-11-02 | Portfolio tool built (`notebooks/portfolio_tool.ipynb`) and run with the hold-out locked: no forecast skill out of sample, PE and interactions add nothing the rule can tell from zero, and the weekly book loses to equal-weight after costs (validation: -0.6% a year against +4.9%) |
 | 2026-11-02 | Benchmarks checked on public data, MRNA's +177% found genuine, the target reconciled with next-close fills. Portfolio rules chosen on development and validation (monthly, 3 tranches, best 20%). Volatility baseline chosen with no PE (pooled log-HAR). **Both protocols frozen; the shared reserved period not scored** (prior use disclosed). Alpaca-only checks pending |
 | 2026-11-02 | Amendment 1, before scoring: both protocols at version 2. Clark-West kept apart from a fall in loss; its inference measured on placebos (volatility 21 lags and a calibrated 1.94, portfolio 2 lags and 1.645); Duan's smearing for QLIKE; no V without an official open; one liquidity measure; reserved-period summaries removed from the checks; the history corrected by commit. On the vendor's open the rule still picks the pooled log-HAR and the gate passes. Alpaca's checks and the gate on the official open have not run. The reserved period is not scored |
+| 2026-11-03 | First real data checks: benchmarks, clustering and spreads pass; official-open coverage fails for 2021 (91.08%) through a bug in choosing the listing exchange. Amendment 2 fixes it by a rule committed first (lowest year 99.78%); the 95% limit stays. Rerun pending. The reserved period is not scored |
 
 ## Next steps
 

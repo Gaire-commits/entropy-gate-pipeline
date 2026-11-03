@@ -49,6 +49,10 @@ Nothing here loaded a date after 2024-01-02 for analysis or scored the period, b
 - **A description of real PE up to the lock,** with the target dropped first: how much PE moves together across stocks, and how slowly. It chose the placebo behind the volatility protocol's critical value. It says nothing about forecasting.
 - **The portfolio's locked report ran again** on development and validation, including PE against `base` there. `base_pe` passes on neither window.
 
+## The first real data checks, 2026-11-03
+
+STEP 1 ran on Alpaca's data and stopped on 2021's official-open coverage, which led to `protocols/amendment_2.md`. For the reserved period it and the comparison of fixes printed coverage counts only, by year. Before the lock they also printed Alpaca's benchmark returns, open and close gaps by year, the largest open gaps, and quoted spreads.
+
 ## What has not been done
 
 - **PE of daily returns against next-day variance has not been compared on any window** of this data, development and validation included.

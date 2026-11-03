@@ -6,6 +6,8 @@
 STEP 1 failed its coverage check for 2021 (91.08% of usable bars). A diagnostic showed the prints exist (99.99% on some exchange): src/official.py picks one
 exchange per stock per year, Nasdaq's prints change code from T to Q during April to June 2021, flipping between them, and stocks can change listing mid-year.
 
+The rule's pick became src/official.py (protocols/amendment_2.md), so on a rerun "as run" and "per month, T and Q as one" match. This stays as the record of the choice.
+
 THE RULE, committed before this ran. Each candidate takes, for a stock and period, the exchange with the most closing prints equal to the vendor's close, each day counted once. Among those whose
 prices agree with the current rule's on at least 99.9% of the bars where both have an official open before the lock, it picks the highest lowest-year coverage of usable bars, 2016-2023. Candidates within 0.1
 point count as tied, and a tie goes to the earliest in CANDIDATES, the simplest first. If none agrees that well, nothing is picked. For the reserved period this prints coverage counts only; agreement,
