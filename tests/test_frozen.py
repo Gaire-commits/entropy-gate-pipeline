@@ -60,6 +60,7 @@ PROTOCOLS = {
     "protocols/volatility_v2.yaml": "aba93c82953dc1b230087f052a4694fccd8929e421921b1b7feb387b15526cfd",
     "protocols/amendment_1.md": "8d00546bda08a517db2d6a1fdbcd15a322457fca1cb78c032440aab1f90a1ad3",
     "protocols/amendment_2.md": "cc694716596fe601026abe221b649991eb4e0e5955aaba03af2988ceace278b7",
+    "protocols/amendment_3.md": "aec64fa7785ac0c79ad9bdae6b1058debee1ad8b2875db1dd570c626e0abd653",
     "protocols/clark_west_verification.md": "8107e1a038d27ac69cbc64d2cbc4654871f4c5f312340e70265cf6954a745a8b",
     "src/portfolio.py": "8d7663681a576aacc3e0f88c57b8302113d1c5dd16fe7250913b807ecd0e62b7",
     "src/volforecast.py": "0d818bd704df1409dec241866e7427d942e6abf5867b05c00462b5e78db6c02d",
@@ -69,7 +70,7 @@ PROTOCOLS = {
     "src/audit.py": "e64b6ebbb8d1e4787dd11c4d7fbd246a3f0a797970b1516acfc3c075571e8d7d",
     "scripts/portfolio_rules.py": "5f6e8c2754dc681a87d691d1fda715ec1bd1899d8cf75e16a84427c3da45c6f8",
     "scripts/reserved_portfolio.py": "3aeec125d92d398272b29fa8925abe6755dae9de94915aa2be53fa4e7f6d1034",
-    "scripts/vol_forecast.py": "dd6f8178253dc030fbd5ec635811a62fbd659500df6f866bfd3f8edd462c888d",
+    "scripts/vol_forecast.py": "952ffffedaa157f7e43c7c0aeb5de768fd4048dbb67ce920694f20772a5ba5ab",
     "scripts/protocol_checks.py": "b5968116672b6e2163d7eb750267507f035691770ee64fba0a8253465a18f6f6",
     "scripts/official_prices.py": "d4d4a72d75c71ce8c88b14aeb22c7e3058e53354d408e2209d761d9adb2ac982",
     "scripts/official_listing_candidates.py": "ce2c6f9a57cd695b2125907648870addd3762aef252b51371a7fd856d6ebf492",
@@ -107,7 +108,7 @@ def test_the_protocols_match_the_code_that_runs_them():
     assert (default.test_start, default.test_end) == (cfg.holdout_start, cfg.holdout_end)
     assert (default.pe_m, default.pe_tau, default.pe_window) == (cfg.pe_m, cfg.pe_tau, cfg.pe_window)
     assert default.validation_start == cfg.validation_start
-    for name in ("portfolio_v2.yaml", "volatility_v2.yaml", "amendment_1.md", "amendment_2.md", "clark_west_verification.md"):
+    for name in ("portfolio_v2.yaml", "volatility_v2.yaml", "amendment_1.md", "amendment_2.md", "amendment_3.md", "clark_west_verification.md"):
         text = (ROOT / "protocols" / name).read_text()
         assert "@@" not in text, f"{name} still holds a placeholder"
         assert name.endswith(".md") or "reserved for this specification but previously exposed through related research" in text.lower()

@@ -202,6 +202,7 @@ def test_the_stages_run_end_to_end_and_the_reserved_stage_needs_its_flag(monkeyp
     out = capsys.readouterr().out
     assert "PRIMARY" in out and "VERDICT" in out and "ROBUSTNESS" in out
     assert "1. Clark-West" in out and "2. Unadjusted paired log loss" in out and "3. QLIKE" in out and "the vendor's open where the official open is missing" in out
+    assert "against a stronger baseline" in out and out.count("1. Clark-West") == 4
 
 
 def test_the_reserved_stage_requires_the_official_open(capsys):

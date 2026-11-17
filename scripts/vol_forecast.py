@@ -142,6 +142,8 @@ def reserved_stage(args, cfg: vf.VolConfig) -> int:
     report(vf.pe_test(vf.build_rows(p, cfg, joined, col="rho"), form, cfg, cfg.test_start, cfg.test_end))
     print("the vendor's open where the official open is missing:")
     report(vf.pe_test(vf.build_rows(vf.load_panel(args.sessions, args.reference, end, args.official, ROOT, open_fallback=True), cfg, joined), form, cfg, cfg.test_start, cfg.test_end))
+    print("against a stronger baseline, the same plus the stock's long-run level (protocols/amendment_3.md; it had the lower validation losses, and the critical value was calibrated for the frozen baseline):")
+    report(vf.pe_test(rows, "log_har_long", cfg, cfg.test_start, cfg.test_end))
     if args.rv:
         q = p.merge(pd.read_parquet(args.rv)[["symbol", "date", "rv"]], on=["symbol", "date"], how="left")
         q["V_rv"] = q["r_on"] ** 2 + q["rv"]
