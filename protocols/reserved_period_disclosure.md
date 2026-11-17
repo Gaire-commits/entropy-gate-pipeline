@@ -67,3 +67,7 @@ STEP 1 ran on Alpaca's data and stopped on 2021's official-open coverage, which 
 3. A positive result is weaker than an untouched one. The confirmation it would need is a forward test on trading days after 2026-11-02, with the rule unchanged.
 4. Two primary tests share this period, on different targets (next-session variance; 21-session returns). Report each verdict, plus a Holm correction across both.
 5. A significant Clark-West result is not a fall in out-of-sample loss. Quote the unadjusted loss difference and its interval beside it, and QLIKE.
+
+## The portfolio protocol was scored first, 2026-11-17
+
+STEP 3 scored the portfolio protocol on this period after the volatility step failed before loading anything: the 5-minute cache on Drive was not found. Its full report, including every portfolio's returns on the reserved period, was seen before the volatility test ran. Both protocols were frozen, so no rule could change. The volatility result should be cited with this note.

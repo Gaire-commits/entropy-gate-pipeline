@@ -1929,6 +1929,35 @@ Against the monthly mean on validation: QLIKE gap -0.0574 [-0.0776, -0.0371], lo
 
 The preconditions of both protocols are now met. Quoted spreads rest on a sample of 12 days and 30 stocks. **Scoring the reserved period remains a separate decision, and has not been made.** The long-run-level model has the lower validation losses here too; the frozen rule chooses on development.
 
+## The portfolio protocol, scored on the reserved period (2026-11-17)
+
+`protocols/portfolio_v2.yaml` was scored once on 2024-01-03 to 2026-10-12, a period **reserved for this specification but previously exposed through related research** (`protocols/reserved_period_disclosure.md`). Run in Colab with STEP 3. **The volatility protocol was not scored:** its step failed before loading anything, because the 5-minute cache on Drive was not found (`no cached bars`). So the portfolio was scored first, against the stated order. Both protocols were frozen, so the order changes no rule, but the volatility test will now run with this period's portfolio returns already seen. PE has still not been set against variance on any window.
+
+**The verdict, `base_pe` against `base` (primary): no improvement shown, for the forecast and for the portfolio.**
+
+| | Clark-West t | Loss gap ×1e-4 [95%] | IC gap [95%] | Net-return gap a year [95%] | Sharpe gap [95%] |
+|---|---:|---:|---:|---:|---:|
+| `base_pe` | -1.37 | +0.05 [-0.02, +0.12] | -0.0005 [-0.0013, +0.0002] | **-0.69% [-1.22%, -0.14%]** | -0.037 [-0.080, -0.006] |
+| `base_pe_x` (secondary) | -0.46 | +0.07 [-0.13, +0.30] | -0.0002 [-0.0027, +0.0021] | -0.50% [-1.56%, +0.58%] | -0.027 [-0.093, +0.031] |
+
+Adding PE made the book worse net of costs, by 0.69% a year, with an interval wholly below zero. The protocol tests only for improvement, so this is reported, not a verdict. Clark-West clears neither 1.645 nor, for Holm, 1.96.
+
+**The PE-free model's skill did not survive.** Its IC was 0.038 in development and 0.034 in validation, and 0.0018 (t 0.10) on the reserved period:
+
+| Reserved period | Net return a year | Sharpe | Max drawdown | Turnover a year | IC (t) |
+|---|---:|---:|---:|---:|---:|
+| base | 14.0% | 0.57 | -17.9% | 6.3x | 0.0018 (0.10) |
+| base_pe | 13.3% | 0.54 | -17.7% | 6.2x | 0.0012 (0.07) |
+| equal-weight | 15.0% | 0.77 | -17.4% | 0.6x | |
+| SPY | 21.2% | 1.04 | -18.8% | | |
+
+Against equal-weight, the book's net active return is -0.1% a year [-7.5%, +7.2%]. Before costs it is level with equal-weight, at 15.3% against 15.1%. The development and validation figures moved slightly from the locked report, because later targets now have outcomes (validation has 70 decision dates against 67); this was not investigated further.
+
+### Interpretations (each can be wrong)
+
+1. **The monthly IC of about 0.04 was not real, or did not last.** Interpretation 1 of the frozen-protocols section warned that the edge was thin and the rules the best of 24; the reserved period agrees.
+2. **PE is not merely useless here but mildly harmful,** probably by adding noise to a model with no skill left. A harm found by a test of improvement is a finding to report, not one to confirm on this period.
+
 ## Advisor feedback and response (September 2026)
 
 The feedback asked for:
@@ -2021,6 +2050,7 @@ The response so far:
 | 2026-11-02 | Benchmarks checked on public data, MRNA's +177% found genuine, the target reconciled with next-close fills. Portfolio rules chosen on development and validation (monthly, 3 tranches, best 20%). Volatility baseline chosen with no PE (pooled log-HAR). **Both protocols frozen; the shared reserved period not scored** (prior use disclosed). Alpaca-only checks pending |
 | 2026-11-02 | Amendment 1, before scoring: both protocols at version 2. Clark-West kept apart from a fall in loss; its inference measured on placebos (volatility 21 lags and a calibrated 1.94, portfolio 2 lags and 1.645); Duan's smearing for QLIKE; no V without an official open; one liquidity measure; reserved-period summaries removed from the checks; the history corrected by commit. On the vendor's open the rule still picks the pooled log-HAR and the gate passes. Alpaca's checks and the gate on the official open have not run. The reserved period is not scored |
 | 2026-11-03 | First real data checks: official-open coverage failed for 2021 (91.08%) through a bug in choosing the listing exchange. Amendment 2 fixed it by a rule committed first; the 95% limit stayed. Rerun: all checks pass (lowest year 99.78%). Gate on the official open passed: the rule picks the pooled log-HAR, QLIKE gap -0.057 [-0.078, -0.037], log loss gap -0.195 [-0.253, -0.137]. The reserved period is not scored |
+| 2026-11-17 | Amendment 3 (a reported robustness line). The portfolio protocol scored on the reserved period: PE shows no improvement in the forecast or the book, and lowers net return by 0.69% a year [-1.22%, -0.14%]; the PE-free model's IC falls to 0.002. The volatility step failed before loading anything (no 5-minute cache found on Drive) and is still unscored |
 
 ## Next steps
 
