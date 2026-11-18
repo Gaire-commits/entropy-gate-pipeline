@@ -1929,6 +1929,37 @@ Against the monthly mean on validation: QLIKE gap -0.0574 [-0.0776, -0.0371], lo
 
 The preconditions of both protocols are now met. Quoted spreads rest on a sample of 12 days and 30 stocks. **Scoring the reserved period remains a separate decision, and has not been made.** The long-run-level model has the lower validation losses here too; the frozen rule chooses on development.
 
+## The volatility protocol, scored on the reserved period (2026-11-17)
+
+`protocols/volatility_v2.yaml` with amendments 1 to 4, from daily bars only, scored once on 2024-01-03 to 2026-10-12 (690 target dates, 326,586 stock-days, 502 stocks). The period is **reserved for this specification but previously exposed through related research**, and the portfolio protocol's results on it were seen first. The validation gate, run again on these rows, passed: QLIKE gap -0.0580 [-0.0786, -0.0373], log loss gap -0.1963 [-0.2541, -0.1382].
+
+**The verdict: PE shows no improvement.**
+
+| Primary: pooled log-HAR against log-HAR + PE | |
+|---|---|
+| 1. Clark-West t, 21 lags | -0.35 (needs 1.94) |
+| 2. Unadjusted log loss, PE minus baseline | +0.00000 [-0.00000, +0.00000], t 0.48; baseline 0.7349 |
+| 3. QLIKE, PE minus baseline | +0.00001 [+0.00000, +0.00002], t 1.71; baseline 0.5487 |
+| PE coefficient | +0.009, same sign on 61% of refits |
+
+By year, the Clark-West t is -0.45 (2024), -1.87 (2025) and +1.04 (2026). **Holm across both protocols:** neither primary test clears even its 5% value, so nothing is rejected.
+
+**Robustness, reported and not decisive:**
+
+| | Clark-West t | Log loss gap | QLIKE gap | PE coefficient, same sign |
+|---|---:|---:|---:|---:|
+| The range alone (V_id) | -1.25 | +0.00000, t 1.44 | +0.00000 [-0.00001, +0.00001] | +0.032, 82% |
+| Vendor's open where the official one is missing | -0.42 | +0.00000, t 0.54 | +0.00001 [+0.00000, +0.00002] | +0.010, 61% |
+| **Against log-HAR plus the stock's long-run level** (amendment 3) | **2.71** | **-0.00001 [-0.00001, -0.00000], t -2.18** | -0.00001 [-0.00004, +0.00003] | **-0.098, 100%** |
+
+The report prints gaps to five decimals; those shown as 0.00000 are smaller than that.
+
+### Interpretations (each can be wrong)
+
+1. **The registered answer is a clean null.** Over 2.7 years and 326,586 stock-days, PE of daily returns adds nothing to a HAR forecast of next-day variance.
+2. **The stronger-baseline line is the one positive sign, and a weak one.** Once the stock's long-run level is in the model, PE gets a stable negative coefficient on every refit, and Clark-West and the raw log loss both pass. But this is one of four robustness lines, chosen after the validation results, with a critical value calibrated for the other baseline, and its gain is under 0.001% of the loss. QLIKE does not agree. It is a lead to test on new data, not a finding.
+3. **The sign flip is the interesting part.** PE's coefficient is near zero without the long-run level and clearly negative with it, which suggests PE and the long-run level overlap. For a given long-run level, more disordered return patterns go with slightly lower next-day variance.
+
 ## The portfolio protocol, scored on the reserved period (2026-11-17)
 
 `protocols/portfolio_v2.yaml` was scored once on 2024-01-03 to 2026-10-12, a period **reserved for this specification but previously exposed through related research** (`protocols/reserved_period_disclosure.md`). Run in Colab with STEP 3. **The volatility protocol was not scored:** its step failed before loading anything, because the 5-minute cache on Drive was not found (`no cached bars`). So the portfolio was scored first, against the stated order. Both protocols were frozen, so the order changes no rule, but the volatility test will now run with this period's portfolio returns already seen. PE has still not been set against variance on any window.
@@ -2051,6 +2082,7 @@ The response so far:
 | 2026-11-02 | Amendment 1, before scoring: both protocols at version 2. Clark-West kept apart from a fall in loss; its inference measured on placebos (volatility 21 lags and a calibrated 1.94, portfolio 2 lags and 1.645); Duan's smearing for QLIKE; no V without an official open; one liquidity measure; reserved-period summaries removed from the checks; the history corrected by commit. On the vendor's open the rule still picks the pooled log-HAR and the gate passes. Alpaca's checks and the gate on the official open have not run. The reserved period is not scored |
 | 2026-11-03 | First real data checks: official-open coverage failed for 2021 (91.08%) through a bug in choosing the listing exchange. Amendment 2 fixed it by a rule committed first; the 95% limit stayed. Rerun: all checks pass (lowest year 99.78%). Gate on the official open passed: the rule picks the pooled log-HAR, QLIKE gap -0.057 [-0.078, -0.037], log loss gap -0.195 [-0.253, -0.137]. The reserved period is not scored |
 | 2026-11-17 | Amendment 3 (a reported robustness line). The portfolio protocol scored on the reserved period: PE shows no improvement in the forecast or the book, and lowers net return by 0.69% a year [-1.22%, -0.14%]; the PE-free model's IC falls to 0.002. The volatility step failed before loading anything (no 5-minute cache found on Drive) and is still unscored |
+| 2026-11-17 | Amendment 4: the volatility test from daily bars only. The volatility protocol scored on the reserved period: PE shows no improvement (Clark-West t -0.35; QLIKE slightly worse). Holm rejects nothing across both protocols. A reported robustness line against the long-run-level baseline passes (t 2.71, stable negative coefficient, a tiny gain): a lead, not a finding |
 
 ## Next steps
 
