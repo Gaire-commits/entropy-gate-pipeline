@@ -1929,6 +1929,10 @@ Against the monthly mean on validation: QLIKE gap -0.0574 [-0.0776, -0.0371], lo
 
 The preconditions of both protocols are now met. Quoted spreads rest on a sample of 12 days and 30 stocks. **Scoring the reserved period remains a separate decision, and has not been made.** The long-run-level model has the lower validation losses here too; the frozen rule chooses on development.
 
+## The HAR-X forward test (registered 2026-11-18)
+
+`protocols/har_x_forward_v1.yaml`, committed after the close of 2026-11-18: the frozen model against HAR plus the long-run level on the S&P 500 and S&P MidCap 400 lists as they stand today, scoring target dates from 2026-11-19. **One verdict at 500 target dates (about November 2028):** confirmed if the QLIKE gap, averaged across both universes, has a 95% interval wholly below zero. The power is about one half at the gain seen so far. Interim reports at 125, 250 and 375 days do not decide anything. Run with `FORWARD = True` in `notebooks/reserved_evaluation.ipynb`.
+
 ## The HAR-X model replicates on mid caps (2026-11-18; frozen before the data was loaded)
 
 `protocols/har_x_replication_v1.yaml`, committed in `17adb5d` before any mid-cap data was loaded, and run once on the S&P MidCap 400 (400 stocks, 909,740 stock-days, official opens throughout), out of sample 2017-04 to 2026-10. Saved run: `4884d3d`.

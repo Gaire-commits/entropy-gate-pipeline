@@ -1,0 +1,28 @@
+# THE HAR-X FORWARD TEST, registered 2026-11-18 after that day's close, before any later trading day existed. Hash-checked by tests/test_frozen.py with its script.
+#
+# THE QUESTION. Does the frozen HAR-X model (protocols/har_x_replication_v1.yaml: found on the S&P 500, replicated on the S&P MidCap 400, both over 2017-2026) still
+# forecast next-day variance better than HAR plus the long-run level on trading days that did not exist when it was frozen? This is the test across time.
+#
+# THE MODEL AND BASELINE. Exactly as frozen: pooled OLS on ln V(t+1), recursive, refit every 21 sessions on every realized row from 2016 on, so each forecast uses only
+# data through its origin. V from daily bars and the listing exchange's official open. Nothing is tuned again, ever: a change means a new test on later days.
+#
+# THE SAMPLE. Two fixed lists, as they stand today: universe/sp500.csv and universe/sp400.csv (hash-checked). Companies added to either index later are not added. Ones that
+# leave or fail stay in for as long as they have bars, so the forward period has no survivorship bias. Target dates from 2026-11-19 on.
+#
+# THE VERDICT, once, at 500 target dates (about November 2028):
+#   CONFIRMED: the HAR-X minus baseline gap in QLIKE, averaged per target date across the two universes, has a 95% block-bootstrap interval (blocks of 21 dates) wholly below zero.
+#   NOT CONFIRMED: otherwise.
+# Why QLIKE: on 2017-2026 it had the stronger, steadier gain (t about 4.6 against 2.7 for log loss), so at 500 days its expected t is about 2.1 against about 1.3; the power is
+# about one half even so. Positive or null, the answer is reported.
+# REPORTED, NOT DECISIVE: the log-loss gap the same way; each universe alone; Clark-West t; the gain by quarter.
+#
+# PROGRESS CHECKS at 125, 250 and 375 target dates are reported, labelled interim. They neither stop the test nor change it.
+#
+# RUN: python scripts/har_x_forward.py --sp500 <dir> --sp400 <dir>, each a reference directory with daily bars, corporate actions and official_prices.parquet, fetched to the
+# latest day. Record each report in RESULTS.md.
+registered: "2026-11-18"
+first_target: "2026-11-19"
+decision_at_target_dates: 500
+interim_at: [125, 250, 375]
+universes: {sp500: universe/sp500.csv, sp400: universe/sp400.csv}
+model_protocol: protocols/har_x_replication_v1.yaml
