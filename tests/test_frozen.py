@@ -61,16 +61,17 @@ PROTOCOLS = {
     "protocols/amendment_1.md": "8d00546bda08a517db2d6a1fdbcd15a322457fca1cb78c032440aab1f90a1ad3",
     "protocols/amendment_2.md": "cc694716596fe601026abe221b649991eb4e0e5955aaba03af2988ceace278b7",
     "protocols/amendment_3.md": "aec64fa7785ac0c79ad9bdae6b1058debee1ad8b2875db1dd570c626e0abd653",
+    "protocols/amendment_4.md": "0b8f3b74b4dc6d696bb0191901ec8e9a27ef8ca5b5697671e097a009acf5a58d",
     "protocols/clark_west_verification.md": "8107e1a038d27ac69cbc64d2cbc4654871f4c5f312340e70265cf6954a745a8b",
     "src/portfolio.py": "8d7663681a576aacc3e0f88c57b8302113d1c5dd16fe7250913b807ecd0e62b7",
-    "src/volforecast.py": "0d818bd704df1409dec241866e7427d942e6abf5867b05c00462b5e78db6c02d",
-    "src/volpanel.py": "a485af9dd7160b12a08bf3e2a0cb5d645ea4ebef58b942841206fc0179d79066",
+    "src/volforecast.py": "e575601e12b6471f4825282fd5be7b977b9a0c62285f7007f626440a8c3c3d30",
+    "src/volpanel.py": "51ec50863266e21abd94c2299ce7c94eb909291165189917ac7ecaab7d65a7af",
     "src/official.py": "06c3a16b9521289579a06748f0f0fdbbf8f8dc790ad1b37e81c35dbc773fc946",
     "src/nyse.py": "083ec64b7e0902fa8c4c46a4f9c0c22f4ef76d5a4e54b01c5de0bdc6cbca0f15",
     "src/audit.py": "e64b6ebbb8d1e4787dd11c4d7fbd246a3f0a797970b1516acfc3c075571e8d7d",
     "scripts/portfolio_rules.py": "5f6e8c2754dc681a87d691d1fda715ec1bd1899d8cf75e16a84427c3da45c6f8",
     "scripts/reserved_portfolio.py": "3aeec125d92d398272b29fa8925abe6755dae9de94915aa2be53fa4e7f6d1034",
-    "scripts/vol_forecast.py": "952ffffedaa157f7e43c7c0aeb5de768fd4048dbb67ce920694f20772a5ba5ab",
+    "scripts/vol_forecast.py": "0638b4c71a5083843954489da5af100e910d1d0ecfa1f3ce9cbe5019b6e254a8",
     "scripts/protocol_checks.py": "b5968116672b6e2163d7eb750267507f035691770ee64fba0a8253465a18f6f6",
     "scripts/official_prices.py": "d4d4a72d75c71ce8c88b14aeb22c7e3058e53354d408e2209d761d9adb2ac982",
     "scripts/official_listing_candidates.py": "ce2c6f9a57cd695b2125907648870addd3762aef252b51371a7fd856d6ebf492",
@@ -108,7 +109,7 @@ def test_the_protocols_match_the_code_that_runs_them():
     assert (default.test_start, default.test_end) == (cfg.holdout_start, cfg.holdout_end)
     assert (default.pe_m, default.pe_tau, default.pe_window) == (cfg.pe_m, cfg.pe_tau, cfg.pe_window)
     assert default.validation_start == cfg.validation_start
-    for name in ("portfolio_v2.yaml", "volatility_v2.yaml", "amendment_1.md", "amendment_2.md", "amendment_3.md", "clark_west_verification.md"):
+    for name in ("portfolio_v2.yaml", "volatility_v2.yaml", "amendment_1.md", "amendment_2.md", "amendment_3.md", "amendment_4.md", "clark_west_verification.md"):
         text = (ROOT / "protocols" / name).read_text()
         assert "@@" not in text, f"{name} still holds a placeholder"
         assert name.endswith(".md") or "reserved for this specification but previously exposed through related research" in text.lower()

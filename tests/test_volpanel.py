@@ -228,3 +228,13 @@ def test_the_sample_script_runs_on_the_audit_fixture(tmp_path):
     for name in ("report.md", "sample_sizes.csv", "reasons.csv", "events.csv", "panel.parquet", "large_moves_check.csv"):
         assert (out / name).exists(), name
     assert pd.read_csv(out / "sample_sizes.csv")["eligible"].sum() > 0
+
+
+def test_daily_bars_alone_give_the_same_panel_without_the_range_cross_check(inputs):
+    raw, split, adj, sessions, actions, registry = inputs
+    v = volpanel.vendor_frame(raw, split, adj)
+    with5 = volpanel.build_panel(sessions, v, actions, registry, SYMBOLS, SMALL, start=DAYS[0], end=DAYS[-1])
+    daily_only = volpanel.build_panel(None, v, actions, registry, SYMBOLS, SMALL, start=DAYS[0], end=DAYS[-1])
+    assert len(daily_only) == len(with5) and not daily_only["range_conflict"].any()
+    same = ~with5["range_conflict"]
+    assert np.allclose(daily_only.loc[same, "V"].fillna(-1), with5.loc[same, "V"].fillna(-1))

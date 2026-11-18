@@ -54,14 +54,15 @@ def lock_end(cfg: VolConfig, score_reserved: bool = False) -> pd.Timestamp:
 
 
 def load_panel(sessions_path, reference, end, official_path=None, root: Path = Path("."), open_fallback: bool = False) -> pd.DataFrame:
-    """The panel from the sessions (scripts/build_sessions.py) and the reference data, with nothing after `end` in memory."""
+    """The panel from the reference data's daily bars, with nothing after `end` in memory. `sessions_path` (scripts/build_sessions.py) adds the 5-minute
+    cross-check of each day's range; None leaves it out, as the volatility protocol does since amendment 4."""
     end = pd.Timestamp(end)
 
     def upto(frame):
         frame = frame.copy()
         frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
         return frame[frame["date"] <= end]
-    sessions = upto(pd.read_parquet(sessions_path, columns=["symbol", "date", "bars", "slots", "high", "low"]))
+    sessions = upto(pd.read_parquet(sessions_path, columns=["symbol", "date", "bars", "slots", "high", "low"])) if sessions_path else None
     daily = {t: upto(pd.read_parquet(Path(reference) / "daily" / f"daily_sip_{t}.parquet")) for t in ("raw", "split", "all")}
     vendor = volpanel.vendor_frame(daily["raw"], daily["split"], daily["all"])
     actions = audit.normalize_actions(pd.read_parquet(Path(reference) / "corporate_actions.parquet"))

@@ -157,7 +157,7 @@ def event_sessions(actions: pd.DataFrame, v: pd.DataFrame, registry: pd.DataFram
     return allv.drop_duplicates(["symbol", "date"]).reset_index(drop=True)
 
 
-def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFrame, registry: pd.DataFrame,
+def build_panel(sessions: pd.DataFrame | None, vendor: pd.DataFrame, actions: pd.DataFrame, registry: pd.DataFrame,
                 symbols: list[str], rules: Rules = Rules(), start="2016-01-04", end="2026-10-12",
                 official: pd.DataFrame | None = None, open_fallback: bool = False) -> pd.DataFrame:
     """The panel: every symbol on every NYSE session from `start` to `end`, with V, V_id, the close-to-close return, and the
@@ -172,6 +172,8 @@ def build_panel(sessions: pd.DataFrame, vendor: pd.DataFrame, actions: pd.DataFr
     p = p.merge(v, on=["symbol", "date"], how="left", indicator="has_row")
     p["has_row"] = p["has_row"] == "both"
     p["real"] = p["real"].eq(True)
+    if sessions is None:        # daily bars only (protocols/amendment_4.md): no 5-minute cross-check of the range
+        sessions = pd.DataFrame(columns=["symbol", "date", "bars", "slots", "high", "low"]).astype({"date": "datetime64[ns]", "bars": float, "slots": float, "high": float, "low": float})
     s = sessions[["symbol", "date", "bars", "slots", "high", "low"]].rename(
         columns={"bars": "bars5", "slots": "slots5", "high": "high5", "low": "low5"})
     p = p.merge(s, on=["symbol", "date"], how="left")

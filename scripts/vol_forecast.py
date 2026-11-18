@@ -3,7 +3,7 @@
 
     python scripts/vol_forecast.py --stage baseline --sessions sessions.parquet --reference data/reference --official data/reference/official_prices.parquet
     python scripts/vol_forecast.py --stage rv --sip data/bars_sip --rv data/reference/rv5.parquet
-    python scripts/vol_forecast.py --stage reserved --score-reserved --sessions ... --reference ... --official ... --rv ...
+    python scripts/vol_forecast.py --stage reserved --score-reserved --reference ... --official ...      daily bars only (protocols/amendment_4.md)
 
 `baseline` applies the protocol's rule for the HAR form on development and its gate on validation. No model in it uses PE, and it loads nothing
 after the lock. `rv` builds the realized-variance robustness target. `reserved` runs the one registered comparison, once, on the reserved test window.
@@ -156,7 +156,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", choices=["baseline", "rv", "reserved"], required=True)
     ap.add_argument("--sip", default="data/bars_sip")
-    ap.add_argument("--sessions", default="sessions.parquet")
+    ap.add_argument("--sessions", default=None, help="the 5-minute sessions file, for the range cross-check; left out since amendment 4")
     ap.add_argument("--reference", default="data/reference")
     ap.add_argument("--official", default=None)
     ap.add_argument("--rv", default=None)
