@@ -1929,6 +1929,28 @@ Against the monthly mean on validation: QLIKE gap -0.0574 [-0.0776, -0.0371], lo
 
 The preconditions of both protocols are now met. Quoted spreads rest on a sample of 12 days and 30 stocks. **Scoring the reserved period remains a separate decision, and has not been made.** The long-run-level model has the lower validation losses here too; the frozen rule chooses on development.
 
+## The HAR-X model replicates on mid caps (2026-11-18; frozen before the data was loaded)
+
+`protocols/har_x_replication_v1.yaml`, committed in `17adb5d` before any mid-cap data was loaded, and run once on the S&P MidCap 400 (400 stocks, 909,740 stock-days, official opens throughout), out of sample 2017-04 to 2026-10. Saved run: `4884d3d`.
+
+**VERDICT: REPLICATES.** Both gaps have 95% intervals wholly below zero:
+
+| HAR-X minus HAR + long-run level | Mid caps | Large caps (where it was found) |
+|---|---:|---:|
+| Log loss gap [95%] | -0.0085 [-0.0161, -0.0020] | -0.0096 [-0.0173, -0.0034] |
+| Log loss gain | 1.23% | 1.38% |
+| QLIKE gap [95%] | -0.0134 [-0.0211, -0.0081] | -0.0131 [-0.0197, -0.0084] |
+| QLIKE gain | 2.65% | 2.66% |
+| Clark-West t | 5.37 | 5.65 |
+
+Better in log loss in 9 of 10 years, and in QLIKE in all 10. As on large caps, 2026 is the exception for log loss, at -0.2%. The stable coefficients keep their large-cap signs: 5-day return -0.78 (97% of refits), 21-day momentum -0.60 (100%), volume shock +0.14 (100%), range ratio -0.08 (100%).
+
+### Interpretations (each can be wrong)
+
+1. **The improvement is a property of US stocks' volatility, not of the 500 stocks it was found on.** On 400 unseen companies it is almost exactly as large: about 1.2-1.4% in log loss and 2.7% in QLIKE.
+2. **It replicates across companies, not across time.** The years are the same as the search, so market-wide regimes are shared. The test across time is a forward test on trading days after 2026-11-17.
+3. **2026 is still the weak year, in both universes.** That could be a short year or the start of decay, and only new days can tell.
+
 ## Exploration: a better next-day volatility model (2026-11-18; exploratory)
 
 Not a registered test. `scripts/explore_har_x.py`: HAR plus the long-run level, then the signal search's features added in three fixed blocks, out of sample 2017 to 2026-10, on the same 1,081,637 stock-days and folds. The features were chosen on this data, so the gains are overstated. Saved run: `892837b`.
@@ -2140,6 +2162,7 @@ The response so far:
 | 2026-11-03 | First real data checks: official-open coverage failed for 2021 (91.08%) through a bug in choosing the listing exchange. Amendment 2 fixed it by a rule committed first; the 95% limit stayed. Rerun: all checks pass (lowest year 99.78%). Gate on the official open passed: the rule picks the pooled log-HAR, QLIKE gap -0.057 [-0.078, -0.037], log loss gap -0.195 [-0.253, -0.137]. The reserved period is not scored |
 | 2026-11-17 | Amendment 3 (a reported robustness line). The portfolio protocol scored on the reserved period: PE shows no improvement in the forecast or the book, and lowers net return by 0.69% a year [-1.22%, -0.14%]; the PE-free model's IC falls to 0.002. The volatility step failed before loading anything (no 5-minute cache found on Drive) and is still unscored |
 | 2026-11-17 | Amendment 4: the volatility test from daily bars only. The volatility protocol scored on the reserved period: PE shows no improvement (Clark-West t -0.35; QLIKE slightly worse). Holm rejects nothing across both protocols. A reported robustness line against the long-run-level baseline passes (t 2.71, stable negative coefficient, a tiny gain): a lead, not a finding |
+| 2026-11-18 | Daily signal search (15 of 40 leads, mostly about variance); HAR-X built (log loss -1.4%, QLIKE -2.7% out of sample on large caps), frozen, and replicated on the S&P MidCap 400 (-1.2%, -2.7%, both intervals below zero, Clark-West t 5.4) |
 
 ## Next steps
 
