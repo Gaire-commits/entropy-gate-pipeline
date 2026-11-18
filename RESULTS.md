@@ -1929,6 +1929,18 @@ Against the monthly mean on validation: QLIKE gap -0.0574 [-0.0776, -0.0371], lo
 
 The preconditions of both protocols are now met. Quoted spreads rest on a sample of 12 days and 30 stocks. **Scoring the reserved period remains a separate decision, and has not been made.** The long-run-level model has the lower validation losses here too; the frozen rule chooses on development.
 
+## Exploration: PE once the long-run level is in the model (2026-11-17; exploratory)
+
+Not a registered test. On all daily data, 2016 to 2026-10-12 (1,081,637 stock-days, 502 stocks), out of sample from 2017 (`scripts/explore_pe_long.py`). Six predictors tried, plus year and group splits.
+
+- **The lead does not hold over the whole span:** adding PE to the long-run-level baseline gives Clark-West t -0.87, and the log loss is slightly worse (+0.9e-5 [-0.06, +2.0]).
+- **The relationship changed sign around 2022.** PE's coefficient was positive on refits from 2017 to 2021, and has been negative and growing since (-0.004 in 2022 to -0.12 in 2026). Clark-West is positive only from 2023 (2024: t 2.47). The reserved period caught the later regime.
+- **PE is not a proxy for volatility:** its pooled correlations with the long-run level, recent volatility and the day's variance are all under 0.02 in absolute value.
+- **No variant clearly works.** The best is PE over 126 patterns: Clark-West t 0.65, QLIKE gap -1.36e-5 [-2.73, -0.13], a negative coefficient on 93% of refits. It is one of six, and the log loss does not confirm it. Lag-1 return autocorrelation, the non-entropy check, is worse.
+- **Where it helps,** slightly: stocks with a medium or high long-run level. It hurts in the low third.
+
+**Decision (Kshitiz):** treat this lead as weak and search more broadly.
+
 ## The volatility protocol, scored on the reserved period (2026-11-17)
 
 `protocols/volatility_v2.yaml` with amendments 1 to 4, from daily bars only, scored once on 2024-01-03 to 2026-10-12 (690 target dates, 326,586 stock-days, 502 stocks). The period is **reserved for this specification but previously exposed through related research**, and the portfolio protocol's results on it were seen first. The validation gate, run again on these rows, passed: QLIKE gap -0.0580 [-0.0786, -0.0373], log loss gap -0.1963 [-0.2541, -0.1382].
