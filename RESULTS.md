@@ -1929,6 +1929,32 @@ Against the monthly mean on validation: QLIKE gap -0.0574 [-0.0776, -0.0371], lo
 
 The preconditions of both protocols are now met. Quoted spreads rest on a sample of 12 days and 30 stocks. **Scoring the reserved period remains a separate decision, and has not been made.** The long-run-level model has the lower validation losses here too; the frozen rule chooses on development.
 
+## Exploration: which daily features predict the next one or two days? (2026-11-17; exploratory)
+
+Not a registered test. `scripts/explore_signals.py`, all daily data 2017-04 to 2026-10 (1,081,637 stock-days), 10 features against 4 targets, **40 tests**, Benjamini-Hochberg across them. A lead needs q < 0.01 and the same sign in both halves (split 2021-07-01). **15 leads.**
+
+**Next-day variance, beyond HAR plus the long-run level (all negative ICs):**
+
+| Feature | IC % | t | First half / second half |
+|---|---:|---:|---:|
+| Today's range against its 63-day median | -14.65 | -49.2 | -11.7 / -17.0 |
+| 5-day against 22-day variance | -8.81 | -26.0 | -7.2 / -10.2 |
+| Largest daily return in 21 days | -3.41 | -12.1 | -1.7 / -4.8 |
+| 21-day momentum | -2.87 | -9.9 | -4.4 / -1.6 |
+| Volume shock | -1.99 | -9.6 | -0.1 / -3.5 |
+| 5-day and 1-day return | -2.30, -1.66 | -7.6, -5.1 | |
+| The day's intraday move, overnight gap | -1.33, -1.12 | -4.2, -3.7 | |
+
+**Returns:** the 1-day reversal holds. The previous day's intraday move ranks the next day's return at IC -1.49% (t -4.0), the next open-to-close return at -1.19% (t -3.3, weaker in the second half), and the two-day return at -1.24% (t -3.5). The 1-day return itself gives -1.58% (t -3.9). A volume shock predicts a higher next-day return (+0.62%, t 3.5), but not from the open, so it may be overnight or bid-ask bounce.
+
+**PE predicts nothing here:** |t| below 0.8 for all four targets.
+
+### Interpretations (each can be wrong)
+
+1. **The variance leads say the baseline is improvable, not that a new signal exists.** A day with an unusually wide range, or a recent burst, is followed by less variance than HAR predicts: volatility mean-reverts faster after spikes than a linear HAR in logs allows. Robust measures (medians, ratios) carry that.
+2. **The return-based variance leads look like the leverage effect.** After rises, variance runs lower than predicted, a known asymmetry (HAR with leverage terms, Corsi and Renò 2012). It replicates here.
+3. **The return reversal is real but small,** about the size the intraday reversal had. With daily turnover it is unlikely to beat costs, and it weakens in the second half.
+
 ## Exploration: PE once the long-run level is in the model (2026-11-17; exploratory)
 
 Not a registered test. On all daily data, 2016 to 2026-10-12 (1,081,637 stock-days, 502 stocks), out of sample from 2017 (`scripts/explore_pe_long.py`). Six predictors tried, plus year and group splits.
