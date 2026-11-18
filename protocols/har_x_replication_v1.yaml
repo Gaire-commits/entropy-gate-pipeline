@@ -1,0 +1,31 @@
+# THE HAR-X REPLICATION ON MID CAPS, frozen 2026-11-18, before any mid-cap volatility data was loaded. Hash-checked by tests/test_frozen.py with its script.
+#
+# THE QUESTION. Does the model found on large caps (RESULTS.md, "a better next-day volatility model", 2026-11-18) forecast next-day variance better than HAR plus the
+# long-run level on companies it was not built on: today's S&P MidCap 400 (universe/sp400.csv, fetched 2026-10-14)? Positive or null, the answer is reported.
+#
+# WHAT WAS SEEN. The model's features were chosen on large caps, 2016 to 2026, which favours it there. Mid caps' daily volatility has not been used for anything. E11
+# (2026-10-14) used mid caps' 5-minute returns for the reversal, not their daily variance. The dates overlap the large-cap search, so market-wide regimes are shared:
+# this replicates across companies, not across time. A forward test on trading days after 2026-11-17 is the test across time.
+#
+# THE TARGET AND SAMPLE. As the volatility protocol, from daily bars only: V(t) = r_on(t)^2 + (ln H - ln L)^2 / (4 ln 2), O the listing exchange's official open (no V
+# without one), forecast and scored as ln V(t+1) floored at (1 bp)^2. Same eligibility, $5 and $10M rules, half-day targets out. No index-join dates exist for mid caps,
+# so every stock counts from its first bar: survivorship bias is larger here, and it is stated.
+#
+# THE MODELS, both pooled OLS, recursive, refit every 21 sessions on every realized row, out of sample for targets from 2017-04-01 to 2026-10-12, identical rows and folds:
+#   baseline  ln V(t+1) on d, w, m (the HAR terms) and long (the stock's mean ln V over 252 sessions)
+#   HAR-X     the same plus the seven terms below, each capped as given, all known at the close of t
+#
+# THE VERDICT:
+#   REPLICATES: the HAR-X minus baseline gap in log loss AND in QLIKE each have a 95% block-bootstrap interval (blocks of 21 target dates) wholly below zero.
+#   PARTLY REPLICATES: exactly one of the two. DOES NOT REPLICATE: neither.
+# REPORTED, NOT DECISIVE: Clark-West t; the gain by year; each coefficient's sign against its large-cap sign (5-day return -, 21-day momentum -, volume shock +, range ratio -).
+#
+# RUN ONCE: python scripts/har_x_replication.py --reference <mid-cap dir> --official <mid-cap official_prices.parquet>. Record the outcome in RESULTS.md whatever it is.
+registered: "2026-11-18"
+universe: universe/sp400.csv
+first_target: "2017-04-01"
+last_target: "2026-10-12"
+base: [d, w, m, long]
+extra: [range_ratio, ret_1d, ret_5d, mom_21d, neg_ret_1d, max_ret_21d, volume_shock]
+clip: {range_ratio: 4.0, ret_1d: 0.2, ret_5d: 0.4, mom_21d: 0.6, max_ret_21d: 0.4, volume_shock: 3.0}
+large_cap_signs: {ret_5d: -1, mom_21d: -1, volume_shock: 1, range_ratio: -1}
