@@ -1929,6 +1929,25 @@ Against the monthly mean on validation: QLIKE gap -0.0574 [-0.0776, -0.0371], lo
 
 The preconditions of both protocols are now met. Quoted spreads rest on a sample of 12 days and 30 stocks. **Scoring the reserved period remains a separate decision, and has not been made.** The long-run-level model has the lower validation losses here too; the frozen rule chooses on development.
 
+## Exploration: a better next-day volatility model (2026-11-18; exploratory)
+
+Not a registered test. `scripts/explore_har_x.py`: HAR plus the long-run level, then the signal search's features added in three fixed blocks, out of sample 2017 to 2026-10, on the same 1,081,637 stock-days and folds. The features were chosen on this data, so the gains are overstated. Saved run: `892837b`.
+
+| Out of sample, 2017-2026 | Log loss | QLIKE | Log loss gap [95%] | QLIKE gap [95%] | Clark-West t | Gain, log / QLIKE |
+|---|---:|---:|---:|---:|---:|---:|
+| HAR + long-run level (baseline) | 0.6926 | 0.4913 | | | | |
+| + range against its 63-day median | 0.6931 | 0.4914 | +0.0005 [-0.0002, +0.0014] | +0.0001 [-0.0002, +0.0004] | -0.56 | -0.1% / -0.0% |
+| + recent returns (leverage) | 0.6853 | 0.4865 | -0.0074 [-0.0166, -0.0005] | -0.0048 [-0.0135, +0.0009] | 3.77 | 1.1% / 1.0% |
+| **+ largest return, volume shock (full)** | **0.6831** | **0.4782** | **-0.0096 [-0.0173, -0.0034]** | **-0.0131 [-0.0197, -0.0084]** | **5.65** | **1.4% / 2.7%** |
+
+**The full model is better in log loss in 9 of 10 years** (gains 0.7% to 2.4%), all but 2026, where it is 0.9% worse in log loss and level in QLIKE. Stable coefficients across refits: 5-day return -1.16 (99% same sign), 21-day momentum -0.76 (100%), volume shock +0.17 (100%), range ratio -0.05 (99%). The 1-day return, its down-day part and the largest return are unstable (63-74%).
+
+### Interpretations (each can be wrong)
+
+1. **The gain comes from the leverage effect and volume, not from the range.** The range ratio ranked strongly in the signal search, but adds nothing once it is in a linear model with HAR. Recent returns and volume shocks carry the improvement.
+2. **About 1.4% lower log loss and 2.7% lower QLIKE is a real but modest gain,** in line with the literature on HAR with leverage. It is this project's clearest positive forecasting result, and it is not about entropy.
+3. **2026 is a warning.** The most recent year shows no gain, which could be noise or decay. A forward test needs to be long: at this size, roughly one to two years of new days for the gap to be distinguishable from zero.
+
 ## Exploration: which daily features predict the next one or two days? (2026-11-17; exploratory)
 
 Not a registered test. `scripts/explore_signals.py`, all daily data 2017-04 to 2026-10 (1,081,637 stock-days), 10 features against 4 targets, **40 tests**, Benjamini-Hochberg across them. A lead needs q < 0.01 and the same sign in both halves (split 2021-07-01). **15 leads.**
